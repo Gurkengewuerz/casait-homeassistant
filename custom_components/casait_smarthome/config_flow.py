@@ -12,6 +12,7 @@ from homeassistant.config_entries import ConfigEntry, ConfigFlowResult, OptionsF
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 
 from .const import (
     CONF_TIMEOUT,
@@ -79,6 +80,15 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
+    def __init__(self) -> None:
+        """Initialize the config flow."""
+
+        super().__init__()
+        self._discovered_host: str | None = None
+        self._discovered_port: int = DEFAULT_PORT
+        self._discovered_timeout: float = DEFAULT_TIMEOUT
+        self._discovered_name: str | None = None
+
     @staticmethod
     @callback
     def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
@@ -106,6 +116,91 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return self.async_create_entry(title=info["title"], data=user_input)
 
         return self.async_show_form(step_id="user", data_schema=STEP_USER_DATA_SCHEMA, errors=errors)
+
+    @staticmethod
+    def _decode_property_value(value: Any) -> str | None:
+        """Decode zeroconf property values that may be bytes."""
+
+        if isinstance(value, bytes):
+            try:
+                return value.decode()
+            except UnicodeDecodeError:
+                return None
+        if isinstance(value, str):
+            return value
+        return None
+
+    async def async_step_zeroconf(self, discovery_info: ZeroconfServiceInfo) -> ConfigFlowResult:
+        """Handle zeroconf discovery."""
+
+        host = discovery_info.host or None
+        ip_address = getattr(discovery_info, "ip_address", None)
+        ip_addresses = getattr(discovery_info, "ip_addresses", None)
+        if host is None and ip_address is not None:
+            host = str(ip_address)
+        if host is None and ip_addresses:
+            host = str(ip_addresses[0])
+        if host is None:
+            return self.async_abort(reason="cannot_connect")
+
+        port = discovery_info.port or DEFAULT_PORT
+        self._discovered_host = host
+        self._discovered_port = port
+        self._discovered_timeout = DEFAULT_TIMEOUT
+        self._discovered_name = discovery_info.name.rstrip(".") if discovery_info.name else host
+        self.context["title_placeholders"] = {"name": self._discovered_name}
+
+        properties = discovery_info.properties or {}
+        unique_id = None
+        for key in ("id", "unique_id", "uid", "serial", "deviceid", "mac"):
+            unique_id = self._decode_property_value(properties.get(key))
+            if unique_id:
+                break
+
+        self._async_abort_entries_match({CONF_HOST: host, CONF_PORT: port})
+
+        if unique_id:
+            await self.async_set_unique_id(unique_id)
+            self._abort_if_unique_id_configured(updates={CONF_HOST: host, CONF_PORT: port})
+        else:
+            await self._async_handle_discovery_without_unique_id()
+
+        return await self.async_step_zeroconf_confirm()
+
+    async def async_step_zeroconf_confirm(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Confirm zeroconf discovery."""
+
+        if self._discovered_host is None:
+            return self.async_abort(reason="unknown")
+
+        errors: dict[str, str] = {}
+        data_schema = vol.Schema(
+            {
+                vol.Required(CONF_HOST, default=self._discovered_host): str,
+                vol.Required(CONF_PORT, default=self._discovered_port): int,
+                vol.Required(CONF_TIMEOUT, default=self._discovered_timeout): vol.All(
+                    vol.Coerce(float), vol.Range(min=0)
+                ),
+            }
+        )
+
+        if user_input is not None:
+            try:
+                info = await validate_input(self.hass, user_input)
+            except CannotConnect:
+                errors["base"] = "cannot_connect"
+            except Exception:
+                _LOGGER.exception("Unexpected exception")
+                errors["base"] = "unknown"
+            else:
+                return self.async_create_entry(title=info["title"], data=user_input)
+
+        return self.async_show_form(
+            step_id="zeroconf_confirm",
+            data_schema=data_schema,
+            errors=errors,
+            description_placeholders={"host": self._discovered_host},
+        )
 
 
 class OptionsFlowHandler(OptionsFlow):

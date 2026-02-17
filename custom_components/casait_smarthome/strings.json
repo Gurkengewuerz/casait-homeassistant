@@ -28,8 +28,36 @@
       "init": {
         "title": "casaIT Konfiguration",
         "menu_options": {
+          "om117_select": "OM117 Module konfigurieren",
           "dm117_select": "DM117 Module konfigurieren",
           "onewire_select": "OneWire Geräte konfigurieren"
+        }
+      },
+      "om117_select": {
+        "title": "OM117 Modul auswählen",
+        "data": {
+          "selected_module": "Modul"
+        }
+      },
+      "om117_config": {
+        "title": "OM117 Modul konfigurieren: {module_name}",
+        "data": {
+          "pair_1_mode": "Paar 1 Modus",
+          "pair_1_open_time": "Paar 1 Öffnungszeit (s)",
+          "pair_1_close_time": "Paar 1 Schließzeit (s)",
+          "pair_1_overrun_time": "Paar 1 Nachlauf (s)",
+          "pair_2_mode": "Paar 2 Modus",
+          "pair_2_open_time": "Paar 2 Öffnungszeit (s)",
+          "pair_2_close_time": "Paar 2 Schließzeit (s)",
+          "pair_2_overrun_time": "Paar 2 Nachlauf (s)",
+          "pair_3_mode": "Paar 3 Modus",
+          "pair_3_open_time": "Paar 3 Öffnungszeit (s)",
+          "pair_3_close_time": "Paar 3 Schließzeit (s)",
+          "pair_3_overrun_time": "Paar 3 Nachlauf (s)",
+          "pair_4_mode": "Paar 4 Modus",
+          "pair_4_open_time": "Paar 4 Öffnungszeit (s)",
+          "pair_4_close_time": "Paar 4 Schließzeit (s)",
+          "pair_4_overrun_time": "Paar 4 Nachlauf (s)"
         }
       },
       "dm117_select": {
