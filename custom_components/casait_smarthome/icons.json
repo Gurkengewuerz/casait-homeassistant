@@ -1,0 +1,7 @@
+{
+  "services": {
+    "scan_devices": {
+      "service": "mdi:palette"
+    }
+  }
+}

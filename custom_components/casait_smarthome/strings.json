@@ -1,0 +1,74 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "data": {
+          "host": "[%key:common::config_flow::data::host%]",
+          "port": "[%key:common::config_flow::data::port%]",
+          "timeout": "Timeout"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
+      "unknown": "[%key:common::config_flow::error::unknown%]"
+    },
+    "abort": {
+      "already_configured": "[%key:common::config_flow::abort::already_configured_device%]"
+    }
+  },
+  "services": {
+    "scan_devices": {
+      "name": "Scan devices",
+      "description": "Scans the connected I2C bus for compatible devices."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "casaIT Konfiguration",
+        "menu_options": {
+          "dm117_select": "DM117 Module konfigurieren",
+          "onewire_select": "OneWire Geräte konfigurieren"
+        }
+      },
+      "dm117_select": {
+        "title": "DM117 Modul auswählen",
+        "data": {
+          "selected_module": "Modul"
+        }
+      },
+      "dm117_config": {
+        "title": "DM117 Modul konfigurieren: {module_name}",
+        "data": {
+          "slot_1": "Slot 1",
+          "slot_2": "Slot 2",
+          "slot_3": "Slot 3",
+          "slot_4": "Slot 4",
+          "slot_5": "Slot 5",
+          "slot_6": "Slot 6",
+          "slot_7": "Slot 7",
+          "slot_8": "Slot 8"
+        }
+      },
+      "onewire_select": {
+        "title": "OneWire Gerät auswählen",
+        "data": {
+          "selected_device": "Gerät"
+        }
+      },
+      "onewire_config": {
+        "title": "OneWire Profil zuweisen: {device_id}",
+        "data": {
+          "profile": "Profil",
+          "led_count": "Anzahl LEDs"
+        }
+      }
+    },
+    "abort": {
+      "integration_not_ready": "Integration noch nicht bereit",
+      "no_dm117_found": "Keine DM117 Module gefunden",
+      "no_onewire_found": "Keine OneWire Geräte gefunden"
+    }
+  }
+}

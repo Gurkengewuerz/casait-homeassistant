@@ -1,0 +1,74 @@
+{
+    "config": {
+        "abort": {
+            "already_configured": "Device is already configured"
+        },
+        "error": {
+            "cannot_connect": "Failed to connect",
+            "unknown": "Unexpected error"
+        },
+        "step": {
+            "user": {
+                "data": {
+                    "host": "Host",
+                    "port": "Port",
+                    "timeout": "Timeout"
+                }
+            }
+        }
+    },
+    "services": {
+        "scan_devices": {
+            "description": "Scans the connected I2C bus for compatible devices.",
+            "name": "Scan devices"
+        }
+    },
+    "options": {
+        "abort": {
+            "integration_not_ready": "Integration is not ready yet",
+            "no_dm117_found": "No DM117 modules found",
+            "no_onewire_found": "No OneWire devices found"
+        },
+        "step": {
+            "init": {
+                "title": "casaIT configuration",
+                "menu_options": {
+                    "dm117_select": "Configure DM117 modules",
+                    "onewire_select": "Configure OneWire devices"
+                }
+            },
+            "dm117_select": {
+                "title": "Select DM117 module",
+                "data": {
+                    "selected_module": "Module"
+                }
+            },
+            "dm117_config": {
+                "title": "Configure DM117 module: {module_name}",
+                "data": {
+                    "slot_1": "Slot 1",
+                    "slot_2": "Slot 2",
+                    "slot_3": "Slot 3",
+                    "slot_4": "Slot 4",
+                    "slot_5": "Slot 5",
+                    "slot_6": "Slot 6",
+                    "slot_7": "Slot 7",
+                    "slot_8": "Slot 8"
+                }
+            },
+            "onewire_select": {
+                "title": "Select OneWire device",
+                "data": {
+                    "selected_device": "Device"
+                }
+            },
+            "onewire_config": {
+                "title": "Assign OneWire profile: {device_id}",
+                "data": {
+                    "profile": "Profile",
+                    "led_count": "LED count"
+                }
+            }
+        }
+    }
+}
