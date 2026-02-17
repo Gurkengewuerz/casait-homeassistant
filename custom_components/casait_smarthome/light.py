@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from datetime import timedelta
 from typing import Any
 
@@ -166,10 +165,6 @@ class CasaITDM117Light(LightEntity):
         async with self._api.lock:
             await self.hass.async_add_executor_job(device.write_port, config)
 
-        # Dimmer transitions cause electrical noise on the bus. Give significant
-        # settling time before polling to avoid bridge communication failures.
-        # The bridge may need several seconds to recover from dimmer PWM startup.
-        await asyncio.sleep(0.5)
         await self._api.async_force_refresh()
 
     @staticmethod

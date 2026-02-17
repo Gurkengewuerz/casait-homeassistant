@@ -190,8 +190,6 @@ class CasaITApi:
                     _LOGGER.warning("Error reading from device %s: %s", hex(addr), result)
                     if addr in self._pcf_states:
                         pcf_states[addr] = self._pcf_states[addr]
-                # Small delay between devices to avoid overwhelming the I2C bridge
-                await asyncio.sleep(0.02)
 
             for addr, device in self.dm117.items():
                 try:
@@ -205,8 +203,6 @@ class CasaITApi:
                         dm_states[addr] = port_states
                     elif addr in self._dm117_states:
                         dm_states[addr] = self._dm117_states[addr]
-                # Small delay between devices to avoid overwhelming the I2C bridge
-                await asyncio.sleep(0.02)
 
         self._pcf_states = pcf_states
         self._dm117_states = dm_states

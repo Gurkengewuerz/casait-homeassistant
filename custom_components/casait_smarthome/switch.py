@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from datetime import timedelta
 import logging
 from typing import Any
@@ -129,10 +128,6 @@ class CasaITSwitch(SwitchEntity):
         if device:
             async with self._api.lock:
                 await self.hass.async_add_executor_job(device.write_port, self._hardware_port, state)
-            # When turning on (state=0, active low), relay energizes causing
-            # electrical noise. Give the hardware time to settle before polling.
-            if state == 0:
-                await asyncio.sleep(0.1)
             await self._api.async_force_refresh()
 
     @property
@@ -231,9 +226,6 @@ class CasaITDM117Switch(SwitchEntity):
         async with self._api.lock:
             await self.hass.async_add_executor_job(device.write_port, config)
 
-        # DM117 outputs cause electrical noise when switching. Give settling
-        # time before polling to avoid bridge communication failures.
-        await asyncio.sleep(0.15)
         await self._api.async_force_refresh()
 
     @property

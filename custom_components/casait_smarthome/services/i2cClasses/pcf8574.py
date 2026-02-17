@@ -100,7 +100,7 @@ class PCF8574:
             # When turning ON (state=0, active low), relay energizes causing
             # electrical noise. Give more settling time before verification.
             if verify:
-                settle_time = 0.05 if state == 0 else 0.02
+                settle_time = 0.002
                 time.sleep(settle_time)
                 read_value = self.bus.read_byte(self.address)
                 if read_value != new_value:

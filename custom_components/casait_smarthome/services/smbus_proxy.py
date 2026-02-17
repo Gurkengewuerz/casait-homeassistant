@@ -364,7 +364,7 @@ class SMBus:
             if len(response) >= 1 and response[0] == 0x00:
                 # Block writes (especially to dimmers) cause hardware transitions
                 # that generate electrical noise. Add settling time.
-                time.sleep(0.05)
+                time.sleep(0.001)
                 return
             raise OSError(f"Write i2c block data failed for address 0x{i2c_addr:02X} register 0x{register:02X}")
         except SMBusProxyError as e:
