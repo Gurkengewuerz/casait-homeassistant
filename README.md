@@ -1,377 +1,258 @@
-# casaIT : Smart Home
+# casaIT : Smart Home Home Assistant Integration
 
-[![GitHub Release][releases-shield]][releases]
-[![GitHub Activity][commits-shield]][commits]
-[![License][license-shield]](LICENSE)
+[![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
 
-[![hacs][hacsbadge]][hacs]
-![Project Maintenance][maintenance-shield]
+## Overview
 
-<!--
-Uncomment and customize these badges if you want to use them:
+**casaIT : Smart Home** is a custom [Home Assistant](https://www.home-assistant.io/) integration that provides connectivity to casaIT smart home devices via I2C/SMBus protocol. It enables control and monitoring of modular smart home components including input/output modules, digital controllers, and various 1-Wire sensor devices.
 
-[![BuyMeCoffee][buymecoffeebadge]][buymecoffee]
-[![Discord][discord-shield]][discord]
--->
+- **Domain:** `casait_smarthome`
+- **Quality Scale:** Bronze
+- **Connection:** I2C/SMBus (via remote proxy)
+- **Main code:** `custom_components/casait_smarthome/`
 
-**✨ Develop in the cloud:** Want to contribute or customize this integration? Open it directly in GitHub Codespaces - no local setup required!
+## Features
 
-[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/Gurkengewuerz/casait-homeassistant?quickstart=1)
+### Device Support
+- **Input Modules (IM117):** PCF8574-based I2C input expanders
+- **Output Modules (OM117):** PCF8574-based controllable outputs (switches & blinds)
+- **Digital Modules (DM117):** ATMega8-based digital I/O and PWM dimming
+- **Sensor Modules (SM117):** DS2482 1-Wire controllers for temperature, humidity, and digital sensors
+- **1-Wire Devices:** DS18B20, DS2438, DS2413, DS28E17 profiles
 
-## ✨ Features
+### Integration Features
+- Async, type-checked, fully linted codebase
+- SMBus proxy communication for reliable remote I2C access
+- Background polling for device state synchronization
+- Zeroconf (mDNS) discovery
+- Config flow with device configuration options (blind timings, LED settings, etc.)
+- Native Home Assistant entities: sensors, binary sensors, switches, covers, lights
+- Service for manual device scanning and 1-Wire re-enumeration
 
-- **Easy Setup**: Simple configuration through the UI - no YAML required
-- **Air Quality Monitoring**: Track AQI and PM2.5 levels in real-time
-- **Filter Management**: Monitor filter life and get replacement alerts
-- **Smart Control**: Adjust fan speed, target humidity, and operating modes
-- **Child Lock**: Safety feature to prevent accidental changes
-- **Diagnostic Info**: View filter life, runtime hours, and device statistics
-- **Reconfigurable**: Change credentials anytime without removing the integration
-- **Options Flow**: Adjust settings like update interval after setup
-- **Custom Services**: Advanced control with built-in service calls
+## Installation
 
-**This integration will set up the following platforms.**
+### HACS (Recommended)
+1. Go to HACS → Integrations → Custom Repositories
+2. Add this repo: `Gurkengewuerz/casait-homeassistant`
+3. Search for `casaIT : Smart Home` and install
+4. Restart Home Assistant
 
-Platform | Description
--- | --
-`sensor` | Air quality index (AQI), PM2.5, filter life, and runtime
-`binary_sensor` | API connection status and filter replacement alert
-`switch` | Child lock and LED display controls
-`select` | Fan speed selection (Low/Medium/High/Auto)
-`number` | Target humidity setting (30-80%)
-`button` | Reset filter timer after replacement
-`fan` | Air purifier fan control with speed settings
+### Manual
+1. Download/copy the `custom_components/casait_smarthome/` folder into your Home Assistant `custom_components/` directory
+2. Restart Home Assistant
 
-> **💡 Interactive Demo**: The entities are interconnected for demonstration:
->
-> - Press the **Reset Filter Timer** button → **Filter Life Remaining** sensor updates to 100%
-> - Change the **Air Purifier** fan speed → **Fan Speed** select syncs automatically
-> - Change the **Fan Speed** select → **Air Purifier** fan syncs automatically
+## Configuration
 
-## 🚀 Quick Start
+Configuration is done via the Home Assistant UI (Integrations page). No YAML setup is required or supported.
 
-### Step 1: Install the Integration
+### Initial Setup
 
-**Prerequisites:** This integration requires [HACS](https://hacs.xyz/) (Home Assistant Community Store) to be installed.
+1. Go to **Settings → Devices & Services → Add Integration**
+2. Search for `casaIT : Smart Home`
+3. Enter the SMBus proxy details:
+   - **Host:** IP address of the SMBus proxy server
+   - **Port:** Communication port (default: 1337)
+   - **Timeout:** Connection timeout in seconds (default: 5.0)
+4. Click Submit
 
-Click the button below to open the integration directly in HACS:
+### Configuration Options
 
-[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=jpawlowski&repository=casait-homeassistant&category=integration)
+After setup, configure device-specific settings:
 
-Then:
-
-1. Click "Download" to install the integration
-2. **Restart Home Assistant** (required after installation)
-
-> **Note:** The My Home Assistant redirect will first take you to a landing page. Click the button there to open your Home Assistant instance.
-
-<details>
-<summary>**Manual Installation (Advanced)**</summary>
-
-If you prefer not to use HACS:
-
-1. Download the `custom_components/casait_smarthome/` folder from this repository
-2. Copy it to your Home Assistant's `custom_components/` directory
-3. Restart Home Assistant
-
-</details>
-
-### Step 2: Add and Configure the Integration
-
-**Important:** You must have installed the integration first (see Step 1) and restarted Home Assistant!
-
-#### Option 1: One-Click Setup (Quick)
-
-Click the button below to open the configuration dialog:
-
-[![Open your Home Assistant instance and start setting up a new integration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=casait_smarthome)
-
-Follow the setup wizard:
-
-1. Enter your username
-2. Enter your password
-3. Click Submit
-
-That's it! The integration will start loading your data.
-
-#### Option 2: Manual Configuration
-
-1. Go to **Settings** → **Devices & Services**
-2. Click **"+ Add Integration"**
-3. Search for "casaIT : Smart Home"
-4. Follow the same setup steps as Option 1
-
-### Step 3: Adjust Settings (Optional)
-
-After setup, you can adjust options:
-
-1. Go to **Settings** → **Devices & Services**
+1. Go to **Settings → Devices & Services**
 2. Find **casaIT : Smart Home**
 3. Click **Configure** to adjust:
-   - Update interval (how often to refresh data)
-   - Enable debug logging
+   - **Blind open/close times:** Times for OM117 blind modules
+   - **Blind overrun time:** Extra movement time for blind calibration
+   - **LED count:** Number of LEDs for DS28E17 LED controllers
+   - **1-Wire profiles:** Configure which 1-Wire sensors are connected
 
-You can also **Reconfigure** your credentials anytime without removing the integration.
+### Automatic Discovery
 
-### Step 4: Start Using!
+If your SMBus proxy supports Zeroconf (mDNS), the integration can auto-discover it:
+- Look for `_casaithome._tcp.local.` service announcements
+- Simplifies setup without manual host entry
 
-The integration creates several entities for your air purifier:
+## Development
 
-- **Sensors**: Air quality index, PM2.5 levels, filter life remaining, total runtime
-- **Binary Sensors**: API connection status, filter replacement alert
-- **Switches**: Child lock, LED display control
-- **Select**: Fan speed (Low/Medium/High/Auto)
-- **Number**: Target humidity (30-80%)
-- **Button**: Reset filter timer
-- **Fan**: Air purifier fan control
+- **Validate code:** `./script/check` (type, lint, spell)
+- **Run Home Assistant:** `./script/develop` (dev instance on port 8123)
+- **Force restart:** `pkill -f "hass --config" || true && pkill -f "debugpy.*5678" || true && ./script/develop`
+- **Logs:** See `config/home-assistant.log`
 
-Find all entities in **Settings** → **Devices & Services** → **casaIT : Smart Home** → click on the device.
+### Getting Started
 
-## Available Entities
+#### Quick Start (GitHub Codespaces - Recommended)
 
-### Sensors
-
-- **Air Quality Index (AQI)**: Real-time air quality measurement (0-500 scale)
-  - Includes air quality category (Good/Moderate/Unhealthy/etc.)
-  - Health recommendations based on current AQI
-- **PM2.5**: Fine particulate matter concentration in µg/m³
-- **Filter Life Remaining** (Diagnostic): Shows remaining filter life as percentage
-- **Total Runtime** (Diagnostic): Total operating hours of the device
-
-### Binary Sensors
-
-- **API Connection**: Shows whether the connection to the API is active
-  - On: Connected and receiving data
-  - Off: Connection lost or authentication failed
-  - Shows update interval and API endpoint information
-- **Filter Replacement Needed**: Alerts when filter needs replacement
-  - Shows estimated days remaining
-  - Turns on when filter life is low
-
-### Switches
-
-- **Child Lock**: Prevents accidental button presses on the device
-  - Icon changes based on state (locked/unlocked)
-- **LED Display**: Enable/disable the LED display
-  - Disabled by default - enable in entity settings if needed
-
-### Select
-
-- **Fan Speed**: Choose from Low, Medium, High, or Auto
-  - Icon changes dynamically based on selected speed
-  - Auto mode adjusts speed based on air quality
-  - Syncs bidirectionally with the Air Purifier fan entity
-
-### Number
-
-- **Target Humidity**: Set desired humidity level (30-80%)
-  - Adjustable in 5% increments
-  - Displayed as a slider in the UI
-
-### Button
-
-- **Reset Filter Timer**: Reset the filter life to 100%
-  - Press to reset after replacing the filter
-  - Instantly updates the Filter Life Remaining sensor
-
-### Fan
-
-- **Air Purifier**: Control the air purifier fan speed and power
-  - Three speed levels: Low, Medium, High
-  - Syncs bidirectionally with the Fan Speed select entity
-  - Turn on/off functionality
-
-## Custom Services
-
-The integration provides services for advanced automation:
-
-### `casait_smarthome.example_action`
-
-Perform a custom action (customize this for your needs).
-
-**Example:**
-
-```yaml
-service: casait_smarthome.example_action
-data:
-  # Add your parameters here
-```
-
-### `casait_smarthome.reload_data`
-
-Manually refresh data from the API without waiting for the update interval.
-
-**Example:**
-
-```yaml
-service: casait_smarthome.reload_data
-```
-
-Use these services in automations or scripts for more control.
-
-## Configuration Options
-
-### During Setup
-
-Name | Required | Description
--- | -- | --
-Username | Yes | Your account username
-Password | Yes | Your account password
-
-### After Setup (Options)
-
-You can change these anytime by clicking **Configure**:
-
-Name | Default | Description
--- | -- | --
-Update Interval | 1 hour | How often to refresh data
-Enable Debugging | Off | Enable extra debug logging
-
-## Troubleshooting
-
-### Authentication Issues
-
-#### Reauthentication
-
-If your credentials expire or change, Home Assistant will automatically prompt you to reauthenticate:
-
-1. Go to **Settings** → **Devices & Services**
-2. Look for **"Action Required"** or **"Configuration Required"** message on the integration
-3. Click **"Reconfigure"** or follow the prompt
-4. Enter your updated credentials
-5. Click Submit
-
-The integration will automatically resume normal operation with the new credentials.
-
-#### Manual Credential Update
-
-You can also update credentials at any time without waiting for an error:
-
-1. Go to **Settings** → **Devices & Services**
-2. Find **casaIT : Smart Home**
-3. Click the **3 dots menu** → **Reconfigure**
-4. Enter new username/password
-5. Click Submit
-
-#### Connection Status
-
-Monitor your connection status with the **API Connection** binary sensor:
-
-- **On** (Connected): Integration is receiving data normally
-- **Off** (Disconnected): Connection lost or authentication failed
-  - Check the binary sensor attributes for diagnostic information
-  - Verify credentials if authentication failed
-  - Check network connectivity
-
-### Enable Debug Logging
-
-To enable debug logging for this integration, add the following to your `configuration.yaml`:
-
-```yaml
-logger:
-  default: info
-  logs:
-    custom_components.casait_smarthome: debug
-```
-
-### Common Issues
-
-#### Authentication Errors
-
-If you receive authentication errors:
-
-1. Verify your username and password are correct
-2. Check that your account has the necessary permissions
-3. Wait for the automatic reauthentication prompt, or manually reconfigure
-4. Check the API Connection binary sensor for status
-
-#### Device Not Responding
-
-If your device is not responding:
-
-1. Check the **API Connection** binary sensor - it should be "On"
-2. Check your network connection
-3. Verify the device is powered on
-4. Check the integration diagnostics (Settings → Devices & Services → casaIT : Smart Home → 3 dots → Download diagnostics)
-
-## 🤝 Contributing
-
-Contributions are welcome! Please open an issue or pull request if you have suggestions or improvements.
-
-### 🛠️ Development Setup
-
-Want to contribute or customize this integration? You have two options:
-
-#### Cloud Development (Recommended)
-
-The easiest way to get started - develop directly in your browser with GitHub Codespaces:
+Develop in your browser with all tools pre-configured:
 
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/Gurkengewuerz/casait-homeassistant?quickstart=1)
 
-- ✅ Zero local setup required
-- ✅ Pre-configured development environment
-- ✅ Home Assistant included for testing
-- ✅ 60 hours/month free for personal accounts
+- Zero setup required
+- Home Assistant included
+- All dependencies pre-installed
 
 #### Local Development
 
-Prefer working on your machine? You'll need:
-
+Requirements:
 - Docker Desktop
-- VS Code with the [Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
+- VS Code with [Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
 
-Then:
-
+Steps:
 1. Clone this repository
 2. Open in VS Code
 3. Click "Reopen in Container" when prompted
 
-Both options give you the same fully-configured development environment with Home Assistant, Python 3.13, and all necessary tools.
+### Development Commands
 
----
+```bash
+# Start Home Assistant (port 8123)
+./script/develop
 
-## 🤖 AI-Assisted Development
+# Run all validations
+./script/check
 
-> **ℹ️ Transparency Notice**
->
-> This integration was developed with assistance from AI coding agents (GitHub Copilot, Claude, and others). While the codebase follows Home Assistant Core standards, AI-generated code may not be reviewed or tested to the same extent as manually written code.
->
-> AI tools were used to:
->
-> - Generate boilerplate code following Home Assistant patterns
-> - Implement standard integration features (config flow, coordinator, entities)
-> - Ensure code quality and type safety
-> - Write documentation and comments
->
-> Please be aware that AI-assisted development may result in unexpected behavior or edge cases that haven't been thoroughly tested. If you encounter any issues, please [open an issue](../../issues) on GitHub.
->
-> *Note: This section can be removed or modified if AI assistance was not used in your integration's development.*
+# Format code
+./script/lint
 
----
+# Run tests
+./script/test
 
-## 📄 License
+# With coverage report
+./script/test --cov-html
+```
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+### Logs and Debugging
+
+- **Live:** Terminal where `./script/develop` runs
+- **File logs:** `config/home-assistant.log` (current), `.log.1` (previous)
+- **Debug logging:** Add to `config/configuration.yaml`:
+  ```yaml
+  logger:
+    logs:
+      custom_components.casait_smarthome: debug
+  ```
+
+### Project Structure
+
+```
+custom_components/casait_smarthome/
+├── api.py                 # Core API client for I2C device communication
+├── config_flow.py         # Configuration flow and options flow
+├── const.py               # Constants (device codes, platforms, defaults)
+├── manifest.json          # Integration metadata
+├── services.yaml          # Service definitions
+├── strings.json           # UI text (English, Zeroconf)
+├── [platform]/            # Entity platforms
+│   ├── __init__.py
+│   └── ...
+├── services/
+│   ├── smbus_proxy.py     # SMBus proxy communication
+│   └── i2cClasses/        # I2C device classes (DM117, PCF8574, etc.)
+├── translations/
+│   └── en.json            # English translations
+```
+
+### Key Modules
+
+- **`api.py`** - CasaITApi class: Scans I2C bus, manages polling, coordinates device communication
+- **`config_flow.py`** - Setup wizard for host/port/timeout, device-specific options
+- **`services/smbus_proxy.py`** - SMBusProxy client for remote I2C access
+- **`services/i2cClasses/`** - Device-specific classes (PCF8574, DM117, OneWireBus, LEDConfig)
+
+## Services
+
+### `casait_smarthome.scan_devices`
+
+Manually scan the I2C bus for connected devices and re-enumerate all devices.
+
+Used after connecting new hardware to force immediate discovery without waiting for the next polling cycle.
+
+**Usage:**
+
+```yaml
+service: casait_smarthome.scan_devices
+```
+
+This service is useful after:
+- Connecting new I2C modules
+- Adding 1-Wire sensors to the bus
+- Recovering from temporary I2C communication issues
+
+## Coding Standards
+
+- **Python:** 4 spaces, 120 char lines, double quotes, full type hints, async/await for all I/O
+- **YAML:** 2 spaces, modern Home Assistant syntax
+- **JSON:** 2 spaces, no trailing commas
+- **Validation:** Always run `./script/check` before committing
+
+See `AGENTS.md` for comprehensive developer guidelines, architecture patterns, and contribution rules.
+
+## Supported Entity Types
+
+Entities are dynamically created based on discovered devices. Common entity types include:
+
+### Sensors
+- **Temperature (1-Wire):** DS18B20 and DS2438 temperature readings
+- **Humidity (1-Wire):** DS2438 humidity/environmental sensors
+- **Input State:** DM117 digital input values
+- **Analog Input:** DM117 analog/dimmer input readings
+
+### Binary Sensors
+- **Digital Inputs:** IM117/DM117 binary input states
+- **Connection Status:** SMBus proxy connectivity status
+
+### Switches
+- **Output Control:** OM117 switch outputs, DM117 digital outputs
+- **Relay Control:** Control individual relay outputs
+
+### Covers (Blinds/Shutters)
+- **Automated Blinds:** OM117 paired outputs for roller blinds
+- **Position Tracking:** Open/close/stop commands with position memory
+
+### Lights
+- **LED Control:** DS28E17 RGB/addressable LED controllers
+- **Dimmable Output:** DM117 PWM dimmer controls
+
+### Buttons
+- **Manual Triggers:** One-shot outputs for door bells, garage openers, etc.
+
+## What is SMBus Proxy?
+
+This integration communicates with casaIT devices via SMBus (System Management Bus), a simplified variant of I2C. Since direct I2C access from Home Assistant isn't practical, you need an **SMBus proxy service** running on a separate device (e.g., Raspberry Pi, embedded Linux device with SMBus capabilities).
+
+The proxy forwards Home Assistant's I2C commands to the physical I2C bus and returns device state.
+
+See your casaIT hardware documentation for proxy setup instructions.
+
+## Contributing
+
+Contributions welcome! Please follow:
+- Code must pass `./script/check` without errors
+- Use async/await for all I/O operations
+- Include full type hints on all functions
+- Use [Conventional Commits](https://www.conventionalcommits.org/) format
+- No breaking changes without explicit approval
+- Follow architecture patterns in `AGENTS.md`
+
+## Testing
+
+```bash
+# Run all tests
+./script/test -v
+
+# Specific test file
+./script/test tests/test_config_flow.py
+
+# Update snapshots
+./script/test --snapshot-update
+
+# Coverage report
+./script/test --cov-html
+```
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
 
 ---
 
 **Made with ❤️ by [@Gurkengewuerz][user_profile]**
-
----
-
-[commits-shield]: https://img.shields.io/github/commit-activity/y/Gurkengewuerz/casait-homeassistant.svg?style=for-the-badge
-[commits]: https://github.com/Gurkengewuerz/casait-homeassistant/commits/main
-[hacs]: https://github.com/hacs/integration
-[hacsbadge]: https://img.shields.io/badge/HACS-Default-orange.svg?style=for-the-badge
-[license-shield]: https://img.shields.io/github/license/Gurkengewuerz/casait-homeassistant.svg?style=for-the-badge
-[maintenance-shield]: https://img.shields.io/badge/maintainer-%40Gurkengewuerz-blue.svg?style=for-the-badge
-[releases-shield]: https://img.shields.io/github/release/Gurkengewuerz/casait-homeassistant.svg?style=for-the-badge
-[releases]: https://github.com/Gurkengewuerz/casait-homeassistant/releases
-[user_profile]: https://github.com/jpawlowski
-
-<!-- Optional badge definitions - uncomment if needed:
-[buymecoffee]: https://www.buymeacoffee.com/jpawlowski
-[buymecoffeebadge]: https://img.shields.io/badge/buy%20me%20a%20coffee-donate-yellow.svg?style=for-the-badge
-[discord]: https://discord.gg/Qa5fW2R
-[discord-shield]: https://img.shields.io/discord/330944238910963714.svg?style=for-the-badge
--->
