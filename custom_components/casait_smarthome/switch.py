@@ -15,8 +15,13 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import CasaITConfigEntry
 from .api import CasaITApi
-from .const import DOMAIN, I2C_ADDR_RANGES, PCF8574_MAPPED_PORTS, SIGNAL_STATE_UPDATED
-from .helpers import default_onewire_profile, get_configured_onewire_profiles, get_dm117_port_configuration
+from .const import DOMAIN, I2C_ADDR_RANGES, OM117_MODE_BLIND, PCF8574_MAPPED_PORTS, SIGNAL_STATE_UPDATED
+from .helpers import (
+    default_onewire_profile,
+    get_configured_onewire_profiles,
+    get_dm117_port_configuration,
+    get_om117_pair_configuration,
+)
 from .services.i2cClasses.dm117 import DeviceType, DM117PortConfig, PortConfig
 
 _LOGGER = logging.getLogger(__name__)
@@ -34,12 +39,23 @@ async def async_setup_entry(
 
     output_range = next((start, end) for start, end, name, model in I2C_ADDR_RANGES if "OM117" in model)
 
-    pcf_entities = [
-        CasaITSwitch(api, addr, port)
-        for addr, device in api.im117_om117.items()
-        if output_range[0] <= addr <= output_range[1]
-        for port in range(8)
-    ]
+    pcf_entities: list[SwitchEntity] = []
+    om_config = get_om117_pair_configuration(config_entry.options)
+
+    for addr in api.im117_om117:
+        if not output_range[0] <= addr <= output_range[1]:
+            continue
+
+        pair_configs = om_config.get(addr, {})
+        for pair_index in range(4):
+            config = pair_configs.get(pair_index)
+            if config and config.mode == OM117_MODE_BLIND:
+                continue
+
+            base_port = pair_index * 2
+            for offset in (0, 1):
+                port = base_port + offset
+                pcf_entities.append(CasaITSwitch(api, addr, port))
 
     dm_entities: list[CasaITDM117Switch] = []
     dm_config = get_dm117_port_configuration(config_entry.options)

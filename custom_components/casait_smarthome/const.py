@@ -15,10 +15,17 @@ I2C_ADDR_RANGES: Final = [
 ]
 
 # Platforms
-PLATFORMS: Final = ["binary_sensor", "light", "sensor", "switch"]
+PLATFORMS: Final = ["binary_sensor", "cover", "light", "sensor", "switch"]
 
 # Services
 SERVICE_SCAN_DEVICES: Final = "scan_devices"
+
+# Output module defaults
+OM117_MODE_SWITCH: Final = "switch"
+OM117_MODE_BLIND: Final = "blind"
+DEFAULT_BLIND_OPEN_TIME: Final = 25.0
+DEFAULT_BLIND_CLOSE_TIME: Final = 25.0
+DEFAULT_BLIND_OVERRUN_TIME: Final = 2.0
 
 # Default profiles for 1-Wire devices by family code
 DEFAULT_OW_PROFILE: Final = {

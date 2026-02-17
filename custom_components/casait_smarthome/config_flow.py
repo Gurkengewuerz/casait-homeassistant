@@ -13,7 +13,19 @@ from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 
-from .const import CONF_TIMEOUT, DEFAULT_LED_COUNT, DEFAULT_OW_PROFILE, DOMAIN
+from .const import (
+    CONF_TIMEOUT,
+    DEFAULT_BLIND_CLOSE_TIME,
+    DEFAULT_BLIND_OPEN_TIME,
+    DEFAULT_BLIND_OVERRUN_TIME,
+    DEFAULT_LED_COUNT,
+    DEFAULT_OW_PROFILE,
+    DOMAIN,
+    I2C_ADDR_RANGES,
+    OM117_MODE_BLIND,
+    OM117_MODE_SWITCH,
+)
+from .helpers import OM117PairConfig, get_om117_pair_configuration
 from .services.smbus_proxy import DEFAULT_PORT, DEFAULT_TIMEOUT, SMBus, SMBusProxyError
 
 _LOGGER = logging.getLogger(__name__)
@@ -27,8 +39,8 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 )
 
 OM117_SLOT_TYPES = {
-    "switch": "Digitaler Ausgang",
-    "blind": "Jalousie / Rollladen",
+    OM117_MODE_SWITCH: "Digitaler Ausgang",
+    OM117_MODE_BLIND: "Jalousie / Rollladen",
 }
 
 DM117_SLOT_TYPES = {
@@ -102,6 +114,7 @@ class OptionsFlowHandler(OptionsFlow):
     def __init__(self, config_entry: ConfigEntry) -> None:
         """Initialize options flow."""
         # Temporary storage for selection in the flow
+        self._selected_om117_addr = None
         self._selected_dm117_addr = None
         self._selected_ow_id = None
 
@@ -130,7 +143,89 @@ class OptionsFlowHandler(OptionsFlow):
         """Manage the options menu."""
         return self.async_show_menu(
             step_id="init",
-            menu_options=["dm117_select", "onewire_select"],
+            menu_options=["om117_select", "dm117_select", "onewire_select"],
+        )
+
+    # ------------------------------------------------------------------
+    # OM117 CONFIGURATION
+    # ------------------------------------------------------------------
+
+    async def async_step_om117_select(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Step 1: Selection of the OM117 module."""
+
+        api = self._runtime_data
+        if not api:
+            return self.async_abort(reason="integration_not_ready")
+
+        output_range = next((start, end) for start, end, _, code in I2C_ADDR_RANGES if code == "OM117")
+        detected_modules = [addr for addr in api.im117_om117 if output_range[0] <= addr <= output_range[1]]
+
+        if not detected_modules:
+            return self.async_abort(reason="no_om117_found")
+
+        if user_input is not None:
+            self._selected_om117_addr = int(user_input["selected_module"])
+            return await self.async_step_om117_config()
+
+        options = {str(addr): f"OM117 at Address {addr} (0x{int(addr):02x})" for addr in detected_modules}
+
+        return self.async_show_form(
+            step_id="om117_select",
+            data_schema=vol.Schema({vol.Required("selected_module"): vol.In(options)}),
+        )
+
+    async def async_step_om117_config(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Step 2: Configuration of the 4 output pairs for the selected module."""
+
+        if self._selected_om117_addr is None:
+            return self.async_abort(reason="integration_not_ready")
+
+        addr = self._selected_om117_addr
+        existing = get_om117_pair_configuration(self.config_entry.options).get(addr, {})
+
+        if user_input is not None:
+            new_options = dict(self.config_entry.options)
+            for pair_index in range(1, 5):
+                option_prefix = f"om117_{addr}_pair_{pair_index}"
+                new_options[f"{option_prefix}_mode"] = user_input[f"pair_{pair_index}_mode"]
+                new_options[f"{option_prefix}_open_time"] = user_input[f"pair_{pair_index}_open_time"]
+                new_options[f"{option_prefix}_close_time"] = user_input[f"pair_{pair_index}_close_time"]
+                new_options[f"{option_prefix}_overrun_time"] = user_input[f"pair_{pair_index}_overrun_time"]
+
+            return self.async_create_entry(title="", data=new_options)
+
+        schema: dict[Any, Any] = {}
+        for idx in range(1, 5):
+            config: OM117PairConfig = existing.get(idx - 1, OM117PairConfig())
+            schema[vol.Required(f"pair_{idx}_mode", default=config.mode)] = vol.In(OM117_SLOT_TYPES)
+            schema[
+                vol.Optional(
+                    f"pair_{idx}_open_time",
+                    default=config.open_time,
+                )
+            ] = vol.All(vol.Coerce(float), vol.Range(min=1, max=180))
+            schema[
+                vol.Optional(
+                    f"pair_{idx}_close_time",
+                    default=config.close_time,
+                )
+            ] = vol.All(vol.Coerce(float), vol.Range(min=1, max=180))
+            schema[
+                vol.Optional(
+                    f"pair_{idx}_overrun_time",
+                    default=config.overrun_time,
+                )
+            ] = vol.All(vol.Coerce(float), vol.Range(min=0, max=15))
+
+        return self.async_show_form(
+            step_id="om117_config",
+            data_schema=vol.Schema(schema),
+            description_placeholders={
+                "module_name": f"Address {addr}",
+                "default_open": str(DEFAULT_BLIND_OPEN_TIME),
+                "default_close": str(DEFAULT_BLIND_CLOSE_TIME),
+                "default_overrun": str(DEFAULT_BLIND_OVERRUN_TIME),
+            },
         )
 
     # ------------------------------------------------------------------
