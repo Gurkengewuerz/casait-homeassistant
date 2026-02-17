@@ -7,6 +7,7 @@
   "config_flow": true,
   "documentation": "https://github.com/Gurkengewuerz/casait-has",
   "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/Gurkengewuerz/casait-has/issues",
   "quality_scale": "bronze",
   "requirements": [
     "crccheck==1.3.1"
