@@ -1,8 +1,9 @@
 """DS2482-100 I2C to 1-Wire bridge implementation."""
 
+from __future__ import annotations
+
 import logging
 import time
-import traceback
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -64,9 +65,8 @@ class DS2482:
             read_config = self.bus.read_byte(self.address)
             return (read_config & 0x0F) == (config & 0x0F)
 
-        except OSError as e:
-            _LOGGER.error("DS2482 reset error: %s", e)
-            _LOGGER.error(traceback.format_exc())
+        except OSError:
+            _LOGGER.exception("DS2482 reset error at 0x%02X", self.address)
             return False
 
     def _wait_busy(self, timeout: float = 0.1, retries: int = 3) -> bool:
@@ -100,9 +100,8 @@ class DS2482:
 
             return bool(status & self.STATUS_PPD)
 
-        except OSError as e:
-            _LOGGER.error("1-Wire reset error: %s", e)
-            _LOGGER.error(traceback.format_exc())
+        except OSError:
+            _LOGGER.exception("1-Wire reset error at 0x%02X", self.address)
             return False
 
     def wire_write_byte(self, byte: int) -> bool:
@@ -110,9 +109,8 @@ class DS2482:
         try:
             self.bus.write_byte_data(self.address, self.CMD_1WIRE_WRITE_BYTE, byte)
             return self._wait_busy()
-        except OSError as e:
-            _LOGGER.error("1-Wire write error: %s", e)
-            _LOGGER.error(traceback.format_exc())
+        except OSError:
+            _LOGGER.exception("1-Wire write error at 0x%02X", self.address)
             return False
 
     def wire_read_byte(self) -> int | None:
@@ -128,9 +126,8 @@ class DS2482:
 
             # Read data
             return self.bus.read_byte(self.address)
-        except OSError as e:
-            _LOGGER.error("1-Wire read error: %s", e)
-            _LOGGER.error(traceback.format_exc())
+        except OSError:
+            _LOGGER.exception("1-Wire read error at 0x%02X", self.address)
             return None
 
     def wire_single_bit(self, bit: bool) -> bool | None:
@@ -140,7 +137,6 @@ class DS2482:
             if not self._wait_busy():
                 return None
             return bool(self._last_status & self.STATUS_SBR)
-        except OSError as e:
-            _LOGGER.error("1-Wire single bit error: %s", e)
-            _LOGGER.error(traceback.format_exc())
+        except OSError:
+            _LOGGER.exception("1-Wire single bit error at 0x%02X", self.address)
             return None

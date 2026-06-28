@@ -14,6 +14,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .const import I2C_ADDR_RANGES, SIGNAL_STATE_UPDATED
 from .services.i2cClasses.dm117 import DM117, DeviceType
+from .services.i2cClasses.ds2438 import DS2438Reading
 from .services.i2cClasses.led_controller import LEDConfig
 from .services.i2cClasses.oneWireBus import OneWireBus
 from .services.i2cClasses.pcf8574 import PCF8574
@@ -263,10 +264,7 @@ class CasaITApi:
 
         for addr, ow_bus in self.sm117.items():
             try:
-                if self.lock:
-                    async with self.lock:
-                        devices = await self.hass.async_add_executor_job(ow_bus.scan_devices, True)
-                else:
+                async with self.lock:
                     devices = await self.hass.async_add_executor_job(ow_bus.scan_devices, True)
             except Exception as exc:  # noqa: BLE001
                 _LOGGER.warning("Error scanning 1-Wire bus at 0x%02x: %s", addr, exc)
@@ -311,26 +309,20 @@ class CasaITApi:
         if not bus:
             return None
 
-        if self.lock:
-            async with self.lock:
-                return await self.hass.async_add_executor_job(bus.read_temperature, device_id)
+        async with self.lock:
+            return await self.hass.async_add_executor_job(bus.read_temperature, device_id)
 
-        return await self.hass.async_add_executor_job(bus.read_temperature, device_id)
-
-    async def read_ds2438(self, device_id: str):
+    async def read_ds2438(self, device_id: str) -> DS2438Reading | None:
         """Read values from a DS2438 device."""
 
         bus = self._get_onewire_bus(device_id)
         if not bus:
             return None
 
-        if self.lock:
-            async with self.lock:
-                return await self.hass.async_add_executor_job(
-                    bus.ds2438.get_reading, device_id, bus.get_interval(device_id)
-                )
-
-        return await self.hass.async_add_executor_job(bus.ds2438.get_reading, device_id, bus.get_interval(device_id))
+        async with self.lock:
+            return await self.hass.async_add_executor_job(
+                bus.ds2438.get_reading, device_id, bus.get_interval(device_id)
+            )
 
     async def read_ds2413_state(self, device_id: str, channel: int, *, invert: bool = True) -> bool | None:
         """Read a binary state from a DS2413 channel."""
@@ -340,12 +332,8 @@ class CasaITApi:
             return None
 
         read_job = partial(bus.read_binary_state, device_id, channel, invert=invert)
-
-        if self.lock:
-            async with self.lock:
-                return await self.hass.async_add_executor_job(read_job)
-
-        return await self.hass.async_add_executor_job(read_job)
+        async with self.lock:
+            return await self.hass.async_add_executor_job(read_job)
 
     async def write_ds2413_state(self, device_id: str, channel: int, value: bool) -> bool:
         """Write a binary state to a DS2413 channel."""
@@ -365,12 +353,8 @@ class CasaITApi:
             return None
 
         read_job = partial(bus.read_led_config, device_id, use_cache)
-
-        if self.lock:
-            async with self.lock:
-                return await self.hass.async_add_executor_job(read_job)
-
-        return await self.hass.async_add_executor_job(read_job)
+        async with self.lock:
+            return await self.hass.async_add_executor_job(read_job)
 
     async def write_led_config(self, device_id: str, config: LEDConfig) -> bool:
         """Write an LED controller configuration for a device."""
@@ -380,9 +364,5 @@ class CasaITApi:
             return False
 
         write_job = partial(bus.write_led_config, device_id, config)
-
-        if self.lock:
-            async with self.lock:
-                return await self.hass.async_add_executor_job(write_job)
-
-        return await self.hass.async_add_executor_job(write_job)
+        async with self.lock:
+            return await self.hass.async_add_executor_job(write_job)

@@ -27,6 +27,7 @@
         "abort": {
             "integration_not_ready": "Integration is not ready yet",
             "no_dm117_found": "No DM117 modules found",
+            "no_om117_found": "No OM117 modules found",
             "no_onewire_found": "No OneWire devices found"
         },
         "step": {

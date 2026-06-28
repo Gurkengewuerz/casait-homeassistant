@@ -96,6 +96,7 @@
     "abort": {
       "integration_not_ready": "Integration noch nicht bereit",
       "no_dm117_found": "Keine DM117 Module gefunden",
+      "no_om117_found": "Keine OM117 Module gefunden",
       "no_onewire_found": "Keine OneWire Geräte gefunden"
     }
   }

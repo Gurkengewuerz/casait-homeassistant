@@ -17,6 +17,7 @@ from . import CasaITConfigEntry
 from .api import CasaITApi
 from .const import DOMAIN, I2C_ADDR_RANGES, OM117_MODE_BLIND, PCF8574_MAPPED_PORTS, SIGNAL_STATE_UPDATED
 from .helpers import (
+    build_onewire_device_info,
     default_onewire_profile,
     get_configured_onewire_profiles,
     get_dm117_port_configuration,
@@ -25,6 +26,8 @@ from .helpers import (
 from .services.i2cClasses.dm117 import DeviceType, DM117PortConfig, PortConfig
 
 _LOGGER = logging.getLogger(__name__)
+
+PARALLEL_UPDATES = 1
 
 
 async def async_setup_entry(
@@ -37,7 +40,9 @@ async def async_setup_entry(
 
     await api.async_wait_initialized()
 
-    output_range = next((start, end) for start, end, name, model in I2C_ADDR_RANGES if "OM117" in model)
+    output_range = next(((start, end) for start, end, name, model in I2C_ADDR_RANGES if "OM117" in model), None)
+    if output_range is None:
+        return
 
     pcf_entities: list[SwitchEntity] = []
     om_config = get_om117_pair_configuration(config_entry.options)
@@ -166,15 +171,7 @@ class CasaITDM117Switch(SwitchEntity):
         port: int,
         channel: int,
     ) -> None:
-        """Initialize the DM117 switch.
-
-        Args:
-            coordinator: The data coordinator for casaIT.
-            config_entry: The configuration entry for this entity.
-            address: The I2C address of the DM117 module.
-            port: The port number on the DM117 module (0-7).
-            channel: The channel number on the DM117 port (0 for Port A, 1 for Port B).
-        """
+        """Initialize the DM117 switch."""
         self._api = api
         self._address = address
         self._port = port
@@ -273,7 +270,7 @@ class CasaITDS2413Switch(SwitchEntity):
         channel_name = "A" if channel == 0 else "B"
         self._attr_unique_id = f"{device_id}_channel_{channel}_output"
         self._attr_name = f"{device_id} channel {channel_name} output"
-        self._attr_device_info = _build_onewire_device_info(device_id, meta)
+        self._attr_device_info = build_onewire_device_info(device_id, meta)
 
     async def async_update(self) -> None:
         """Poll current DS2413 output state."""
@@ -300,24 +297,3 @@ class CasaITDS2413Switch(SwitchEntity):
             raise HomeAssistantError("Unable to set DS2413 output state")
         self._attr_is_on = state
         self.async_write_ha_state()
-
-
-def _build_onewire_device_info(device_id: str, meta: dict[str, Any]) -> DeviceInfo:
-    """Return DeviceInfo referencing the SM117 bus for OneWire devices."""
-
-    bus_address = meta.get("bus_address")
-    device_type = str(meta.get("device_type") or "").strip()
-    if bus_address is not None:
-        return DeviceInfo(
-            identifiers={(DOMAIN, f"sm117_{bus_address:02x}")},
-            name=f"SM117 Bus 0x{int(bus_address):02X}",
-            manufacturer="CasaIT",
-            model="SM117 1-Wire bridge",
-        )
-
-    return DeviceInfo(
-        identifiers={(DOMAIN, f"onewire_{device_id}")},
-        name=f"OneWire {device_id}",
-        model=device_type or "OneWire",
-        manufacturer="Maxim Integrated",
-    )

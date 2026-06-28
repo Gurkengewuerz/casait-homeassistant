@@ -17,6 +17,8 @@ References:
 - Datasheet: https://www.analog.com/media/en/technical-documentation/data-sheets/ds28e17.pdf
 """
 
+from __future__ import annotations
+
 import logging
 import time
 
@@ -34,24 +36,11 @@ class DS28E17:
     CMD_WRITE_CONFIG = 0xD2  # Write configuration
 
     def __init__(self, bus_interface) -> None:
-        """Initialize DS28E17 instance.
-
-        Args:
-            bus_interface: Interface to 1-Wire bus (must support select_device() and other low-level operations)
-        """
+        """Initialize DS28E17 instance."""
         self.bus = bus_interface
 
     def write_data(self, device_id: str, address: int, data: bytes) -> bool:
-        """Write data to I2C device through bridge.
-
-        Args:
-            device_id: ROM ID of DS28E17 device
-            address: I2C device address (7-bit)
-            data: Data bytes to write
-
-        Returns:
-            bool: True if write successful
-        """
+        """Write data to I2C device through bridge."""
         # Basic validation
         if not 1 <= len(data) <= 255:
             _LOGGER.error("Invalid data length: %s", len(data))
@@ -118,16 +107,7 @@ class DS28E17:
         return status == 0
 
     def read_data(self, device_id: str, address: int, num_bytes: int) -> bytes | None:
-        """Read data from I2C device through bridge.
-
-        Args:
-            device_id: ROM ID of DS28E17 device
-            address: I2C device address (7-bit)
-            num_bytes: Number of bytes to read
-
-        Returns:
-            bytes: Read data if successful, None on error
-        """
+        """Read data from I2C device through bridge."""
         # Basic validation
         if not 1 <= num_bytes <= 255:
             _LOGGER.error("Invalid number of bytes: %s", num_bytes)
@@ -150,12 +130,6 @@ class DS28E17:
         packet += bytes([crc & 0xFF, crc >> 8])
 
         _LOGGER.debug("Reading I2C packet - command: %s", " ".join(f"{x:02X}" for x in packet))
-
-        _LOGGER.debug("Selecting device %s", device_id)
-        # Select device and write command packet
-        if not self.bus.select_device(device_id):
-            _LOGGER.error("Failed to select device %s", device_id)
-            return None
 
         if not self.bus.bridge.wire_reset():
             _LOGGER.error("Failed to reset bus")

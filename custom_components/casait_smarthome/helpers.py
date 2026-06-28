@@ -7,11 +7,14 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from homeassistant.helpers.device_registry import DeviceInfo
+
 from .const import (
     DEFAULT_BLIND_CLOSE_TIME,
     DEFAULT_BLIND_OPEN_TIME,
     DEFAULT_BLIND_OVERRUN_TIME,
     DEFAULT_OW_PROFILE,
+    DOMAIN,
     OM117_MODE_BLIND,
     OM117_MODE_SWITCH,
 )
@@ -154,3 +157,24 @@ def default_onewire_profile(meta: Mapping[str, Any]) -> str | None:
     if family_code is None:
         return None
     return DEFAULT_OW_PROFILE.get(family_code)
+
+
+def build_onewire_device_info(device_id: str, meta: Mapping[str, Any]) -> DeviceInfo:
+    """Return DeviceInfo referencing the SM117 bus for OneWire devices."""
+
+    bus_address = meta.get("bus_address")
+    device_type = str(meta.get("device_type") or "").strip()
+    if bus_address is not None:
+        return DeviceInfo(
+            identifiers={(DOMAIN, f"sm117_{bus_address:02x}")},
+            name=f"SM117 Bus 0x{int(bus_address):02X}",
+            manufacturer="CasaIT",
+            model="SM117 1-Wire bridge",
+        )
+
+    return DeviceInfo(
+        identifiers={(DOMAIN, f"onewire_{device_id}")},
+        name=f"OneWire {device_id}",
+        model=device_type or "OneWire",
+        manufacturer="Maxim Integrated",
+    )

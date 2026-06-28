@@ -6,6 +6,7 @@
   ],
   "config_flow": true,
   "documentation": "https://github.com/Gurkengewuerz/casait-has",
+  "homeassistant": "2025.1.0",
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/Gurkengewuerz/casait-has/issues",
   "quality_scale": "bronze",

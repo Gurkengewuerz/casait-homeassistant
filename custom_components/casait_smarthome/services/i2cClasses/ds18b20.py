@@ -29,6 +29,8 @@ References:
 - Datasheet: https://datasheets.maximintegrated.com/en/ds/DS18B20.pdf
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from enum import Enum, auto
 import logging

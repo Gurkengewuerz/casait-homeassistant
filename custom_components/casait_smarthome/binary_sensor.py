@@ -15,10 +15,17 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from . import CasaITConfigEntry
 from .api import CasaITApi
 from .const import DOMAIN, I2C_ADDR_RANGES, PCF8574_MAPPED_PORTS, SIGNAL_STATE_UPDATED
-from .helpers import default_onewire_profile, get_configured_onewire_profiles, get_dm117_port_configuration
+from .helpers import (
+    build_onewire_device_info,
+    default_onewire_profile,
+    get_configured_onewire_profiles,
+    get_dm117_port_configuration,
+)
 from .services.i2cClasses.dm117 import DeviceType, PortConfig
 
 _LOGGER = logging.getLogger(__name__)
+
+PARALLEL_UPDATES = 1
 
 
 async def async_setup_entry(
@@ -31,7 +38,9 @@ async def async_setup_entry(
 
     await api.async_wait_initialized()
 
-    input_range = next((start, end) for start, end, name, model in I2C_ADDR_RANGES if "IM117" in model)
+    input_range = next(((start, end) for start, end, name, model in I2C_ADDR_RANGES if "IM117" in model), None)
+    if input_range is None:
+        return
 
     pcf_entities = [
         CasaITBinarySensor(api, addr, port)
@@ -204,7 +213,7 @@ class CasaITDS2413BinarySensor(BinarySensorEntity):
         channel_name = "A" if channel == 0 else "B"
         self._attr_unique_id = f"{device_id}_channel_{channel}_input"
         self._attr_name = f"{device_id} channel {channel_name} input"
-        self._attr_device_info = _build_onewire_device_info(device_id, meta)
+        self._attr_device_info = build_onewire_device_info(device_id, meta)
 
     async def async_update(self) -> None:
         """Poll the DS2413 input state."""
@@ -215,24 +224,3 @@ class CasaITDS2413BinarySensor(BinarySensorEntity):
             return
         self._attr_is_on = state
         self._attr_available = True
-
-
-def _build_onewire_device_info(device_id: str, meta: dict[str, Any]) -> DeviceInfo:
-    """Return DeviceInfo referencing the SM117 bus for OneWire devices."""
-
-    bus_address = meta.get("bus_address")
-    device_type = str(meta.get("device_type") or "").strip()
-    if bus_address is not None:
-        return DeviceInfo(
-            identifiers={(DOMAIN, f"sm117_{bus_address:02x}")},
-            name=f"SM117 Bus 0x{int(bus_address):02X}",
-            manufacturer="CasaIT",
-            model="SM117 1-Wire bridge",
-        )
-
-    return DeviceInfo(
-        identifiers={(DOMAIN, f"onewire_{device_id}")},
-        name=f"OneWire {device_id}",
-        model=device_type or "OneWire",
-        manufacturer="Maxim Integrated",
-    )

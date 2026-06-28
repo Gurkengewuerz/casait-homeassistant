@@ -30,6 +30,8 @@ References:
 - Datasheet: https://datasheets.maximintegrated.com/en/ds/DS2413.pdf
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from enum import Enum, auto
 import logging

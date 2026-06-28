@@ -49,12 +49,7 @@ class OneWireBus:
     REG_COLORS = 5  # Colors start from this address (3 bytes per color)
 
     def __init__(self, bus, bridge_address: int) -> None:
-        """Initialize 1-Wire bus with DS2482 bridge.
-
-        Args:
-            bus: I2C bus interface (e.g. smbus2.SMBus instance)
-            bridge_address: I2C address of the DS2482 bridge
-        """
+        """Initialize 1-Wire bus with DS2482 bridge."""
         _LOGGER.info(
             "Initializing 1-Wire bus with DS2482 at address %02x",
             bridge_address,
@@ -270,15 +265,7 @@ class OneWireBus:
             return None
 
     def read_voltage(self, device_id: str, port: int = 0) -> dict | None:
-        """Read voltage and temperature from DS2438.
-
-        Args:
-            device_id: ROM ID of the DS2438
-            port: Port number (0 for VAD, 1 for VSE)
-
-        Returns:
-            Dictionary containing temperature and voltage readings or None on failure
-        """
+        """Read voltage and temperature from DS2438."""
         try:
             # Get reading from DS2438 manager
             reading = self.ds2438.get_reading(device_id, self.get_interval(device_id))
@@ -312,27 +299,11 @@ class OneWireBus:
         return state
 
     def write_led_config(self, device_id: str, config: LEDConfig) -> bool:
-        """Write LED configuration to device.
-
-        Args:
-            device_id: ROM ID of the DS28E17 device
-            config: LED configuration to write
-
-        Returns:
-            bool: True if write successful
-        """
+        """Write LED configuration to device."""
         return self.led_controller.write_config(device_id, config, custom_cache=self.get_interval(device_id))
 
     def read_led_config(self, device_id: str, use_cache: bool = True) -> LEDConfig | None:
-        """Read LED configuration from device.
-
-        Args:
-            device_id: ROM ID of the DS28E17 device
-            use_cache: Whether to use cached config if available
-
-        Returns:
-            LEDConfig if successful, None on error
-        """
+        """Read LED configuration from device."""
         return self.led_controller.read_config(
             device_id, use_cache=use_cache, custom_cache=self.get_interval(device_id)
         )

@@ -17,7 +17,7 @@ MIN_INIT = 5
 class DeviceType(enum.Enum):
     """Device types supported by DM117."""
 
-    INPUT = "sinputh"
+    INPUT = "input"
     OUTPUT = "output"
     DIMMER = "dimmer"
 
@@ -49,12 +49,7 @@ class DM117:
     PORT_TYPE_OUTPUT = 2
 
     def __init__(self, bus, address: int) -> None:
-        """Initialize DM117 device.
-
-        Args:
-            bus: I2C bus instance
-            address: I2C address of device
-        """
+        """Initialize DM117 device."""
         self.bus = bus
         self.address = address
         self.port_config = {}  # Stores port type configuration
@@ -66,15 +61,7 @@ class DM117:
         self._init_counter = 0
 
     def configure_ports(self, config: dict[int, DeviceType], commit: bool = True) -> bool:
-        """Configure module ports.
-
-        Args:
-            config: Dictionary mapping port numbers to types ('input', 'output', 'dimmer')
-            commit: Whether to commit configuration
-
-        Returns:
-            bool: True if configuration successful
-        """
+        """Configure module ports."""
         if not config:
             _LOGGER.warning("No ports configured")
             return False
@@ -136,14 +123,7 @@ class DM117:
         return True
 
     def write_port(self, config: DM117PortConfig) -> bool:
-        """Write value to port.
-
-        Args:
-            config: Port configuration
-
-        Returns:
-            bool: True if write successful
-        """
+        """Write value to port."""
         try:
             port = config.port
             if port not in self.port_config:
@@ -190,19 +170,7 @@ class DM117:
         return True
 
     def read_ports(self) -> dict[int, int] | None:
-        """Read all port values.
-
-        Returns:
-            Dictionary mapping port numbers to values, or None on error
-
-        Response Format (from requestEvent in dm117.cpp):
-        - For each configured module:
-            - 1 byte: module type (0=input, 1=dac/dimmer, 2=output)
-            - Value bytes depend on type:
-                - Input/Output: 1 byte state
-                - DAC/Dimmer: 2 bytes (12-bit value)
-        - Last byte: CRC8
-        """
+        """Read all port values; returns dict of port→raw-value or None on error."""
         try:
             current_time = time.time()
             if current_time - self._last_read_time < self._read_interval:

@@ -13,7 +13,7 @@ from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, Sen
 from homeassistant.const import LIGHT_LUX, PERCENTAGE, EntityCategory, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import CasaITConfigEntry
 from .api import CasaITApi
@@ -25,6 +25,8 @@ TEMP_COMP_A = 1.0546
 TEMP_COMP_B = 0.00216
 
 _LOGGER = logging.getLogger(__name__)
+
+PARALLEL_UPDATES = 1
 
 
 @dataclass(kw_only=True, frozen=True)
@@ -139,7 +141,6 @@ class CasaITDebugSensor(SensorEntity):
 
     _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_should_poll = True
     SCAN_INTERVAL = timedelta(seconds=30)
 
     def __init__(self, api: CasaITApi, entry: CasaITConfigEntry) -> None:
@@ -222,7 +223,7 @@ def _illuminance_from_reading(reading: DS2438Reading) -> float | None:
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: CasaITConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up OneWire sensors from a config entry."""
 

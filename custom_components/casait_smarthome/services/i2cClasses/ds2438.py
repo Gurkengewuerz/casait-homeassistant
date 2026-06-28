@@ -124,11 +124,7 @@ class DS2438:
     CMD_WRITE_SCRATCHPAD = 0x4E  # Write scratchpad
 
     def __init__(self, bus_interface) -> None:
-        """Initialize DS2438 instance.
-
-        Args:
-            bus_interface: Interface to 1-Wire bus (must support select_device() and other low-level operations)
-        """
+        """Initialize DS2438 instance."""
         self.bus = bus_interface
         self._device_states: dict[str, DS2438State] = {}  # State tracking by device ID
 
@@ -139,15 +135,7 @@ class DS2438:
         return self._device_states[device_id]
 
     def get_reading(self, device_id: str, custom_cache: int | None = None) -> DS2438Reading | None:
-        """Get reading, starting new conversion cycle if needed.
-
-        Args:
-            device_id: ROM ID of DS2438 device
-            custom_cache: Override default cache timeout
-
-        Returns:
-            DS2438Reading if available (might be cached), None on error
-        """
+        """Get reading, starting a new conversion cycle if needed."""
         state = self._get_state(device_id)
 
         # Return existing reading if still valid and not in IDLE state

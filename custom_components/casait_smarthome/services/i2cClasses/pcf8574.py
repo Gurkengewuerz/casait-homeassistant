@@ -1,10 +1,11 @@
 """PCF8574 I2C I/O expander implementation for CasaIT Smart Home integration."""
 
+from __future__ import annotations
+
 import logging
 import time
-import traceback
 
-logger = logging.getLogger(__name__)
+_LOGGER = logging.getLogger(__name__)
 
 MIN_INIT = 5
 
@@ -57,9 +58,8 @@ class PCF8574:
 
             if self._init_counter < MIN_INIT:
                 self._init_counter += 1
-        except OSError as ex:
-            logger.error("PCF8574 read error: %s", ex)
-            logger.error(traceback.format_exc())
+        except OSError:
+            _LOGGER.exception("PCF8574 read error at 0x%02X", self.address)
             return self.port_states, self.last_value
         return self.port_states, value
 
@@ -72,7 +72,7 @@ class PCF8574:
             # Ensure we have a valid last_value before doing bit operations.
             # If last_value is invalid (-1 or out of range), read current state first.
             if not 0 <= self.last_value <= 255:
-                logger.debug(
+                _LOGGER.debug(
                     "PCF8574 0x%02X: last_value invalid (%s), reading current state",
                     self.address,
                     self.last_value,
@@ -80,7 +80,7 @@ class PCF8574:
                 self.bus.write_byte(self.address, 0xFF)
                 time.sleep(0.002)
                 self.last_value = self.bus.read_byte(self.address)
-                logger.debug(
+                _LOGGER.debug(
                     "PCF8574 0x%02X: read current state = 0x%02X",
                     self.address,
                     self.last_value,
@@ -104,7 +104,7 @@ class PCF8574:
                 time.sleep(settle_time)
                 read_value = self.bus.read_byte(self.address)
                 if read_value != new_value:
-                    logger.warning(
+                    _LOGGER.warning(
                         "PCF8574 write verification failed: expected 0x%02X, got 0x%02X",
                         new_value,
                         read_value,
@@ -114,9 +114,8 @@ class PCF8574:
             self.last_value = new_value
             self.port_states[port] = state
 
-        except OSError as ex:
-            logger.error("PCF8574 write error: %s", ex)
-            logger.error(traceback.format_exc())
+        except OSError:
+            _LOGGER.exception("PCF8574 write error at 0x%02X port %s", self.address, port)
             return False
         return True
 

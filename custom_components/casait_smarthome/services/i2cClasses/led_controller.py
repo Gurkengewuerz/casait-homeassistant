@@ -117,11 +117,7 @@ class LEDController:
     REG_COLORS = 0x05  # Colors start here (3 bytes per color)
 
     def __init__(self, bus_interface) -> None:
-        """Initialize LED Controller.
-
-        Args:
-            bus_interface: Interface to 1-Wire bus.
-        """
+        """Initialize LED Controller."""
 
         self.bridge = DS28E17(bus_interface)
         self.bus = bus_interface

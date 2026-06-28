@@ -17,6 +17,7 @@ from . import CasaITConfigEntry
 from .api import CasaITApi
 from .const import DEFAULT_LED_COUNT, DOMAIN, SIGNAL_STATE_UPDATED
 from .helpers import (
+    build_onewire_device_info,
     default_onewire_profile,
     get_configured_led_counts,
     get_configured_onewire_profiles,
@@ -24,6 +25,8 @@ from .helpers import (
 )
 from .services.i2cClasses.dm117 import DeviceType, DimmerConfig, DM117PortConfig
 from .services.i2cClasses.led_controller import AnimationMode, Color, LEDConfig
+
+PARALLEL_UPDATES = 1
 
 ANIMATION_EFFECTS = {
     AnimationMode.STATIC: "Static",
@@ -89,14 +92,7 @@ class CasaITDM117Light(LightEntity):
         address: int,
         port: int,
     ) -> None:
-        """Initialize the light entity.
-
-        Args:
-            coordinator: The data coordinator for casaIT.
-            config_entry: The configuration entry for this entity.
-            address: The I2C address of the DM117 module.
-            port: The port number on the DM117 module (0-7).
-        """
+        """Initialize the light entity."""
         self._api = api
         self._address = address
         self._port = port
@@ -199,7 +195,7 @@ class CasaITLEDControllerLight(LightEntity):
         self._attr_effect_list = list(ANIMATION_EFFECTS.values())
         self._attr_unique_id = f"{device_id}_led_controller"
         self._attr_name = f"{device_id} LED controller"
-        self._attr_device_info = _build_onewire_device_info(device_id, meta)
+        self._attr_device_info = build_onewire_device_info(device_id, meta)
         self._attr_assumed_state = True
 
     @property
@@ -332,24 +328,3 @@ class CasaITLEDControllerLight(LightEntity):
 
         self._led_count = config.led_count or self._led_count
         self._apply_config(config, from_read=False)
-
-
-def _build_onewire_device_info(device_id: str, meta: dict[str, Any]) -> DeviceInfo:
-    """Return DeviceInfo referencing the SM117 bus for OneWire devices."""
-
-    bus_address = meta.get("bus_address")
-    device_type = str(meta.get("device_type") or "").strip()
-    if bus_address is not None:
-        return DeviceInfo(
-            identifiers={(DOMAIN, f"sm117_{bus_address:02x}")},
-            name=f"SM117 Bus 0x{int(bus_address):02X}",
-            manufacturer="CasaIT",
-            model="SM117 1-Wire bridge",
-        )
-
-    return DeviceInfo(
-        identifiers={(DOMAIN, f"onewire_{device_id}")},
-        name=f"OneWire {device_id}",
-        model=device_type or "OneWire",
-        manufacturer="Maxim Integrated",
-    )
