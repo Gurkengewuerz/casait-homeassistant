@@ -3,18 +3,27 @@
     "step": {
       "user": {
         "data": {
-          "host": "[%key:common::config_flow::data::host%]",
-          "port": "[%key:common::config_flow::data::port%]",
+          "host": "Host",
+          "port": "Port",
+          "timeout": "Timeout"
+        }
+      },
+      "zeroconf_confirm": {
+        "title": "Confirm discovered casaIT bridge",
+        "description": "Set up the discovered bridge at {host}.",
+        "data": {
+          "host": "Host",
+          "port": "Port",
           "timeout": "Timeout"
         }
       }
     },
     "error": {
-      "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
-      "unknown": "[%key:common::config_flow::error::unknown%]"
+      "cannot_connect": "Failed to connect",
+      "unknown": "Unexpected error"
     },
     "abort": {
-      "already_configured": "[%key:common::config_flow::abort::already_configured_device%]"
+      "already_configured": "Device is already configured"
     }
   },
   "entity": {
@@ -54,48 +63,48 @@
   "options": {
     "step": {
       "init": {
-        "title": "casaIT Konfiguration",
+        "title": "casaIT configuration",
         "menu_options": {
-          "om117_select": "OM117 Module konfigurieren",
-          "dm117_select": "DM117 Module konfigurieren",
-          "onewire_select": "OneWire Geräte konfigurieren"
+          "om117_select": "Configure OM117 modules",
+          "dm117_select": "Configure DM117 modules",
+          "onewire_select": "Configure OneWire devices"
         }
       },
       "om117_select": {
-        "title": "OM117 Modul auswählen",
+        "title": "Select OM117 module",
         "data": {
-          "selected_module": "Modul"
+          "selected_module": "Module"
         }
       },
       "om117_config": {
-        "title": "OM117 Modul konfigurieren: {module_name}",
+        "title": "Configure OM117 module: {module_name}",
         "data": {
-          "pair_1_mode": "Paar 1 Modus",
-          "pair_1_open_time": "Paar 1 Öffnungszeit (s)",
-          "pair_1_close_time": "Paar 1 Schließzeit (s)",
-          "pair_1_overrun_time": "Paar 1 Nachlauf (s)",
-          "pair_2_mode": "Paar 2 Modus",
-          "pair_2_open_time": "Paar 2 Öffnungszeit (s)",
-          "pair_2_close_time": "Paar 2 Schließzeit (s)",
-          "pair_2_overrun_time": "Paar 2 Nachlauf (s)",
-          "pair_3_mode": "Paar 3 Modus",
-          "pair_3_open_time": "Paar 3 Öffnungszeit (s)",
-          "pair_3_close_time": "Paar 3 Schließzeit (s)",
-          "pair_3_overrun_time": "Paar 3 Nachlauf (s)",
-          "pair_4_mode": "Paar 4 Modus",
-          "pair_4_open_time": "Paar 4 Öffnungszeit (s)",
-          "pair_4_close_time": "Paar 4 Schließzeit (s)",
-          "pair_4_overrun_time": "Paar 4 Nachlauf (s)"
+          "pair_1_mode": "Pair 1 mode",
+          "pair_1_open_time": "Pair 1 open time (s)",
+          "pair_1_close_time": "Pair 1 close time (s)",
+          "pair_1_overrun_time": "Pair 1 overrun (s)",
+          "pair_2_mode": "Pair 2 mode",
+          "pair_2_open_time": "Pair 2 open time (s)",
+          "pair_2_close_time": "Pair 2 close time (s)",
+          "pair_2_overrun_time": "Pair 2 overrun (s)",
+          "pair_3_mode": "Pair 3 mode",
+          "pair_3_open_time": "Pair 3 open time (s)",
+          "pair_3_close_time": "Pair 3 close time (s)",
+          "pair_3_overrun_time": "Pair 3 overrun (s)",
+          "pair_4_mode": "Pair 4 mode",
+          "pair_4_open_time": "Pair 4 open time (s)",
+          "pair_4_close_time": "Pair 4 close time (s)",
+          "pair_4_overrun_time": "Pair 4 overrun (s)"
         }
       },
       "dm117_select": {
-        "title": "DM117 Modul auswählen",
+        "title": "Select DM117 module",
         "data": {
-          "selected_module": "Modul"
+          "selected_module": "Module"
         }
       },
       "dm117_config": {
-        "title": "DM117 Modul konfigurieren: {module_name}",
+        "title": "Configure DM117 module: {module_name}",
         "data": {
           "slot_1": "Slot 1",
           "slot_2": "Slot 2",
@@ -108,24 +117,25 @@
         }
       },
       "onewire_select": {
-        "title": "OneWire Gerät auswählen",
+        "title": "Select OneWire device",
         "data": {
-          "selected_device": "Gerät"
+          "selected_device": "Device"
         }
       },
       "onewire_config": {
-        "title": "OneWire Profil zuweisen: {device_id}",
+        "title": "Assign OneWire profile: {device_id}",
         "data": {
-          "profile": "Profil",
-          "led_count": "Anzahl LEDs"
+          "profile": "Profile",
+          "led_count": "LED count",
+          "poll_interval": "Polling interval (s)"
         }
       }
     },
     "abort": {
-      "integration_not_ready": "Integration noch nicht bereit",
-      "no_dm117_found": "Keine DM117 Module gefunden",
-      "no_om117_found": "Keine OM117 Module gefunden",
-      "no_onewire_found": "Keine OneWire Geräte gefunden"
+      "integration_not_ready": "Integration is not ready yet",
+      "no_dm117_found": "No DM117 modules found",
+      "no_om117_found": "No OM117 modules found",
+      "no_onewire_found": "No OneWire devices found"
     }
   }
 }

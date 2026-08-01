@@ -140,13 +140,7 @@ class CasaITDebugSensor(SensorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return detailed discovery information."""
 
-        return {
-            "found_i2c_devices": {
-                code: [f"0x{address:02X}" for address in sorted(addresses)]
-                for code, addresses in self._api.found_i2c_devices.items()
-            },
-            "found_onewire_devices": sorted(self._api.ow_ids),
-        }
+        return self._api.diagnostic_data
 
     async def async_update(self) -> None:
         """Update the debug sensor state."""

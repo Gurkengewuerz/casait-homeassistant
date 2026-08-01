@@ -1,0 +1,141 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "timeout": "Zeitüberschreitung"
+        }
+      },
+      "zeroconf_confirm": {
+        "title": "Gefundene casaIT-Bridge bestätigen",
+        "description": "Die gefundene Bridge unter {host} einrichten.",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "timeout": "Zeitüberschreitung"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Verbindung fehlgeschlagen",
+      "unknown": "Unerwarteter Fehler"
+    },
+    "abort": {
+      "already_configured": "Gerät ist bereits konfiguriert"
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "ds2413_input": {
+        "name": "Kanal {channel} Eingang"
+      }
+    },
+    "switch": {
+      "ds2413_output": {
+        "name": "Kanal {channel} Ausgang"
+      }
+    },
+    "light": {
+      "led_controller": {
+        "name": "LED-Controller"
+      }
+    },
+    "sensor": {
+      "temperature": {
+        "name": "Temperatur"
+      },
+      "humidity": {
+        "name": "Luftfeuchtigkeit"
+      },
+      "illuminance": {
+        "name": "Beleuchtungsstärke"
+      }
+    }
+  },
+  "services": {
+    "scan_devices": {
+      "name": "Geräte suchen",
+      "description": "Durchsucht den verbundenen I2C-Bus nach kompatiblen Geräten."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "casaIT-Konfiguration",
+        "menu_options": {
+          "om117_select": "OM117-Module konfigurieren",
+          "dm117_select": "DM117-Module konfigurieren",
+          "onewire_select": "OneWire-Geräte konfigurieren"
+        }
+      },
+      "om117_select": {
+        "title": "OM117-Modul auswählen",
+        "data": {
+          "selected_module": "Modul"
+        }
+      },
+      "om117_config": {
+        "title": "OM117-Modul konfigurieren: {module_name}",
+        "data": {
+          "pair_1_mode": "Paar 1 Modus",
+          "pair_1_open_time": "Paar 1 Öffnungszeit (s)",
+          "pair_1_close_time": "Paar 1 Schließzeit (s)",
+          "pair_1_overrun_time": "Paar 1 Nachlauf (s)",
+          "pair_2_mode": "Paar 2 Modus",
+          "pair_2_open_time": "Paar 2 Öffnungszeit (s)",
+          "pair_2_close_time": "Paar 2 Schließzeit (s)",
+          "pair_2_overrun_time": "Paar 2 Nachlauf (s)",
+          "pair_3_mode": "Paar 3 Modus",
+          "pair_3_open_time": "Paar 3 Öffnungszeit (s)",
+          "pair_3_close_time": "Paar 3 Schließzeit (s)",
+          "pair_3_overrun_time": "Paar 3 Nachlauf (s)",
+          "pair_4_mode": "Paar 4 Modus",
+          "pair_4_open_time": "Paar 4 Öffnungszeit (s)",
+          "pair_4_close_time": "Paar 4 Schließzeit (s)",
+          "pair_4_overrun_time": "Paar 4 Nachlauf (s)"
+        }
+      },
+      "dm117_select": {
+        "title": "DM117-Modul auswählen",
+        "data": {
+          "selected_module": "Modul"
+        }
+      },
+      "dm117_config": {
+        "title": "DM117-Modul konfigurieren: {module_name}",
+        "data": {
+          "slot_1": "Slot 1",
+          "slot_2": "Slot 2",
+          "slot_3": "Slot 3",
+          "slot_4": "Slot 4",
+          "slot_5": "Slot 5",
+          "slot_6": "Slot 6",
+          "slot_7": "Slot 7",
+          "slot_8": "Slot 8"
+        }
+      },
+      "onewire_select": {
+        "title": "OneWire-Gerät auswählen",
+        "data": {
+          "selected_device": "Gerät"
+        }
+      },
+      "onewire_config": {
+        "title": "OneWire-Profil zuweisen: {device_id}",
+        "data": {
+          "profile": "Profil",
+          "led_count": "Anzahl LEDs",
+          "poll_interval": "Abfrageintervall (s)"
+        }
+      }
+    },
+    "abort": {
+      "integration_not_ready": "Integration ist noch nicht bereit",
+      "no_dm117_found": "Keine DM117-Module gefunden",
+      "no_om117_found": "Keine OM117-Module gefunden",
+      "no_onewire_found": "Keine OneWire-Geräte gefunden"
+    }
+  }
+}

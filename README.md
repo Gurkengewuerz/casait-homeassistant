@@ -51,8 +51,8 @@ Configuration is done via the Home Assistant UI (Integrations page). No YAML set
 2. Search for `casaIT : Smart Home`
 3. Enter the SMBus proxy details:
    - **Host:** IP address of the SMBus proxy server
-   - **Port:** Communication port (default: 1337)
-   - **Timeout:** Connection timeout in seconds (default: 5.0)
+   - **Port:** Communication port (default: 8555)
+   - **Timeout:** Connection timeout in seconds (default: 2.0)
 4. Click Submit
 
 ### Configuration Options
@@ -66,11 +66,12 @@ After setup, configure device-specific settings:
    - **Blind overrun time:** Extra movement time for blind calibration
    - **LED count:** Number of LEDs for DS28E17 LED controllers
    - **1-Wire profiles:** Configure which 1-Wire sensors are connected
+   - **1-Wire polling interval:** Override the profile default between 1 and 3600 seconds
 
 ### Automatic Discovery
 
 If your SMBus proxy supports Zeroconf (mDNS), the integration can auto-discover it:
-- Look for `_casaithome._tcp.local.` service announcements
+- Look for `casaithome._http._tcp.local.` service announcements
 - Simplifies setup without manual host entry
 
 ## Development

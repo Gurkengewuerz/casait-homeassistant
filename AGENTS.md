@@ -182,59 +182,54 @@ This integration uses the following identifiers consistently:
 
 - **Domain:** `casait_smarthome`
 - **Title:** casaIT : Smart Home
-- **Class prefix:** `CasaITSmartHome`
+- **Class prefix:** `CasaIT`
 
 **When creating new files:**
 
 - Use the domain `casait_smarthome` for all DOMAIN references
-- Prefix all integration-specific classes with `CasaITSmartHome`
+- Prefix integration-specific classes with `CasaIT`
 - Use "casaIT : Smart Home" as the display title
 - Never hardcode different values
 
 ### Integration Structure
 
-**Package organization (DO NOT create other packages):**
+**Current package organization:**
 
-- `api/` - API client and exceptions
-- `coordinator/` - Data update coordinator
-- `config_flow_handler/` - Config flow, options, validators, schemas
-  - `validators/*.py` - Config flow validation functions
-  - `schemas/*.py` - Data schemas for config flow steps
-- `entity/` - Base entity classes
-- `entity_utils/` - Entity-specific helpers (device_info, state formatting)
-- `[platform]/` - Entity platforms (sensor, switch, etc.)
-- `service_actions/` - Service action implementations
-- `utils/` - Integration-wide utilities (string helpers, general validators)
+- `api.py` - integration API, discovery, shared polling loop, state caches, and serialized writes
+- `config_flow.py` - config flow and options flow
+- `helpers.py` - option parsers and shared device-info helpers
+- `binary_sensor.py`, `cover.py`, `light.py`, `sensor.py`, `switch.py` - entity platforms
+- `services/smbus_proxy.py` - TCP bridge client
+- `services/i2cClasses/` - synchronous I2C and 1-Wire hardware drivers
+- `diagnostics.py` - redacted config-entry diagnostics
 
 **Do NOT create:**
 
-- `helpers/`, `ha_helpers/`, or similar packages - use `utils/` or `entity_utils/` instead
-- `common/`, `shared/`, `lib/` - use existing packages above
+- `coordinator/` - the integration uses a free-running dispatcher-based poll loop, not a `DataUpdateCoordinator`
+- `helpers/`, `ha_helpers/`, `common/`, `shared/`, or `lib/` packages - use the existing flat modules
 - New top-level packages without explicit approval
 
 **Key patterns:**
 
-- Entities → Coordinator → API Client (never skip layers)
-- Each platform in own directory with `__init__.py`
-- One entity class per file for clarity
-- Individual entity classes in separate files (e.g., `air_quality.py`)
+- Entities → `CasaITApi` → synchronous hardware drivers (never skip the API layer)
+- Dispatcher-driven entities read API state caches; polling entities call async API methods
+- Hardware drivers never own Home Assistant entities or access `hass`
+- Keep the existing flat platform modules unless an approved refactor changes the architecture
 - Use `EntityDescription` dataclasses for static entity metadata
 
 **Code organization principles:**
 
 - Keep files focused (200-400 lines per file)
-- One class per file for entity implementations
 - Split large modules into smaller ones when needed
 
 **For detailed patterns, see:**
 
 - `.github/instructions/entities.instructions.md` - Entity platform patterns
-- `.github/instructions/coordinator.instructions.md` - Coordinator implementation
 - `.github/instructions/api.instructions.md` - API client patterns
 
 ### Device Info
 
-All entities should provide consistent device info via the base entity class (manufacturer, model, serial number, configuration URL, firmware version).
+All entities should provide consistent device info. I2C modules are devices; each 1-Wire chip is a child device linked through its SM117 bus.
 
 ### Integration Manifest
 
@@ -321,24 +316,21 @@ See `.github/instructions/config_flow.instructions.md` for comprehensive pattern
 **Service actions:**
 
 - Define in `services.yaml` with full descriptions (legacy filename)
-- Implement handlers in `service_actions/` directory
+- Implement simple integration-wide handlers in `async_setup()`; introduce a separate module only when complexity warrants it
 - **Register in `async_setup()`** - NOT in `async_setup_entry()` (Quality Scale!)
 - Format: `<integration_domain>.<action_name>`
 
-See `.github/instructions/service_actions.instructions.md` for service patterns.
+**Polling and API:**
 
-**Coordinator:**
-
-- Entities → Coordinator → API Client (never skip layers)
-- Raise `ConfigEntryAuthFailed` (triggers reauth) or `UpdateFailed` (retry)
-- Use `async_config_entry_first_refresh()` for first update
-
-See `.github/instructions/coordinator.instructions.md` and `.github/instructions/api.instructions.md` for details.
+- The integration intentionally uses a free-running 2 ms API poll loop with entry-scoped dispatcher signals
+- Acquire the private hardware lock for one device transaction at a time so 1-Wire calls receive bus time
+- Entities call async `CasaITApi` methods and never access driver objects or the hardware lock directly
+- Do not introduce a `DataUpdateCoordinator` unless the polling architecture itself is deliberately replaced
 
 **Entities:**
 
-- Inherit from platform base + `CasaITSmartHomeEntity`
-- Read from `coordinator.data`, never call API directly
+- Inherit from the Home Assistant platform entity base
+- Read shared I2C state from `CasaITApi` caches or call its async 1-Wire methods
 - Use `EntityDescription` for static metadata
 
 See `.github/instructions/entities.instructions.md` for entity patterns.
@@ -355,13 +347,13 @@ See `.github/instructions/repairs.instructions.md` for comprehensive patterns.
 **Entity availability:**
 
 - Set `_attr_available = False` when device is unreachable
-- Update availability based on coordinator success/failure
+- Update availability based on API state presence or the result of the entity's API read
 - Don't raise exceptions from `@property` methods
 
 **State updates:**
 
 - Use `self.async_write_ha_state()` for immediate updates
-- Let coordinator handle periodic updates
+- Let the API poll loop handle I2C updates and Home Assistant platform polling handle 1-Wire entities
 - Minimize API calls (batch requests when possible)
 
 **Setup failure handling:**
@@ -454,7 +446,7 @@ See `.github/instructions/python.instructions.md` for linter overrides and error
 **Test structure:**
 
 - `tests/` mirrors `custom_components/casait_smarthome/` structure
-- Use fixtures for common setup (Home Assistant mock, coordinator, etc.)
+- Use fixtures for common setup (Home Assistant mock, API, bus, etc.)
 - Mock external API calls
 
 **Running tests:**
@@ -504,7 +496,7 @@ See `.github/instructions/tests.instructions.md` for comprehensive testing patte
 
 - Implement completely even if it spans 5-8 files
 - Example: New sensor needs entity class + platform init + code → implement all together
-- Example: Bug fix requires changes in coordinator + entity + error handling → do all at once
+- Example: Bug fix requires changes in API + entity + error handling → do all at once
 
 **Multiple independent features:**
 

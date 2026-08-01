@@ -1,131 +1,141 @@
 {
-    "config": {
-        "abort": {
-            "already_configured": "Device is already configured"
-        },
-        "error": {
-            "cannot_connect": "Failed to connect",
-            "unknown": "Unexpected error"
-        },
-        "step": {
-            "user": {
-                "data": {
-                    "host": "Host",
-                    "port": "Port",
-                    "timeout": "Timeout"
-                }
-            }
+  "config": {
+    "step": {
+      "user": {
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "timeout": "Timeout"
         }
+      },
+      "zeroconf_confirm": {
+        "title": "Confirm discovered casaIT bridge",
+        "description": "Set up the discovered bridge at {host}.",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "timeout": "Timeout"
+        }
+      }
     },
-    "entity": {
-        "binary_sensor": {
-            "ds2413_input": {
-                "name": "Channel {channel} input"
-            }
-        },
-        "switch": {
-            "ds2413_output": {
-                "name": "Channel {channel} output"
-            }
-        },
-        "light": {
-            "led_controller": {
-                "name": "LED controller"
-            }
-        },
-        "sensor": {
-            "temperature": {
-                "name": "Temperature"
-            },
-            "humidity": {
-                "name": "Humidity"
-            },
-            "illuminance": {
-                "name": "Illuminance"
-            }
-        }
+    "error": {
+      "cannot_connect": "Failed to connect",
+      "unknown": "Unexpected error"
     },
-    "services": {
-        "scan_devices": {
-            "description": "Scans the connected I2C bus for compatible devices.",
-            "name": "Scan devices"
-        }
-    },
-    "options": {
-        "abort": {
-            "integration_not_ready": "Integration is not ready yet",
-            "no_dm117_found": "No DM117 modules found",
-            "no_om117_found": "No OM117 modules found",
-            "no_onewire_found": "No OneWire devices found"
-        },
-        "step": {
-            "init": {
-                "title": "casaIT configuration",
-                "menu_options": {
-                    "om117_select": "Configure OM117 modules",
-                    "dm117_select": "Configure DM117 modules",
-                    "onewire_select": "Configure OneWire devices"
-                }
-            },
-            "om117_select": {
-                "title": "Select OM117 module",
-                "data": {
-                    "selected_module": "Module"
-                }
-            },
-            "om117_config": {
-                "title": "Configure OM117 module: {module_name}",
-                "data": {
-                    "pair_1_mode": "Pair 1 mode",
-                    "pair_1_open_time": "Pair 1 open time (s)",
-                    "pair_1_close_time": "Pair 1 close time (s)",
-                    "pair_1_overrun_time": "Pair 1 overrun (s)",
-                    "pair_2_mode": "Pair 2 mode",
-                    "pair_2_open_time": "Pair 2 open time (s)",
-                    "pair_2_close_time": "Pair 2 close time (s)",
-                    "pair_2_overrun_time": "Pair 2 overrun (s)",
-                    "pair_3_mode": "Pair 3 mode",
-                    "pair_3_open_time": "Pair 3 open time (s)",
-                    "pair_3_close_time": "Pair 3 close time (s)",
-                    "pair_3_overrun_time": "Pair 3 overrun (s)",
-                    "pair_4_mode": "Pair 4 mode",
-                    "pair_4_open_time": "Pair 4 open time (s)",
-                    "pair_4_close_time": "Pair 4 close time (s)",
-                    "pair_4_overrun_time": "Pair 4 overrun (s)"
-                }
-            },
-            "dm117_select": {
-                "title": "Select DM117 module",
-                "data": {
-                    "selected_module": "Module"
-                }
-            },
-            "dm117_config": {
-                "title": "Configure DM117 module: {module_name}",
-                "data": {
-                    "slot_1": "Slot 1",
-                    "slot_2": "Slot 2",
-                    "slot_3": "Slot 3",
-                    "slot_4": "Slot 4",
-                    "slot_5": "Slot 5",
-                    "slot_6": "Slot 6",
-                    "slot_7": "Slot 7",
-                    "slot_8": "Slot 8"
-                }
-            },
-            "onewire_select": {
-                "title": "Select OneWire device",
-                "data": {
-                    "selected_device": "Device"
-                }
-            },
-            "onewire_config": {
-                "title": "Assign OneWire profile: {device_id}",
-                "data": {
-                    "profile": "Profile",
-                    "led_count": "LED count"
-                }
-            }
-        }
+    "abort": {
+      "already_configured": "Device is already configured"
     }
+  },
+  "entity": {
+    "binary_sensor": {
+      "ds2413_input": {
+        "name": "Channel {channel} input"
+      }
+    },
+    "switch": {
+      "ds2413_output": {
+        "name": "Channel {channel} output"
+      }
+    },
+    "light": {
+      "led_controller": {
+        "name": "LED controller"
+      }
+    },
+    "sensor": {
+      "temperature": {
+        "name": "Temperature"
+      },
+      "humidity": {
+        "name": "Humidity"
+      },
+      "illuminance": {
+        "name": "Illuminance"
+      }
+    }
+  },
+  "services": {
+    "scan_devices": {
+      "name": "Scan devices",
+      "description": "Scans the connected I2C bus for compatible devices."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "casaIT configuration",
+        "menu_options": {
+          "om117_select": "Configure OM117 modules",
+          "dm117_select": "Configure DM117 modules",
+          "onewire_select": "Configure OneWire devices"
+        }
+      },
+      "om117_select": {
+        "title": "Select OM117 module",
+        "data": {
+          "selected_module": "Module"
+        }
+      },
+      "om117_config": {
+        "title": "Configure OM117 module: {module_name}",
+        "data": {
+          "pair_1_mode": "Pair 1 mode",
+          "pair_1_open_time": "Pair 1 open time (s)",
+          "pair_1_close_time": "Pair 1 close time (s)",
+          "pair_1_overrun_time": "Pair 1 overrun (s)",
+          "pair_2_mode": "Pair 2 mode",
+          "pair_2_open_time": "Pair 2 open time (s)",
+          "pair_2_close_time": "Pair 2 close time (s)",
+          "pair_2_overrun_time": "Pair 2 overrun (s)",
+          "pair_3_mode": "Pair 3 mode",
+          "pair_3_open_time": "Pair 3 open time (s)",
+          "pair_3_close_time": "Pair 3 close time (s)",
+          "pair_3_overrun_time": "Pair 3 overrun (s)",
+          "pair_4_mode": "Pair 4 mode",
+          "pair_4_open_time": "Pair 4 open time (s)",
+          "pair_4_close_time": "Pair 4 close time (s)",
+          "pair_4_overrun_time": "Pair 4 overrun (s)"
+        }
+      },
+      "dm117_select": {
+        "title": "Select DM117 module",
+        "data": {
+          "selected_module": "Module"
+        }
+      },
+      "dm117_config": {
+        "title": "Configure DM117 module: {module_name}",
+        "data": {
+          "slot_1": "Slot 1",
+          "slot_2": "Slot 2",
+          "slot_3": "Slot 3",
+          "slot_4": "Slot 4",
+          "slot_5": "Slot 5",
+          "slot_6": "Slot 6",
+          "slot_7": "Slot 7",
+          "slot_8": "Slot 8"
+        }
+      },
+      "onewire_select": {
+        "title": "Select OneWire device",
+        "data": {
+          "selected_device": "Device"
+        }
+      },
+      "onewire_config": {
+        "title": "Assign OneWire profile: {device_id}",
+        "data": {
+          "profile": "Profile",
+          "led_count": "LED count",
+          "poll_interval": "Polling interval (s)"
+        }
+      }
+    },
+    "abort": {
+      "integration_not_ready": "Integration is not ready yet",
+      "no_dm117_found": "No DM117 modules found",
+      "no_om117_found": "No OM117 modules found",
+      "no_onewire_found": "No OneWire devices found"
+    }
+  }
 }

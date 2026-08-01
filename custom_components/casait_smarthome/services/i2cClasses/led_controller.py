@@ -48,7 +48,7 @@ class LEDConfig:
 
     led_count: int = 0
     state: bool = False
-    brightness: int = 0  # 1-31 in hardware, 0-255 in validation
+    brightness: int = 0  # Firmware and Home Assistant both use 0-255.
     animation: AnimationMode = AnimationMode.STATIC
     animation_speed: int = 0  # 0-255
     colors: list[Color] = field(default_factory=list)

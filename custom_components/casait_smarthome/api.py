@@ -113,6 +113,18 @@ class CasaITApi:
 
         return self._dm117_states
 
+    @property
+    def diagnostic_data(self) -> dict[str, Any]:
+        """Return discovery data shared by the debug entity and diagnostics."""
+
+        return {
+            "found_i2c_devices": {
+                code: [f"0x{address:02X}" for address in sorted(addresses)]
+                for code, addresses in self.found_i2c_devices.items()
+            },
+            "found_onewire_devices": sorted(self.ow_ids),
+        }
+
     async def scan_devices(
         self,
         *,
@@ -332,7 +344,9 @@ class CasaITApi:
 
             profile = self._onewire_profiles.get(device_id)
             if profile is None:
-                profile = DEFAULT_OW_PROFILE.get(meta.get("family_code"))
+                family_code = meta.get("family_code")
+                if isinstance(family_code, int):
+                    profile = DEFAULT_OW_PROFILE.get(family_code)
 
             interval = self._onewire_poll_intervals.get(device_id)
             if interval is None and profile is not None:

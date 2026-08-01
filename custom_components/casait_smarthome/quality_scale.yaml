@@ -4,7 +4,7 @@ rules:
   appropriate-polling: done
   brands: done
   common-modules: done
-  config-flow-test-coverage: done
+  config-flow-test-coverage: todo
   config-flow: done
   dependency-transparency: done
   docs-actions: done
@@ -26,14 +26,14 @@ rules:
   docs-installation-parameters: todo
   entity-unavailable: done
   integration-owner: todo
-  log-when-unavailable: todo
+  log-when-unavailable: done
   parallel-updates: done
   reauthentication-flow: todo
   test-coverage: todo
 
   # Gold
-  devices: todo
-  diagnostics: todo
+  devices: done
+  diagnostics: done
   discovery-update-info: todo
   discovery: todo
   docs-data-update: todo
