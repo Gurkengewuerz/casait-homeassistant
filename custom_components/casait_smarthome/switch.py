@@ -15,10 +15,11 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import CasaITConfigEntry
 from .api import CasaITApi
-from .const import DOMAIN, I2C_ADDR_RANGES, OM117_MODE_BLIND, PCF8574_MAPPED_PORTS, SIGNAL_STATE_UPDATED
+from .const import DOMAIN, OM117_MODE_BLIND, PCF8574_MAPPED_PORTS, SIGNAL_STATE_UPDATED
 from .helpers import (
     build_onewire_device_info,
     default_onewire_profile,
+    get_address_range,
     get_configured_onewire_profiles,
     get_dm117_port_configuration,
     get_om117_pair_configuration,
@@ -40,15 +41,12 @@ async def async_setup_entry(
 
     await api.async_wait_initialized()
 
-    output_range = next(((start, end) for start, end, name, model in I2C_ADDR_RANGES if "OM117" in model), None)
-    if output_range is None:
-        return
-
     pcf_entities: list[SwitchEntity] = []
     om_config = get_om117_pair_configuration(config_entry.options)
 
+    output_range = get_address_range("OM117")
     for addr in api.im117_om117:
-        if not output_range[0] <= addr <= output_range[1]:
+        if output_range is None or not output_range[0] <= addr <= output_range[1]:
             continue
 
         pair_configs = om_config.get(addr, {})
@@ -146,10 +144,16 @@ class CasaITSwitch(SwitchEntity):
     async def _async_set_state(self, state: int) -> None:
         """Set the state of the switch."""
         device = self._api.im117_om117.get(self._address)
-        if device:
-            async with self._api.lock:
-                await self.hass.async_add_executor_job(device.write_port, self._hardware_port, state)
-            await self._api.async_force_refresh()
+        if not device:
+            raise HomeAssistantError("Output module not available")
+
+        async with self._api.lock:
+            success = await self.hass.async_add_executor_job(device.write_port, self._hardware_port, state)
+
+        if not success:
+            raise HomeAssistantError("Unable to write PCF8574 output state")
+
+        await self._api.async_force_refresh()
 
     @property
     def available(self) -> bool:
@@ -237,7 +241,10 @@ class CasaITDM117Switch(SwitchEntity):
         )
 
         async with self._api.lock:
-            await self.hass.async_add_executor_job(device.write_port, config)
+            success = await self.hass.async_add_executor_job(device.write_port, config)
+
+        if not success:
+            raise HomeAssistantError("Unable to write DM117 output state")
 
         await self._api.async_force_refresh()
 

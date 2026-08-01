@@ -15,6 +15,7 @@ from .const import (
     DEFAULT_BLIND_OVERRUN_TIME,
     DEFAULT_OW_PROFILE,
     DOMAIN,
+    I2C_ADDR_RANGES,
     OM117_MODE_BLIND,
     OM117_MODE_SWITCH,
 )
@@ -28,6 +29,12 @@ SLOT_TYPE_TO_DEVICE_TYPE: dict[str, DeviceType] = {
     "switch": DeviceType.OUTPUT,
     "dimmer": DeviceType.DIMMER,
 }
+
+
+def get_address_range(code: str) -> tuple[int, int] | None:
+    """Return the (start, end) I2C address range configured for a module code."""
+
+    return next(((start, end) for start, end, _, module_code in I2C_ADDR_RANGES if module_code == code), None)
 
 
 def _coerce_time(value: Any, default: float) -> float:

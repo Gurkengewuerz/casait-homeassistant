@@ -22,11 +22,10 @@ from .const import (
     DEFAULT_LED_COUNT,
     DEFAULT_OW_PROFILE,
     DOMAIN,
-    I2C_ADDR_RANGES,
     OM117_MODE_BLIND,
     OM117_MODE_SWITCH,
 )
-from .helpers import OM117PairConfig, get_om117_pair_configuration
+from .helpers import OM117PairConfig, get_address_range, get_om117_pair_configuration
 from .services.smbus_proxy import DEFAULT_PORT, DEFAULT_TIMEOUT, SMBus, SMBusProxyError
 
 _LOGGER = logging.getLogger(__name__)
@@ -251,8 +250,10 @@ class OptionsFlowHandler(OptionsFlow):
         if not api:
             return self.async_abort(reason="integration_not_ready")
 
-        output_range = next((start, end) for start, end, _, code in I2C_ADDR_RANGES if code == "OM117")
-        detected_modules = [addr for addr in api.im117_om117 if output_range[0] <= addr <= output_range[1]]
+        output_range = get_address_range("OM117")
+        detected_modules = (
+            [addr for addr in api.im117_om117 if output_range[0] <= addr <= output_range[1]] if output_range else []
+        )
 
         if not detected_modules:
             return self.async_abort(reason="no_om117_found")

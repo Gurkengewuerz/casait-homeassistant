@@ -44,6 +44,8 @@ class CasaITApi:
         self._poll_task: asyncio.Task | None = None
         self._init_done = asyncio.Event()
         self._init_task: asyncio.Task | None = None
+        # Owned by __init__.py: the background task that forwards the platform setups.
+        self.setup_task: asyncio.Task | None = None
 
     def start_initialization(self, dm_config: Mapping[int, Mapping[int, DeviceType]] | None = None) -> None:
         """Kick off asynchronous initialization for initial scans and polling."""

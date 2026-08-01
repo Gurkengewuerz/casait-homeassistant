@@ -14,10 +14,11 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import CasaITConfigEntry
 from .api import CasaITApi
-from .const import DOMAIN, I2C_ADDR_RANGES, PCF8574_MAPPED_PORTS, SIGNAL_STATE_UPDATED
+from .const import DOMAIN, PCF8574_MAPPED_PORTS, SIGNAL_STATE_UPDATED
 from .helpers import (
     build_onewire_device_info,
     default_onewire_profile,
+    get_address_range,
     get_configured_onewire_profiles,
     get_dm117_port_configuration,
 )
@@ -38,16 +39,14 @@ async def async_setup_entry(
 
     await api.async_wait_initialized()
 
-    input_range = next(((start, end) for start, end, name, model in I2C_ADDR_RANGES if "IM117" in model), None)
-    if input_range is None:
-        return
-
-    pcf_entities = [
-        CasaITBinarySensor(api, addr, port)
-        for addr, device in api.im117_om117.items()
-        if input_range[0] <= addr <= input_range[1]
-        for port in range(8)
-    ]
+    pcf_entities: list[BinarySensorEntity] = []
+    if (input_range := get_address_range("IM117")) is not None:
+        pcf_entities = [
+            CasaITBinarySensor(api, addr, port)
+            for addr in api.im117_om117
+            if input_range[0] <= addr <= input_range[1]
+            for port in range(8)
+        ]
 
     dm_entities: list[CasaITDM117BinarySensor] = []
     dm_config = get_dm117_port_configuration(config_entry.options)

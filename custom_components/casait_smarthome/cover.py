@@ -281,8 +281,18 @@ class CasaITBlindCover(CoverEntity, RestoreEntity):
             raise HomeAssistantError("Output module not available")
 
         async with self._api.lock:
-            await self.hass.async_add_executor_job(device.write_port, self._hardware_up_port, 0 if up else 1)
-            await self.hass.async_add_executor_job(device.write_port, self._hardware_down_port, 0 if down else 1)
+            up_ok = await self.hass.async_add_executor_job(device.write_port, self._hardware_up_port, 0 if up else 1)
+            down_ok = await self.hass.async_add_executor_job(
+                device.write_port, self._hardware_down_port, 0 if down else 1
+            )
+
+        if not (up_ok and down_ok):
+            # Releasing the outputs also runs from teardown and from the motion task's
+            # finally block, where raising would only mask the original failure.
+            if not (up or down):
+                _LOGGER.error("Failed to release blind outputs on 0x%02x pair %s", self._address, self._pair_index + 1)
+            else:
+                raise HomeAssistantError("Unable to write blind output state")
 
         await self._api.async_force_refresh()
 

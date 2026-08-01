@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 
 import voluptuous as vol
 
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ConfigEntryNotReady
@@ -32,9 +34,10 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     async def async_scan_devices_service(call: ServiceCall) -> None:
         """Scan for devices."""
         for entry in hass.config_entries.async_entries(DOMAIN):
-            api = entry.runtime_data
-            await api.scan_devices()
-            await api.scan_onewire()
+            if entry.state is not ConfigEntryState.LOADED:
+                continue
+            # scan_devices() already performs the 1-Wire enumeration.
+            await entry.runtime_data.scan_devices()
 
     hass.services.async_register(DOMAIN, SERVICE_SCAN_DEVICES, async_scan_devices_service, schema=vol.Schema({}))
 
@@ -71,12 +74,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> bo
         except Exception:
             _LOGGER.exception("Error setting up casaIT platforms")
 
-    setup_task = hass.async_create_background_task(_finish_platform_setup(), "casait_forward_entry_setups")
-
-    def _cancel_setup_task() -> None:
-        setup_task.cancel()
-
-    entry.async_on_unload(_cancel_setup_task)
+    api.setup_task = hass.async_create_background_task(_finish_platform_setup(), "casait_forward_entry_setups")
 
     _LOGGER.info("CasaIT : Smart Home integration setup complete")
 
@@ -85,9 +83,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> bo
 
 async def async_unload_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> bool:
     """Unload a config entry."""
+    api = entry.runtime_data
+
+    # Settle the deferred platform setup first: unloading while it is still forwarding
+    # would leave platforms registered against a bus we are about to close.
+    if api.setup_task:
+        api.setup_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await api.setup_task
+        api.setup_task = None
+
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
-        api = entry.runtime_data
         try:
             await api.async_wait_initialized(timeout=5)
         except TimeoutError:

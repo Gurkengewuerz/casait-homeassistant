@@ -18,7 +18,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from . import CasaITConfigEntry
 from .api import CasaITApi
 from .const import DOMAIN
-from .helpers import default_onewire_profile, get_configured_onewire_profiles
+from .helpers import build_onewire_device_info, default_onewire_profile, get_configured_onewire_profiles
 from .services.i2cClasses.ds2438 import DS2438Reading
 
 TEMP_COMP_A = 1.0546
@@ -57,25 +57,12 @@ class OneWireEntity(SensorEntity):
         device_type = str(meta.get("device_type") or "").strip()
         base_label = f"{device_type} {device_id}" if device_type else device_id
         self._attr_name = f"{base_label} {description.name}".strip()
-        if self._bus_address is not None:
-            bus_identifier = (DOMAIN, f"sm117_{self._bus_address:02x}")
-            self._attr_device_info = DeviceInfo(
-                identifiers={bus_identifier},
-                name=f"SM117 Bus 0x{self._bus_address:02X}",
-                manufacturer="CasaIT",
-                model="SM117 1-Wire bridge",
-            )
-        else:
+        if self._bus_address is None:
             _LOGGER.warning(
                 "OneWire device %s has no bus address; it will not be grouped under a common device in Home Assistant",
                 device_id,
             )
-            self._attr_device_info = DeviceInfo(
-                identifiers={(DOMAIN, f"onewire_{device_id}")},
-                name=f"OneWire {device_id}",
-                model=device_type or "OneWire",
-                manufacturer="Maxim Integrated",
-            )
+        self._attr_device_info = build_onewire_device_info(device_id, meta)
 
 
 class DS18B20TemperatureSensor(OneWireEntity):
