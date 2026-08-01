@@ -201,12 +201,6 @@ class DM117:
             # Verify CRC
             calculated_crc = Crc8Smbus.calc(data)
             if received_crc != calculated_crc:
-                _LOGGER.debug(
-                    "Reading from DM117 at address %02X with %s",
-                    self.address,
-                    " ".join(f"{byte:02X}" for byte in [*data, received_crc]),
-                )
-                _LOGGER.error("CRC validation failed")
                 return None
 
             self.last_values = values
