@@ -157,6 +157,29 @@ def get_configured_led_counts(options: Mapping[str, Any]) -> dict[str, int]:
     return counts
 
 
+def get_configured_onewire_poll_intervals(options: Mapping[str, Any]) -> dict[str, int]:
+    """Extract configured polling intervals for OneWire devices from options."""
+
+    intervals: dict[str, int] = {}
+    for key, value in options.items():
+        if not key.startswith("ow_") or not key.endswith("_poll_interval"):
+            continue
+
+        device_id = key[3:-14]
+        if not device_id:
+            continue
+
+        try:
+            interval = int(value)
+        except (TypeError, ValueError):
+            continue
+
+        if 1 <= interval <= 3600:
+            intervals[device_id] = interval
+
+    return intervals
+
+
 def default_onewire_profile(meta: Mapping[str, Any]) -> str | None:
     """Return the default OneWire profile for the provided metadata."""
 

@@ -11,9 +11,6 @@ from crccheck.crc import Crc8Smbus
 
 _LOGGER = logging.getLogger(__name__)
 
-MIN_INIT = 5
-
-
 class DeviceType(enum.Enum):
     """Device types supported by DM117."""
 
@@ -26,7 +23,9 @@ class DimmerSpeed(enum.IntEnum):
     """Speed settings for dimmer transitions."""
 
     INSTANT = 0
-    DEFAULT = 2
+    SLOW = 1
+    FAST = 2
+    DEFAULT = FAST
 
     @classmethod
     def _missing_(cls, value: object) -> DimmerSpeed:
@@ -44,10 +43,6 @@ class DM117:
     CMD_WRITE = 0x02
     CMD_READ = 0x03
 
-    PORT_TYPE_INPUT = 0
-    PORT_TYPE_DAC = 1
-    PORT_TYPE_OUTPUT = 2
-
     def __init__(self, bus, address: int) -> None:
         """Initialize DM117 device."""
         self.bus = bus
@@ -55,10 +50,8 @@ class DM117:
         self.port_config = {}  # Stores port type configuration
         self.port_states = [0] * 8  # Current port states
         self.last_values = {}  # Cache for dimmer values
-        self.port_types = {}  # Stores the type of each port
         self._last_read_time = 0
         self._read_interval = 0.01  # 10ms minimum between reads
-        self._init_counter = 0
 
     def configure_ports(self, config: dict[int, DeviceType], commit: bool = True) -> bool:
         """Configure module ports."""
@@ -197,11 +190,9 @@ class DM117:
                     low = self.bus.read_byte(self.address)
                     value = (high << 8) | low
                     data.extend([high, low])
-                    self.port_types[i] = self.PORT_TYPE_DAC
                 else:
                     value = self.bus.read_byte(self.address)
                     data.append(value)
-                    self.port_types[i] = self.PORT_TYPE_OUTPUT if module_type == 2 else self.PORT_TYPE_INPUT
 
                 values[i] = value
 
@@ -221,34 +212,9 @@ class DM117:
             self.last_values = values
             self._last_read_time = current_time
 
-            if self._init_counter < MIN_INIT:
-                self._init_counter += 1
-
         except (OSError, ValueError):
-            _LOGGER.exception("Error reading from DM117")
             return None
         return values
-
-    def read_port(self, port: int) -> int | None:
-        """Read single port value."""
-        values = self.read_ports()
-        if values is None:
-            return None
-        return values.get(port)
-
-    def read_port_cached(self, port: int) -> int | None:
-        """Read single port value from cache."""
-        return self.last_values.get(port)
-
-    @property
-    def is_initialized(self) -> bool:
-        """Check if module is initialized."""
-        return self._init_counter >= MIN_INIT
-
-    def get_port_type(self, port: int) -> int | None:
-        """Get the type of port."""
-        return self.port_types.get(port)
-
 
 @dataclass
 class DimmerConfig:
@@ -275,15 +241,6 @@ class DimmerConfig:
             value = 0
         percentage = (value / 4095.0) * 100
         return cls(int(percentage), speed)
-
-    @classmethod
-    def from_api(cls, value: int) -> DimmerConfig:
-        """Create config from API value (0-100)."""
-
-        if value is None or value < 0 or value > 100:
-            value = 0
-        return cls(value)
-
 
 @dataclass
 class PortConfig:
@@ -322,14 +279,6 @@ class PortConfig:
             value = 0
         return cls(port_a=bool(value & 0x01), port_b=bool(value & 0x02))
 
-    @classmethod
-    def from_api(cls, value: tuple[bool, bool]) -> PortConfig:
-        """Create config from API values."""
-        if value is None or len(value) != 2:
-            value = (False, False)
-        return cls(port_a=value[0], port_b=value[1])
-
-
 @dataclass
 class DM117PortConfig:
     """Complete configuration for a DM117 port."""
@@ -349,26 +298,3 @@ class DM117PortConfig:
             if self.digital is None:
                 self.digital = PortConfig()
             self.dimmer = None
-
-    @property
-    def raw_value(self) -> int:
-        """Get raw value for this port based on type."""
-        if self.device_type == DeviceType.DIMMER and self.dimmer:
-            return self.dimmer.raw_value
-        if self.digital:
-            return self.digital.raw_value
-        return 0
-
-    @classmethod
-    def from_raw(
-        cls,
-        port: int,
-        device_type: DeviceType,
-        value: int,
-        speed: DimmerSpeed = DimmerSpeed.DEFAULT,
-    ) -> DM117PortConfig:
-        """Create port config from raw values."""
-        if device_type == DeviceType.DIMMER:
-            return cls(port, device_type, dimmer=DimmerConfig.from_raw(value, speed))
-
-        return cls(port, device_type, digital=PortConfig.from_raw(int(value)))

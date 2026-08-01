@@ -39,15 +39,6 @@ class OneWireBus:
     CMD_WRITE_DATA_STOP = 0x4B  # Write data with stop
     CMD_READ_DATA_STOP = 0x87  # Read data with stop
 
-    # LED controller registers (matching Arduino code)
-    RGB_ADDRESS = 0x42  # I2C address of LED controller
-    REG_LED_COUNT = 0
-    REG_LED_STATE = 1
-    REG_BRIGHTNESS = 2
-    REG_ANIM_CODE = 3
-    REG_ANIM_SPEED = 4
-    REG_COLORS = 5  # Colors start from this address (3 bytes per color)
-
     def __init__(self, bus, bridge_address: int) -> None:
         """Initialize 1-Wire bus with DS2482 bridge."""
         _LOGGER.info(
@@ -61,7 +52,7 @@ class OneWireBus:
         self.ds2413 = DS2413(self)
         self.led_controller = LEDController(self)
         self.last_scan_time = 0
-        self._interval_cache: dict[str, int | None] = {}
+        self._interval_cache: dict[str, int] = {}
         self._timeout_cache: dict[str, tuple[float, int]] = {}
         self._scan_bus()
 
@@ -142,7 +133,7 @@ class OneWireBus:
                 last_device_flag = True
             else:
                 # Valid device found, process ROM code
-                crc8 = self._calc_crc8(bytes(rom_no[:-1]))
+                crc8 = self.calc_crc8(bytes(rom_no[:-1]))
                 if crc8 == rom_no[7]:  # CRC check
                     device_id = "".join(f"{x:02x}" for x in rom_no)
                     family_code = rom_no[0]
@@ -171,7 +162,7 @@ class OneWireBus:
         }
         return family_types.get(family_code, "Unknown")
 
-    def _calc_crc8(self, data: bytes) -> int:
+    def calc_crc8(self, data: bytes) -> int:
         """Calculate CRC8 using polynomial x^8 + x^5 + x^4 + 1."""
         crc = 0
         for byte in data:
@@ -194,10 +185,6 @@ class OneWireBus:
                 else:
                     crc >>= 1
         return crc
-
-    def verify_crc8(self, data: bytes, crc: int) -> bool:
-        """Verify CRC8 of data."""
-        return self._calc_crc8(data) == crc
 
     def select_device(self, device_id: str, use_lock: bool = True) -> bool:
         """Select a device on the bus."""
@@ -239,18 +226,10 @@ class OneWireBus:
         _, count = self._timeout_cache.get(device_id, (time.time(), 0))
         self._timeout_cache[device_id] = (time.time(), count + 1)
 
-    def set_intervals(self, device_list: list[Any]) -> None:
-        """Set polling intervals for devices."""
-        new_cache = {}
-        for device in device_list:
-            value = device.polling_interval.value if device.polling_interval is not None else None
-            if device.onewire_id not in new_cache:
-                new_cache[device.onewire_id] = value
-                continue
-            if value is not None and (new_cache[device.onewire_id] is None or value < new_cache[device.onewire_id]):
-                new_cache[device.onewire_id] = value
+    def set_interval(self, device_id: str, seconds: int) -> None:
+        """Set the driver cache interval for a 1-Wire device."""
 
-        self._interval_cache = new_cache
+        self._interval_cache[device_id] = seconds
 
     def get_interval(self, device_id: str) -> int | None:
         """Get polling interval for device."""
@@ -263,27 +242,6 @@ class OneWireBus:
         except Exception:
             _LOGGER.exception("Error reading temperature")
             return None
-
-    def read_voltage(self, device_id: str, port: int = 0) -> dict | None:
-        """Read voltage and temperature from DS2438."""
-        try:
-            # Get reading from DS2438 manager
-            reading = self.ds2438.get_reading(device_id, self.get_interval(device_id))
-            if not reading:
-                return None
-
-            # Select appropriate voltage based on port
-            voltage = reading.vad if port == 0 else reading.vse
-
-        except Exception:
-            _LOGGER.exception("Error reading DS2438 %s", device_id)
-            return None
-
-        return {
-            "voltage": voltage,
-            "temperature": reading.temperature,
-            "vdd": reading.vdd,
-        }
 
     def read_binary_state(self, device_id: str, channel: int = 0, *, invert: bool = True) -> bool | None:
         """Read binary state from DS2413."""

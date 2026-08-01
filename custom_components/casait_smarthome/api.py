@@ -12,7 +12,7 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
-from .const import I2C_ADDR_RANGES, SIGNAL_STATE_UPDATED
+from .const import DEFAULT_OW_POLL_INTERVAL, DEFAULT_OW_PROFILE, I2C_ADDR_RANGES, SIGNAL_STATE_UPDATED
 from .services.i2cClasses.dm117 import DM117, DeviceType
 from .services.i2cClasses.ds2438 import DS2438Reading
 from .services.i2cClasses.led_controller import LEDConfig
@@ -26,7 +26,13 @@ _LOGGER = logging.getLogger(__name__)
 class CasaITApi:
     """API for casaIT devices."""
 
-    def __init__(self, hass: HomeAssistant, bus: SMBus) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        bus: SMBus,
+        onewire_profiles: Mapping[str, str] | None = None,
+        onewire_poll_intervals: Mapping[str, int] | None = None,
+    ) -> None:
         """Initialize the API."""
         self.hass = hass
         self.bus = bus
@@ -35,6 +41,8 @@ class CasaITApi:
         self.sm117: dict[int, OneWireBus] = {}
         self.ow_ids: set[str] = set()
         self.ow_devices: dict[str, dict[str, Any]] = {}
+        self._onewire_profiles = dict(onewire_profiles or {})
+        self._onewire_poll_intervals = dict(onewire_poll_intervals or {})
         self.found_i2c_devices: dict[str, list[int]] = {}
         self.lock = asyncio.Lock()
         self._pcf_states: dict[int, list[int]] = {}
@@ -193,8 +201,11 @@ class CasaITApi:
             except Exception as exc:  # noqa: BLE001
                 self._record_read_error("PCF8574", addr, exc)
             else:
-                self._clear_read_error("PCF8574", addr)
-                pcf_states[addr] = port_states
+                if not port_states:
+                    self._record_read_error("PCF8574", addr)
+                else:
+                    self._clear_read_error("PCF8574", addr)
+                    pcf_states[addr] = port_states
 
         for addr, device in self.dm117.items():
             try:
@@ -302,11 +313,30 @@ class CasaITApi:
 
         self.ow_devices = discovered
         self.ow_ids = set(discovered)
+        self._apply_onewire_intervals()
 
         if discovered:
             _LOGGER.info("Discovered OneWire devices: %s", list(discovered.keys()))
         else:
             _LOGGER.info("No OneWire devices discovered")
+
+    def _apply_onewire_intervals(self) -> None:
+        """Apply configured or profile-default cache intervals after a 1-Wire scan."""
+
+        for device_id, meta in self.ow_devices.items():
+            bus = self.sm117.get(meta["bus_address"])
+            if bus is None:
+                continue
+
+            profile = self._onewire_profiles.get(device_id)
+            if profile is None:
+                profile = DEFAULT_OW_PROFILE.get(meta.get("family_code"))
+
+            interval = self._onewire_poll_intervals.get(device_id)
+            if interval is None and profile is not None:
+                interval = DEFAULT_OW_POLL_INTERVAL.get(profile)
+            if interval is not None:
+                bus.set_interval(device_id, interval)
 
     async def async_configure_dm117(self, slot_config: Mapping[int, Mapping[int, DeviceType]]) -> None:
         """Configure DM117 modules based on slot configuration."""

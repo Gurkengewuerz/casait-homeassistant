@@ -27,6 +27,7 @@ TEMP_COMP_B = 0.00216
 _LOGGER = logging.getLogger(__name__)
 
 PARALLEL_UPDATES = 1
+SCAN_INTERVAL = timedelta(seconds=15)
 
 
 @dataclass(kw_only=True, frozen=True)
@@ -68,8 +69,6 @@ class OneWireEntity(SensorEntity):
 class DS18B20TemperatureSensor(OneWireEntity):
     """Temperature sensor for DS18B20 devices."""
 
-    SCAN_INTERVAL = timedelta(seconds=60)
-
     def __init__(self, api: CasaITApi, device_id: str, meta: dict[str, Any]) -> None:
         """Initialize the DS18B20 temperature sensor entity."""
         super().__init__(
@@ -100,8 +99,6 @@ class DS18B20TemperatureSensor(OneWireEntity):
 class DS2438Sensor(OneWireEntity):
     """Sensor entity backed by a DS2438 reading."""
 
-    SCAN_INTERVAL = timedelta(seconds=15)
-
     entity_description: OneWireSensorDescription
 
     def __init__(
@@ -128,7 +125,6 @@ class CasaITDebugSensor(SensorEntity):
 
     _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.DIAGNOSTIC
-    SCAN_INTERVAL = timedelta(seconds=30)
 
     def __init__(self, api: CasaITApi, entry: CasaITConfigEntry) -> None:
         """Initialize the debug sensor."""

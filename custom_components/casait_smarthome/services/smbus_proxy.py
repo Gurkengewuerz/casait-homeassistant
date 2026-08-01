@@ -21,7 +21,6 @@ CMD_WRITE_BYTE_DATA = 0x02
 CMD_READ_BYTE = 0x03
 CMD_READ_BYTE_DATA = 0x04
 CMD_WRITE_I2C_BLOCK_DATA = 0x05
-CMD_SET_DEBUG = 0x10
 CMD_PING = 0x11
 
 # Default configuration from environment variables
@@ -369,24 +368,6 @@ class SMBus:
             raise OSError(f"Write i2c block data failed for address 0x{i2c_addr:02X} register 0x{register:02X}")
         except SMBusProxyError as e:
             raise OSError(str(e)) from e
-
-    def set_debug(self, enabled: bool) -> bool:
-        """Enable/disable debug mode on the bridge.
-
-        When debug mode is enabled, the client receives broadcast data
-        from other clients' operations.
-
-        Args:
-            enabled: True to enable debug mode
-
-        Returns:
-            True if debug mode was set successfully
-        """
-        try:
-            response = self._send_command(bytes([CMD_SET_DEBUG, 1 if enabled else 0]))
-            return len(response) == 2 and response[0] == 0x00
-        except SMBusProxyError:
-            return False
 
     def ping(self) -> bool:
         """Send a keep-alive ping to the bridge."""

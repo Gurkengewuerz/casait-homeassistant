@@ -332,7 +332,7 @@ class DS2438:
         _LOGGER.debug("%s scratchpad: %s", device_id, " ".join(f"{x:02X}" for x in scratchpad))
 
         # Verify CRC
-        if not self.bus.verify_crc8(bytes(scratchpad[:-1]), scratchpad[-1]):
+        if self.bus.calc_crc8(bytes(scratchpad[:-1])) != scratchpad[-1]:
             _LOGGER.error("CRC check failed for device %s", device_id)
             return None
 

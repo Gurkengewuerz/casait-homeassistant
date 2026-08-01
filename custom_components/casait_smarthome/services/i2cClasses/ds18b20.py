@@ -174,7 +174,7 @@ class DS18B20:
                 return None
             scratchpad.append(byte)
 
-        if not self.bus.verify_crc8(bytes(scratchpad[:-1]), scratchpad[-1]):
+        if self.bus.calc_crc8(bytes(scratchpad[:-1])) != scratchpad[-1]:
             _LOGGER.error("CRC check failed for %s", device_id)
             return None
 

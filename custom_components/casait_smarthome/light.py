@@ -5,7 +5,13 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import Any
 
-from homeassistant.components.light import ATTR_BRIGHTNESS, ATTR_EFFECT, ATTR_RGB_COLOR, LightEntity
+from homeassistant.components.light import (
+    ATTR_BRIGHTNESS,
+    ATTR_EFFECT,
+    ATTR_RGB_COLOR,
+    ATTR_TRANSITION,
+    LightEntity,
+)
 from homeassistant.components.light.const import ColorMode, LightEntityFeature
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
@@ -23,10 +29,17 @@ from .helpers import (
     get_configured_onewire_profiles,
     get_dm117_port_configuration,
 )
-from .services.i2cClasses.dm117 import DeviceType, DimmerConfig, DM117PortConfig
+from .services.i2cClasses.dm117 import DeviceType, DimmerConfig, DimmerSpeed, DM117PortConfig
 from .services.i2cClasses.led_controller import AnimationMode, Color, LEDConfig
 
 PARALLEL_UPDATES = 1
+SCAN_INTERVAL = timedelta(seconds=10)
+
+DM117_TRANSITION_SECONDS = {
+    DimmerSpeed.INSTANT: 0.0,
+    DimmerSpeed.FAST: 1.7,
+    DimmerSpeed.SLOW: 5.1,
+}
 
 ANIMATION_EFFECTS = {
     AnimationMode.STATIC: "Static",
@@ -84,6 +97,7 @@ class CasaITDM117Light(LightEntity):
     _attr_supported_color_modes = {ColorMode.BRIGHTNESS}
     _attr_color_mode = ColorMode.BRIGHTNESS
     _attr_should_poll = False
+    _attr_supported_features = LightEntityFeature.TRANSITION
 
     def __init__(
         self,
@@ -140,18 +154,18 @@ class CasaITDM117Light(LightEntity):
         if brightness is None:
             brightness = 255
         percentage = max(0, min(100, round(brightness * 100 / 255)))
-        await self._async_write(percentage)
+        await self._async_write(percentage, self._transition_speed(kwargs.get(ATTR_TRANSITION)))
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off the light."""
-        await self._async_write(0)
+        await self._async_write(0, self._transition_speed(kwargs.get(ATTR_TRANSITION)))
 
-    async def _async_write(self, percentage: int) -> None:
+    async def _async_write(self, percentage: int, speed: DimmerSpeed) -> None:
         device = self._api.dm117.get(self._address)
         if not device:
             raise HomeAssistantError("DM117 module not available")
 
-        dimmer = DimmerConfig(value=percentage)
+        dimmer = DimmerConfig(value=percentage, speed=speed)
         config = DM117PortConfig(
             port=self._port,
             device_type=DeviceType.DIMMER,
@@ -165,6 +179,18 @@ class CasaITDM117Light(LightEntity):
             raise HomeAssistantError("Unable to write DM117 dimmer value")
 
         await self._api.async_force_refresh()
+
+    @staticmethod
+    def _transition_speed(transition: Any) -> DimmerSpeed:
+        """Map a Home Assistant transition duration to the closest firmware ramp."""
+
+        if transition is None:
+            return DimmerSpeed.DEFAULT
+        try:
+            seconds = max(0.0, float(transition))
+        except (TypeError, ValueError):
+            return DimmerSpeed.DEFAULT
+        return min(DM117_TRANSITION_SECONDS, key=lambda speed: abs(DM117_TRANSITION_SECONDS[speed] - seconds))
 
     @staticmethod
     def _raw_to_brightness(raw_value: int | None) -> int | None:
@@ -185,7 +211,6 @@ class CasaITLEDControllerLight(LightEntity):
     _attr_supported_color_modes = {ColorMode.RGB}
     _attr_color_mode = ColorMode.RGB
     _attr_supported_features = LightEntityFeature.EFFECT
-    SCAN_INTERVAL = timedelta(seconds=10)
 
     def __init__(self, api: CasaITApi, device_id: str, meta: dict[str, Any], led_count: int) -> None:
         """Initialize the LED controller light."""

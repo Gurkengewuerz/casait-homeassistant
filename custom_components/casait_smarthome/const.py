@@ -37,6 +37,15 @@ DEFAULT_OW_PROFILE: Final = {
 
 DEFAULT_LED_COUNT: Final = 30
 
+DEFAULT_OW_POLL_INTERVAL: Final = {
+    "ds2413_in": 1,
+    "ds2413_out": 1,
+    "ds28e17_led": 10,
+    "ds2438_hih4030_tept5600": 15,
+    "ds2438_hih5030_tept5600": 15,
+    "ds18b20_temp": 60,
+}
+
 # Dispatcher signals
 SIGNAL_STATE_UPDATED: Final = "casait_state_updated"
 

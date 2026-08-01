@@ -29,6 +29,7 @@ from .services.i2cClasses.dm117 import DeviceType, DM117PortConfig, PortConfig
 _LOGGER = logging.getLogger(__name__)
 
 PARALLEL_UPDATES = 1
+SCAN_INTERVAL = timedelta(seconds=1)
 
 
 async def async_setup_entry(
@@ -259,7 +260,6 @@ class CasaITDS2413Switch(SwitchEntity):
 
     _attr_has_entity_name = False
     _attr_should_poll = True
-    SCAN_INTERVAL = timedelta(seconds=1)
 
     def __init__(
         self,

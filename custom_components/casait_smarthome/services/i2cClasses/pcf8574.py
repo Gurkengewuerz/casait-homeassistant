@@ -7,9 +7,6 @@ import time
 
 _LOGGER = logging.getLogger(__name__)
 
-MIN_INIT = 5
-
-
 class PCF8574:
     """PCF8574 I2C I/O expander implementation."""
 
@@ -22,12 +19,12 @@ class PCF8574:
         self.port_states = [0] * 8
         self._new_value = 0
         self._new_value_time = 0
-        self._init_counter = 0
 
     def read_ports(self, set_high: bool = True) -> tuple[list[int], int]:
         """Read all ports with debouncing."""
         try:
-            # Locking this early to prevent multiple writes from different threads at the same time with different values
+            # Locking this early prevents concurrent threads from writing
+            # different values at the same time.
             # Set all ports high first
             if set_high:
                 self.bus.write_byte(self.address, 0xFF)
@@ -56,11 +53,8 @@ class PCF8574:
                 self.port_states = port_values
                 self.last_value = value
 
-            if self._init_counter < MIN_INIT:
-                self._init_counter += 1
         except OSError:
-            _LOGGER.exception("PCF8574 read error at 0x%02X", self.address)
-            return self.port_states, self.last_value
+            return [], -1
         return self.port_states, value
 
     def write_port(self, port: int, state: int, verify: bool = True) -> bool:
@@ -118,8 +112,3 @@ class PCF8574:
             _LOGGER.exception("PCF8574 write error at 0x%02X port %s", self.address, port)
             return False
         return True
-
-    @property
-    def is_initialized(self) -> bool:
-        """Check if the device has been initialized with enough reads."""
-        return self._init_counter >= MIN_INIT

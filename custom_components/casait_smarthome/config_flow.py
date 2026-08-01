@@ -20,6 +20,7 @@ from .const import (
     DEFAULT_BLIND_OPEN_TIME,
     DEFAULT_BLIND_OVERRUN_TIME,
     DEFAULT_LED_COUNT,
+    DEFAULT_OW_POLL_INTERVAL,
     DEFAULT_OW_PROFILE,
     DOMAIN,
     OM117_MODE_BLIND,
@@ -432,9 +433,14 @@ class OptionsFlowHandler(OptionsFlow):
             new_options = dict(self.config_entry.options)
             option_key = f"ow_{self._selected_ow_id}_profile"
             led_count_key = f"ow_{self._selected_ow_id}_led_count"
+            poll_interval_key = f"ow_{self._selected_ow_id}_poll_interval"
             profile = user_input["profile"]
 
             new_options[option_key] = profile
+            if "poll_interval" in user_input:
+                new_options[poll_interval_key] = user_input["poll_interval"]
+            else:
+                new_options.pop(poll_interval_key, None)
 
             if profile == "ds28e17_led":
                 if "led_count" in user_input:
@@ -450,6 +456,10 @@ class OptionsFlowHandler(OptionsFlow):
         default_val = self.config_entry.options.get(key, self._default_profile_for_device(dev_id))
 
         led_count_default = self.config_entry.options.get(f"ow_{dev_id}_led_count", DEFAULT_LED_COUNT)
+        poll_interval_default = self.config_entry.options.get(
+            f"ow_{dev_id}_poll_interval",
+            DEFAULT_OW_POLL_INTERVAL.get(default_val, 60),
+        )
 
         return self.async_show_form(
             step_id="onewire_config",
@@ -458,6 +468,9 @@ class OptionsFlowHandler(OptionsFlow):
                     vol.Required("profile", default=default_val): vol.In(ONEWIRE_PROFILES),
                     vol.Optional("led_count", default=led_count_default): vol.All(
                         vol.Coerce(int), vol.Range(min=1, max=255)
+                    ),
+                    vol.Optional("poll_interval", default=poll_interval_default): vol.All(
+                        vol.Coerce(int), vol.Range(min=1, max=3600)
                     ),
                 }
             ),

@@ -9,6 +9,7 @@ from custom_components.casait_smarthome.const import (
 )
 from custom_components.casait_smarthome.helpers import (
     get_configured_led_counts,
+    get_configured_onewire_poll_intervals,
     get_configured_onewire_profiles,
     get_dm117_port_configuration,
     get_om117_pair_configuration,
@@ -94,4 +95,24 @@ def test_get_configured_led_counts_contract() -> None:
     assert get_configured_led_counts(options) == {
         "1900000000000001": 60,
         "1900000000000002": 255,
+    }
+
+
+def test_get_configured_onewire_poll_intervals_contract() -> None:
+    options = {
+        "ow_3a00000000000001_poll_interval": "1",
+        "ow_1900000000000001_poll_interval": 10,
+        "ow_2800000000000001_poll_interval": 3600,
+        "ow_2800000000000002_poll_interval": 0,
+        "ow_2800000000000003_poll_interval": 3601,
+        "ow_2800000000000004_poll_interval": "invalid",
+        "ow__poll_interval": 15,
+        "ow_2800000000000001_profile": "ds18b20_temp",
+        "unrelated": True,
+    }
+
+    assert get_configured_onewire_poll_intervals(options) == {
+        "3a00000000000001": 1,
+        "1900000000000001": 10,
+        "2800000000000001": 3600,
     }

@@ -240,18 +240,3 @@ class LEDController:
             _LOGGER.exception("Error reading LED configuration")
             return None
         return config
-
-    def get_cached_config(self, device_id: str) -> LEDConfig | None:
-        """Get configuration from cache if available and valid."""
-        if device_id not in self._config_cache:
-            return None
-
-        cached = self._config_cache[device_id]
-        return cached.config if cached.is_valid else None
-
-    def invalidate_cache(self, device_id: str | None = None) -> None:
-        """Invalidate cache for specific device or all devices."""
-        if device_id is None:
-            self._config_cache.clear()
-        elif device_id in self._config_cache:
-            del self._config_cache[device_id]

@@ -15,7 +15,11 @@ from homeassistant.helpers.typing import ConfigType
 
 from .api import CasaITApi
 from .const import CONF_TIMEOUT, DOMAIN, PLATFORMS, SERVICE_SCAN_DEVICES
-from .helpers import get_dm117_port_configuration
+from .helpers import (
+    get_configured_onewire_poll_intervals,
+    get_configured_onewire_profiles,
+    get_dm117_port_configuration,
+)
 from .services.smbus_proxy import SMBus, SMBusProxyError
 
 _LOGGER = logging.getLogger(__name__)
@@ -55,9 +59,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> bo
     except SMBusProxyError as e:
         raise ConfigEntryNotReady(f"Failed to connect to SMBus proxy: {e}") from e
 
+    if not await hass.async_add_executor_job(bus.ping):
+        await hass.async_add_executor_job(bus.close)
+        raise ConfigEntryNotReady("SMBus proxy did not respond to ping")
+
     _LOGGER.debug("Successfully connected to SMBus proxy, initializing API")
 
-    api = CasaITApi(hass, bus)
+    api = CasaITApi(
+        hass,
+        bus,
+        get_configured_onewire_profiles(entry.options),
+        get_configured_onewire_poll_intervals(entry.options),
+    )
     entry.runtime_data = api
 
     dm_config = get_dm117_port_configuration(entry.options)
@@ -68,7 +81,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> bo
     await api.async_wait_initialized()
     if api.initialization_error is not None:
         await hass.async_add_executor_job(api.bus.close)
-        raise ConfigEntryNotReady(f"Failed to initialize casaIT devices: {api.initialization_error}") from api.initialization_error
+        message = f"Failed to initialize casaIT devices: {api.initialization_error}"
+        raise ConfigEntryNotReady(message) from api.initialization_error
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
