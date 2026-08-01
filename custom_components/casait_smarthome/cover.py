@@ -20,7 +20,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from . import CasaITConfigEntry
 from .api import CasaITApi
 from .const import DOMAIN, OM117_MODE_BLIND, PCF8574_MAPPED_PORTS, SIGNAL_STATE_UPDATED
-from .helpers import OM117PairConfig, get_om117_pair_configuration
+from .helpers import OM117PairConfig, get_address_range, get_om117_pair_configuration
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -38,9 +38,13 @@ async def async_setup_entry(
     await api.async_wait_initialized()
 
     om_config = get_om117_pair_configuration(config_entry.options)
+    output_range = get_address_range("OM117")
 
     entities: list[CasaITBlindCover] = []
     for address in api.im117_om117:
+        if output_range is None or not output_range[0] <= address <= output_range[1]:
+            continue
+
         pair_configs = om_config.get(address, {})
         if not pair_configs:
             continue

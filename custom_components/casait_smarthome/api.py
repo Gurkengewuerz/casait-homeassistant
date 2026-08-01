@@ -39,13 +39,13 @@ class CasaITApi:
         self.lock = asyncio.Lock()
         self._pcf_states: dict[int, list[int]] = {}
         self._dm117_states: dict[int, dict[int, int]] = {}
+        self._read_errors: set[tuple[str, int]] = set()
         self._poll_interval = 0.002
         self._stop_event: asyncio.Event | None = None
         self._poll_task: asyncio.Task | None = None
         self._init_done = asyncio.Event()
         self._init_task: asyncio.Task | None = None
-        # Owned by __init__.py: the background task that forwards the platform setups.
-        self.setup_task: asyncio.Task | None = None
+        self.initialization_error: Exception | None = None
 
     def start_initialization(self, dm_config: Mapping[int, Mapping[int, DeviceType]] | None = None) -> None:
         """Kick off asynchronous initialization for initial scans and polling."""
@@ -85,7 +85,8 @@ class CasaITApi:
         except asyncio.CancelledError:
             self._init_done.set()
             raise
-        except Exception:
+        except Exception as exc:  # noqa: BLE001
+            self.initialization_error = exc
             _LOGGER.exception("Error initializing casaIT devices")
         finally:
             self._init_done.set()
@@ -125,7 +126,8 @@ class CasaITApi:
 
             for addr in range(start, end + 1):
                 try:
-                    await self.hass.async_add_executor_job(self.bus.write_quick, addr)
+                    async with self.lock:
+                        await self.hass.async_add_executor_job(self.bus.write_quick, addr)
                 except (SMBusProxyError, OSError):
                     continue
 
@@ -183,33 +185,56 @@ class CasaITApi:
         pcf_states: dict[int, list[int]] = {}
         dm_states: dict[int, dict[int, int]] = {}
 
-        async with self.lock:
-            for addr, device in self.im117_om117.items():
-                set_high = 0x38 <= addr <= 0x3F
-                try:
+        for addr, device in self.im117_om117.items():
+            set_high = 0x38 <= addr <= 0x3F
+            try:
+                async with self.lock:
                     port_states, _ = await self.hass.async_add_executor_job(device.read_ports, set_high)
-                    pcf_states[addr] = port_states
-                except Exception as result:  # noqa: BLE001
-                    _LOGGER.warning("Error reading from device %s: %s", hex(addr), result)
-                    if addr in self._pcf_states:
-                        pcf_states[addr] = self._pcf_states[addr]
+            except Exception as exc:  # noqa: BLE001
+                self._record_read_error("PCF8574", addr, exc)
+            else:
+                self._clear_read_error("PCF8574", addr)
+                pcf_states[addr] = port_states
 
-            for addr, device in self.dm117.items():
-                try:
+        for addr, device in self.dm117.items():
+            try:
+                async with self.lock:
                     port_states = await self.hass.async_add_executor_job(device.read_ports)
-                except Exception as result:  # noqa: BLE001
-                    _LOGGER.warning("Error reading from DM117 device %s: %s", hex(addr), result)
-                    if addr in self._dm117_states:
-                        dm_states[addr] = self._dm117_states[addr]
+            except Exception as exc:  # noqa: BLE001
+                self._record_read_error("DM117", addr, exc)
+            else:
+                if port_states is None:
+                    self._record_read_error("DM117", addr)
                 else:
-                    if port_states is not None:
-                        dm_states[addr] = port_states
-                    elif addr in self._dm117_states:
-                        dm_states[addr] = self._dm117_states[addr]
+                    self._clear_read_error("DM117", addr)
+                    dm_states[addr] = port_states
 
         self._pcf_states = pcf_states
         self._dm117_states = dm_states
         async_dispatcher_send(self.hass, SIGNAL_STATE_UPDATED)
+
+    def _record_read_error(self, device_type: str, address: int, exc: Exception | None = None) -> None:
+        """Log a device read failure only when it first becomes unavailable."""
+
+        key = (device_type, address)
+        if key in self._read_errors:
+            return
+
+        self._read_errors.add(key)
+        if exc is None:
+            _LOGGER.warning("%s device at 0x%02X returned no data and is unavailable", device_type, address)
+        else:
+            _LOGGER.warning("Error reading %s device at 0x%02X; marking unavailable: %s", device_type, address, exc)
+
+    def _clear_read_error(self, device_type: str, address: int) -> None:
+        """Log once when a previously unavailable device recovers."""
+
+        key = (device_type, address)
+        if key not in self._read_errors:
+            return
+
+        self._read_errors.remove(key)
+        _LOGGER.info("%s device at 0x%02X is available again", device_type, address)
 
     async def async_force_refresh(self) -> None:
         """Force a single poll and dispatch."""

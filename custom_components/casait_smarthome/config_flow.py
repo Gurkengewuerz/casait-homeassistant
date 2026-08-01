@@ -207,9 +207,9 @@ class OptionsFlowHandler(OptionsFlow):
 
     def __init__(self) -> None:
         """Initialize options flow."""
-        self._selected_om117_addr = None
-        self._selected_dm117_addr = None
-        self._selected_ow_id = None
+        self._selected_om117_addr: int | None = None
+        self._selected_dm117_addr: int | None = None
+        self._selected_ow_id: str | None = None
 
     @property
     def _runtime_data(self):
@@ -342,7 +342,7 @@ class OptionsFlowHandler(OptionsFlow):
 
         # If the user has made a selection
         if user_input is not None:
-            self._selected_dm117_addr = user_input["selected_module"]
+            self._selected_dm117_addr = int(user_input["selected_module"])
             return await self.async_step_dm117_config()
 
         # Show form

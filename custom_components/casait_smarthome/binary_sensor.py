@@ -169,6 +169,9 @@ class CasaITDM117BinarySensor(BinarySensorEntity):
             return
 
         raw_value = states[self._port]
+        # DM117 input responses use physical D/C for bits 0/1, while output responses
+        # use A/B. The installed wiring deliberately compensates for that firmware
+        # asymmetry, so the logical channel order here must remain unchanged.
         port_config = PortConfig.from_raw(raw_value)
         value = port_config.port_a if self._channel == 0 else port_config.port_b
         self._attr_is_on = bool(value)

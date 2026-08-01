@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
-import contextlib
 import logging
 
 import voluptuous as vol
@@ -67,14 +65,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> bo
 
     _LOGGER.debug("Started casaIT initialization task")
 
-    async def _finish_platform_setup() -> None:
-        await api.async_wait_initialized()
-        try:
-            await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-        except Exception:
-            _LOGGER.exception("Error setting up casaIT platforms")
+    await api.async_wait_initialized()
+    if api.initialization_error is not None:
+        await hass.async_add_executor_job(api.bus.close)
+        raise ConfigEntryNotReady(f"Failed to initialize casaIT devices: {api.initialization_error}") from api.initialization_error
 
-    api.setup_task = hass.async_create_background_task(_finish_platform_setup(), "casait_forward_entry_setups")
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
 
     _LOGGER.info("CasaIT : Smart Home integration setup complete")
 
@@ -84,14 +81,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> bo
 async def async_unload_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> bool:
     """Unload a config entry."""
     api = entry.runtime_data
-
-    # Settle the deferred platform setup first: unloading while it is still forwarding
-    # would leave platforms registered against a bus we are about to close.
-    if api.setup_task:
-        api.setup_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await api.setup_task
-        api.setup_task = None
 
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
@@ -103,3 +92,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> b
         await hass.async_add_executor_job(api.bus.close)
 
     return unload_ok
+
+
+async def _async_reload_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> None:
+    """Reload the config entry after its options change."""
+
+    await hass.config_entries.async_reload(entry.entry_id)

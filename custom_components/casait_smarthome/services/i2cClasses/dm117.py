@@ -316,6 +316,8 @@ class PortConfig:
     @classmethod
     def from_raw(cls, value: int) -> PortConfig:
         """Create config from raw byte value."""
+        # Bits 0/1 represent A/B for outputs but physical D/C in DM117 input
+        # responses. Callers intentionally retain this order for deployed wiring.
         if value is None or value < 0 or value > 3:
             value = 0
         return cls(port_a=bool(value & 0x01), port_b=bool(value & 0x02))
