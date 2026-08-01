@@ -19,7 +19,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 
 from . import CasaITConfigEntry
 from .api import CasaITApi
-from .const import DOMAIN, OM117_MODE_BLIND, PCF8574_MAPPED_PORTS, SIGNAL_STATE_UPDATED
+from .const import DOMAIN, OM117_MODE_BLIND, PCF8574_MAPPED_PORTS
 from .helpers import OM117PairConfig, get_address_range, get_om117_pair_configuration
 
 _LOGGER = logging.getLogger(__name__)
@@ -126,7 +126,9 @@ class CasaITBlindCover(CoverEntity, RestoreEntity):
         elif last_state and last_state.state in (STATE_OPEN, STATE_CLOSED):
             self._position = 100.0 if last_state.state == STATE_OPEN else 0.0
 
-        self.async_on_remove(async_dispatcher_connect(self.hass, SIGNAL_STATE_UPDATED, self._handle_state_update))
+        self.async_on_remove(
+            async_dispatcher_connect(self.hass, self._api.state_update_signal, self._handle_state_update)
+        )
 
     async def async_will_remove_from_hass(self) -> None:
         """Stop movement when entity is removed."""
@@ -280,15 +282,8 @@ class CasaITBlindCover(CoverEntity, RestoreEntity):
         if up and down:
             raise HomeAssistantError("Cannot drive blind up and down simultaneously")
 
-        device = self._api.im117_om117.get(self._address)
-        if not device:
-            raise HomeAssistantError("Output module not available")
-
-        async with self._api.lock:
-            up_ok = await self.hass.async_add_executor_job(device.write_port, self._hardware_up_port, 0 if up else 1)
-            down_ok = await self.hass.async_add_executor_job(
-                device.write_port, self._hardware_down_port, 0 if down else 1
-            )
+        up_ok = await self._api.async_write_pcf_port(self._address, self._hardware_up_port, 0 if up else 1)
+        down_ok = await self._api.async_write_pcf_port(self._address, self._hardware_down_port, 0 if down else 1)
 
         if not (up_ok and down_ok):
             # Releasing the outputs also runs from teardown and from the motion task's

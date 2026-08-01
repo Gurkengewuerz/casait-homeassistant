@@ -14,7 +14,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import CasaITConfigEntry
 from .api import CasaITApi
-from .const import DOMAIN, PCF8574_MAPPED_PORTS, SIGNAL_STATE_UPDATED
+from .const import DOMAIN, PCF8574_MAPPED_PORTS
 from .helpers import (
     build_onewire_device_info,
     default_onewire_profile,
@@ -118,7 +118,9 @@ class CasaITBinarySensor(BinarySensorEntity):
     async def async_added_to_hass(self) -> None:
         """Register callbacks when entity is added to hass."""
         await super().async_added_to_hass()
-        self.async_on_remove(async_dispatcher_connect(self.hass, SIGNAL_STATE_UPDATED, self._handle_state_update))
+        self.async_on_remove(
+            async_dispatcher_connect(self.hass, self._api.state_update_signal, self._handle_state_update)
+        )
 
     @property
     def available(self) -> bool:
@@ -185,7 +187,9 @@ class CasaITDM117BinarySensor(BinarySensorEntity):
     async def async_added_to_hass(self) -> None:
         """Register callbacks when entity is added to hass."""
         await super().async_added_to_hass()
-        self.async_on_remove(async_dispatcher_connect(self.hass, SIGNAL_STATE_UPDATED, self._handle_state_update))
+        self.async_on_remove(
+            async_dispatcher_connect(self.hass, self._api.state_update_signal, self._handle_state_update)
+        )
 
     @property
     def available(self) -> bool:
@@ -196,8 +200,9 @@ class CasaITDM117BinarySensor(BinarySensorEntity):
 class CasaITDS2413BinarySensor(BinarySensorEntity):
     """Binary sensor for DS2413 channels configured as inputs."""
 
-    _attr_has_entity_name = False
+    _attr_has_entity_name = True
     _attr_should_poll = True
+    _attr_translation_key = "ds2413_input"
 
     def __init__(
         self,
@@ -214,7 +219,7 @@ class CasaITDS2413BinarySensor(BinarySensorEntity):
         self._meta = meta
         channel_name = "A" if channel == 0 else "B"
         self._attr_unique_id = f"{device_id}_channel_{channel}_input"
-        self._attr_name = f"{device_id} channel {channel_name} input"
+        self._attr_translation_placeholders = {"channel": channel_name}
         self._attr_device_info = build_onewire_device_info(device_id, meta)
 
     async def async_update(self) -> None:

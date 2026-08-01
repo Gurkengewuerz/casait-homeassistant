@@ -16,9 +16,10 @@
   {
     "case": "ds2413_binary_sensor",
     "unique_id": "3a00000000000001_channel_0_input",
-    "name": "3a00000000000001 channel A input",
-    "device_identifiers": [["casait_smarthome", "sm117_18"]],
-    "device_name": "SM117 Bus 0x18"
+    "name": "Channel A input",
+    "device_identifiers": [["casait_smarthome", "onewire_3a00000000000001"]],
+    "device_name": "DS2413 3a00000000000001",
+    "via_device": ["casait_smarthome", "sm117_18"]
   },
   {
     "case": "om117_switch",
@@ -37,9 +38,10 @@
   {
     "case": "ds2413_switch",
     "unique_id": "3a00000000000001_channel_0_output",
-    "name": "3a00000000000001 channel A output",
-    "device_identifiers": [["casait_smarthome", "sm117_18"]],
-    "device_name": "SM117 Bus 0x18"
+    "name": "Channel A output",
+    "device_identifiers": [["casait_smarthome", "onewire_3a00000000000001"]],
+    "device_name": "DS2413 3a00000000000001",
+    "via_device": ["casait_smarthome", "sm117_18"]
   },
   {
     "case": "dm117_light",
@@ -51,9 +53,10 @@
   {
     "case": "led_controller_light",
     "unique_id": "1900000000000001_led_controller",
-    "name": "1900000000000001 LED controller",
-    "device_identifiers": [["casait_smarthome", "sm117_18"]],
-    "device_name": "SM117 Bus 0x18"
+    "name": "LED controller",
+    "device_identifiers": [["casait_smarthome", "onewire_1900000000000001"]],
+    "device_name": "DS28E17 1900000000000001",
+    "via_device": ["casait_smarthome", "sm117_18"]
   },
   {
     "case": "om117_cover",
@@ -65,16 +68,18 @@
   {
     "case": "ds18b20_temperature",
     "unique_id": "2800000000000001_temperature",
-    "name": "DS18B20 2800000000000001 Temperature",
-    "device_identifiers": [["casait_smarthome", "sm117_18"]],
-    "device_name": "SM117 Bus 0x18"
+    "name": "Temperature",
+    "device_identifiers": [["casait_smarthome", "onewire_2800000000000001"]],
+    "device_name": "DS18B20 2800000000000001",
+    "via_device": ["casait_smarthome", "sm117_18"]
   },
   {
     "case": "ds2438_sensor",
     "unique_id": "2600000000000001_humidity",
-    "name": "DS2438 2600000000000001 Humidity",
-    "device_identifiers": [["casait_smarthome", "sm117_18"]],
-    "device_name": "SM117 Bus 0x18"
+    "name": "Humidity",
+    "device_identifiers": [["casait_smarthome", "onewire_2600000000000001"]],
+    "device_name": "DS2438 2600000000000001",
+    "via_device": ["casait_smarthome", "sm117_18"]
   },
   {
     "case": "debug_sensor",

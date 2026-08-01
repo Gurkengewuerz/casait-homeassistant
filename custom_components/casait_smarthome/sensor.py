@@ -41,7 +41,7 @@ class OneWireSensorDescription(SensorEntityDescription):
 class OneWireEntity(SensorEntity):
     """Base entity for OneWire sensors."""
 
-    _attr_has_entity_name = False
+    _attr_has_entity_name = True
 
     entity_description: OneWireSensorDescription
 
@@ -55,9 +55,6 @@ class OneWireEntity(SensorEntity):
         self._attr_device_class = description.device_class
         self._attr_native_unit_of_measurement = description.native_unit_of_measurement
         self._attr_state_class = description.state_class
-        device_type = str(meta.get("device_type") or "").strip()
-        base_label = f"{device_type} {device_id}" if device_type else device_id
-        self._attr_name = f"{base_label} {description.name}".strip()
         if self._bus_address is None:
             _LOGGER.warning(
                 "OneWire device %s has no bus address; it will not be grouped under a common device in Home Assistant",
@@ -76,7 +73,7 @@ class DS18B20TemperatureSensor(OneWireEntity):
             meta,
             OneWireSensorDescription(
                 key="temperature",
-                name="Temperature",
+                translation_key="temperature",
                 device_class=SensorDeviceClass.TEMPERATURE,
                 native_unit_of_measurement=UnitOfTemperature.CELSIUS,
                 state_class=SensorStateClass.MEASUREMENT,
@@ -251,7 +248,7 @@ async def async_setup_entry(
             descriptions = [
                 OneWireSensorDescription(
                     key="temperature",
-                    name="Temperature",
+                    translation_key="temperature",
                     device_class=SensorDeviceClass.TEMPERATURE,
                     native_unit_of_measurement=UnitOfTemperature.CELSIUS,
                     state_class=SensorStateClass.MEASUREMENT,
@@ -260,7 +257,7 @@ async def async_setup_entry(
                 ),
                 OneWireSensorDescription(
                     key="humidity",
-                    name="Humidity",
+                    translation_key="humidity",
                     device_class=SensorDeviceClass.HUMIDITY,
                     native_unit_of_measurement=PERCENTAGE,
                     state_class=SensorStateClass.MEASUREMENT,
@@ -269,7 +266,7 @@ async def async_setup_entry(
                 ),
                 OneWireSensorDescription(
                     key="illuminance",
-                    name="Illuminance",
+                    translation_key="illuminance",
                     device_class=SensorDeviceClass.ILLUMINANCE,
                     native_unit_of_measurement=LIGHT_LUX,
                     state_class=SensorStateClass.MEASUREMENT,

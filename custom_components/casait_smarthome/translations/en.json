@@ -17,6 +17,34 @@
             }
         }
     },
+    "entity": {
+        "binary_sensor": {
+            "ds2413_input": {
+                "name": "Channel {channel} input"
+            }
+        },
+        "switch": {
+            "ds2413_output": {
+                "name": "Channel {channel} output"
+            }
+        },
+        "light": {
+            "led_controller": {
+                "name": "LED controller"
+            }
+        },
+        "sensor": {
+            "temperature": {
+                "name": "Temperature"
+            },
+            "humidity": {
+                "name": "Humidity"
+            },
+            "illuminance": {
+                "name": "Illuminance"
+            }
+        }
+    },
     "services": {
         "scan_devices": {
             "description": "Scans the connected I2C bus for compatible devices.",

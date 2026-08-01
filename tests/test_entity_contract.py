@@ -25,6 +25,13 @@ from custom_components.casait_smarthome.switch import CasaITDM117Switch, CasaITD
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 ENTRY = SimpleNamespace(entry_id="entry-test")
+PLATFORM_BY_CASE = {
+    "ds2413_binary_sensor": "binary_sensor",
+    "ds2413_switch": "switch",
+    "led_controller_light": "light",
+    "ds18b20_temperature": "sensor",
+    "ds2438_sensor": "sensor",
+}
 
 
 def _api() -> SimpleNamespace:
@@ -54,7 +61,7 @@ def _entities() -> dict[str, Any]:
             _meta("DS2438"),
             OneWireSensorDescription(
                 key="humidity",
-                name="Humidity",
+                translation_key="humidity",
                 profile="ds2438_hih5030_tept5600",
                 value_fn=lambda reading: reading,
             ),
@@ -67,13 +74,22 @@ def _normalize_entity(case: str, entity: Any) -> dict[str, Any]:
     device_info = entity.device_info
     assert device_info is not None
     identifiers = sorted([list(identifier) for identifier in device_info["identifiers"]])
-    return {
+    name = entity.name
+    if (platform := PLATFORM_BY_CASE.get(case)) is not None:
+        strings_path = Path(__file__).parents[1] / "custom_components" / "casait_smarthome" / "strings.json"
+        strings = json.loads(strings_path.read_text(encoding="utf-8"))
+        template = strings["entity"][platform][entity.translation_key]["name"]
+        name = template.format(**getattr(entity, "_attr_translation_placeholders", {}))
+    normalized = {
         "case": case,
         "unique_id": entity.unique_id,
-        "name": entity.name,
+        "name": name,
         "device_identifiers": identifiers,
         "device_name": device_info["name"],
     }
+    if via_device := device_info.get("via_device"):
+        normalized["via_device"] = list(via_device)
+    return normalized
 
 
 def test_entity_contract_matches_golden_file() -> None:

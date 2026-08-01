@@ -17,6 +17,34 @@
       "already_configured": "[%key:common::config_flow::abort::already_configured_device%]"
     }
   },
+  "entity": {
+    "binary_sensor": {
+      "ds2413_input": {
+        "name": "Channel {channel} input"
+      }
+    },
+    "switch": {
+      "ds2413_output": {
+        "name": "Channel {channel} output"
+      }
+    },
+    "light": {
+      "led_controller": {
+        "name": "LED controller"
+      }
+    },
+    "sensor": {
+      "temperature": {
+        "name": "Temperature"
+      },
+      "humidity": {
+        "name": "Humidity"
+      },
+      "illuminance": {
+        "name": "Illuminance"
+      }
+    }
+  },
   "services": {
     "scan_devices": {
       "name": "Scan devices",

@@ -21,7 +21,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import CasaITConfigEntry
 from .api import CasaITApi
-from .const import DEFAULT_LED_COUNT, DOMAIN, SIGNAL_STATE_UPDATED
+from .const import DEFAULT_LED_COUNT, DOMAIN
 from .helpers import (
     build_onewire_device_info,
     default_onewire_profile,
@@ -146,7 +146,9 @@ class CasaITDM117Light(LightEntity):
     async def async_added_to_hass(self) -> None:
         """Register callbacks when entity is added to hass."""
         await super().async_added_to_hass()
-        self.async_on_remove(async_dispatcher_connect(self.hass, SIGNAL_STATE_UPDATED, self._handle_state_update))
+        self.async_on_remove(
+            async_dispatcher_connect(self.hass, self._api.state_update_signal, self._handle_state_update)
+        )
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on the light with optional brightness."""
@@ -161,10 +163,6 @@ class CasaITDM117Light(LightEntity):
         await self._async_write(0, self._transition_speed(kwargs.get(ATTR_TRANSITION)))
 
     async def _async_write(self, percentage: int, speed: DimmerSpeed) -> None:
-        device = self._api.dm117.get(self._address)
-        if not device:
-            raise HomeAssistantError("DM117 module not available")
-
         dimmer = DimmerConfig(value=percentage, speed=speed)
         config = DM117PortConfig(
             port=self._port,
@@ -172,8 +170,7 @@ class CasaITDM117Light(LightEntity):
             dimmer=dimmer,
         )
 
-        async with self._api.lock:
-            success = await self.hass.async_add_executor_job(device.write_port, config)
+        success = await self._api.async_write_dm117_port(self._address, config)
 
         if not success:
             raise HomeAssistantError("Unable to write DM117 dimmer value")
@@ -207,10 +204,12 @@ class CasaITDM117Light(LightEntity):
 class CasaITLEDControllerLight(LightEntity):
     """Representation of a DS28E17-based LED controller."""
 
+    _attr_has_entity_name = True
     _attr_should_poll = True
     _attr_supported_color_modes = {ColorMode.RGB}
     _attr_color_mode = ColorMode.RGB
     _attr_supported_features = LightEntityFeature.EFFECT
+    _attr_translation_key = "led_controller"
 
     def __init__(self, api: CasaITApi, device_id: str, meta: dict[str, Any], led_count: int) -> None:
         """Initialize the LED controller light."""
@@ -222,7 +221,6 @@ class CasaITLEDControllerLight(LightEntity):
         self._led_count = led_count or DEFAULT_LED_COUNT
         self._attr_effect_list = list(ANIMATION_EFFECTS.values())
         self._attr_unique_id = f"{device_id}_led_controller"
-        self._attr_name = f"{device_id} LED controller"
         self._attr_device_info = build_onewire_device_info(device_id, meta)
         self._attr_assumed_state = True
 

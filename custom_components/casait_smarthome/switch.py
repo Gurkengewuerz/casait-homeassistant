@@ -15,7 +15,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import CasaITConfigEntry
 from .api import CasaITApi
-from .const import DOMAIN, OM117_MODE_BLIND, PCF8574_MAPPED_PORTS, SIGNAL_STATE_UPDATED
+from .const import DOMAIN, OM117_MODE_BLIND, PCF8574_MAPPED_PORTS
 from .helpers import (
     build_onewire_device_info,
     default_onewire_profile,
@@ -130,7 +130,9 @@ class CasaITSwitch(SwitchEntity):
     async def async_added_to_hass(self) -> None:
         """Register callbacks when entity is added to hass."""
         await super().async_added_to_hass()
-        self.async_on_remove(async_dispatcher_connect(self.hass, SIGNAL_STATE_UPDATED, self._handle_state_update))
+        self.async_on_remove(
+            async_dispatcher_connect(self.hass, self._api.state_update_signal, self._handle_state_update)
+        )
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the switch on."""
@@ -144,12 +146,7 @@ class CasaITSwitch(SwitchEntity):
 
     async def _async_set_state(self, state: int) -> None:
         """Set the state of the switch."""
-        device = self._api.im117_om117.get(self._address)
-        if not device:
-            raise HomeAssistantError("Output module not available")
-
-        async with self._api.lock:
-            success = await self.hass.async_add_executor_job(device.write_port, self._hardware_port, state)
+        success = await self._api.async_write_pcf_port(self._address, self._hardware_port, state)
 
         if not success:
             raise HomeAssistantError("Unable to write PCF8574 output state")
@@ -216,7 +213,9 @@ class CasaITDM117Switch(SwitchEntity):
     async def async_added_to_hass(self) -> None:
         """Register callbacks when entity is added to hass."""
         await super().async_added_to_hass()
-        self.async_on_remove(async_dispatcher_connect(self.hass, SIGNAL_STATE_UPDATED, self._handle_state_update))
+        self.async_on_remove(
+            async_dispatcher_connect(self.hass, self._api.state_update_signal, self._handle_state_update)
+        )
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on the switch."""
@@ -227,10 +226,6 @@ class CasaITDM117Switch(SwitchEntity):
         await self._async_set_state(False)
 
     async def _async_set_state(self, state: bool) -> None:
-        device = self._api.dm117.get(self._address)
-        if not device:
-            raise HomeAssistantError("DM117 module not available")
-
         digital = PortConfig(
             port_a=state if self._channel == 0 else None,
             port_b=state if self._channel == 1 else None,
@@ -241,8 +236,7 @@ class CasaITDM117Switch(SwitchEntity):
             digital=digital,
         )
 
-        async with self._api.lock:
-            success = await self.hass.async_add_executor_job(device.write_port, config)
+        success = await self._api.async_write_dm117_port(self._address, config)
 
         if not success:
             raise HomeAssistantError("Unable to write DM117 output state")
@@ -258,8 +252,9 @@ class CasaITDM117Switch(SwitchEntity):
 class CasaITDS2413Switch(SwitchEntity):
     """Switch entity for DS2413 channels configured as outputs."""
 
-    _attr_has_entity_name = False
+    _attr_has_entity_name = True
     _attr_should_poll = True
+    _attr_translation_key = "ds2413_output"
 
     def __init__(
         self,
@@ -276,7 +271,7 @@ class CasaITDS2413Switch(SwitchEntity):
         self._meta = meta
         channel_name = "A" if channel == 0 else "B"
         self._attr_unique_id = f"{device_id}_channel_{channel}_output"
-        self._attr_name = f"{device_id} channel {channel_name} output"
+        self._attr_translation_placeholders = {"channel": channel_name}
         self._attr_device_info = build_onewire_device_info(device_id, meta)
 
     async def async_update(self) -> None:

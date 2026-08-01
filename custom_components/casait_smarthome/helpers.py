@@ -190,21 +190,16 @@ def default_onewire_profile(meta: Mapping[str, Any]) -> str | None:
 
 
 def build_onewire_device_info(device_id: str, meta: Mapping[str, Any]) -> DeviceInfo:
-    """Return DeviceInfo referencing the SM117 bus for OneWire devices."""
+    """Return DeviceInfo for a 1-Wire device linked through its SM117 bus."""
 
     bus_address = meta.get("bus_address")
     device_type = str(meta.get("device_type") or "").strip()
-    if bus_address is not None:
-        return DeviceInfo(
-            identifiers={(DOMAIN, f"sm117_{bus_address:02x}")},
-            name=f"SM117 Bus 0x{int(bus_address):02X}",
-            manufacturer="CasaIT",
-            model="SM117 1-Wire bridge",
-        )
-
-    return DeviceInfo(
+    device_info = DeviceInfo(
         identifiers={(DOMAIN, f"onewire_{device_id}")},
-        name=f"OneWire {device_id}",
+        name=f"{device_type or 'OneWire'} {device_id}",
         model=device_type or "OneWire",
         manufacturer="Maxim Integrated",
     )
+    if bus_address is not None:
+        device_info["via_device"] = (DOMAIN, f"sm117_{int(bus_address):02x}")
+    return device_info

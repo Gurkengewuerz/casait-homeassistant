@@ -13,7 +13,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .const import DEFAULT_OW_POLL_INTERVAL, DEFAULT_OW_PROFILE, I2C_ADDR_RANGES, SIGNAL_STATE_UPDATED
-from .services.i2cClasses.dm117 import DM117, DeviceType
+from .services.i2cClasses.dm117 import DM117, DeviceType, DM117PortConfig
 from .services.i2cClasses.ds2438 import DS2438Reading
 from .services.i2cClasses.led_controller import LEDConfig
 from .services.i2cClasses.oneWireBus import OneWireBus
@@ -30,12 +30,14 @@ class CasaITApi:
         self,
         hass: HomeAssistant,
         bus: SMBus,
+        entry_id: str,
         onewire_profiles: Mapping[str, str] | None = None,
         onewire_poll_intervals: Mapping[str, int] | None = None,
     ) -> None:
         """Initialize the API."""
         self.hass = hass
         self.bus = bus
+        self.state_update_signal = f"{SIGNAL_STATE_UPDATED}_{entry_id}"
         self.im117_om117: dict[int, PCF8574] = {}
         self.dm117: dict[int, DM117] = {}
         self.sm117: dict[int, OneWireBus] = {}
@@ -44,7 +46,7 @@ class CasaITApi:
         self._onewire_profiles = dict(onewire_profiles or {})
         self._onewire_poll_intervals = dict(onewire_poll_intervals or {})
         self.found_i2c_devices: dict[str, list[int]] = {}
-        self.lock = asyncio.Lock()
+        self._lock = asyncio.Lock()
         self._pcf_states: dict[int, list[int]] = {}
         self._dm117_states: dict[int, dict[int, int]] = {}
         self._read_errors: set[tuple[str, int]] = set()
@@ -134,7 +136,7 @@ class CasaITApi:
 
             for addr in range(start, end + 1):
                 try:
-                    async with self.lock:
+                    async with self._lock:
                         await self.hass.async_add_executor_job(self.bus.write_quick, addr)
                 except (SMBusProxyError, OSError):
                     continue
@@ -196,7 +198,7 @@ class CasaITApi:
         for addr, device in self.im117_om117.items():
             set_high = 0x38 <= addr <= 0x3F
             try:
-                async with self.lock:
+                async with self._lock:
                     port_states, _ = await self.hass.async_add_executor_job(device.read_ports, set_high)
             except Exception as exc:  # noqa: BLE001
                 self._record_read_error("PCF8574", addr, exc)
@@ -209,7 +211,7 @@ class CasaITApi:
 
         for addr, device in self.dm117.items():
             try:
-                async with self.lock:
+                async with self._lock:
                     port_states = await self.hass.async_add_executor_job(device.read_ports)
             except Exception as exc:  # noqa: BLE001
                 self._record_read_error("DM117", addr, exc)
@@ -222,7 +224,7 @@ class CasaITApi:
 
         self._pcf_states = pcf_states
         self._dm117_states = dm_states
-        async_dispatcher_send(self.hass, SIGNAL_STATE_UPDATED)
+        async_dispatcher_send(self.hass, self.state_update_signal)
 
     def _record_read_error(self, device_type: str, address: int, exc: Exception | None = None) -> None:
         """Log a device read failure only when it first becomes unavailable."""
@@ -302,7 +304,7 @@ class CasaITApi:
 
         for addr, ow_bus in self.sm117.items():
             try:
-                async with self.lock:
+                async with self._lock:
                     devices = await self.hass.async_add_executor_job(ow_bus.scan_devices, True)
             except Exception as exc:  # noqa: BLE001
                 _LOGGER.warning("Error scanning 1-Wire bus at 0x%02x: %s", addr, exc)
@@ -366,7 +368,7 @@ class CasaITApi:
         if not bus:
             return None
 
-        async with self.lock:
+        async with self._lock:
             return await self.hass.async_add_executor_job(bus.read_temperature, device_id)
 
     async def read_ds2438(self, device_id: str) -> DS2438Reading | None:
@@ -376,7 +378,7 @@ class CasaITApi:
         if not bus:
             return None
 
-        async with self.lock:
+        async with self._lock:
             return await self.hass.async_add_executor_job(
                 bus.ds2438.get_reading, device_id, bus.get_interval(device_id)
             )
@@ -389,7 +391,7 @@ class CasaITApi:
             return None
 
         read_job = partial(bus.read_binary_state, device_id, channel, invert=invert)
-        async with self.lock:
+        async with self._lock:
             return await self.hass.async_add_executor_job(read_job)
 
     async def write_ds2413_state(self, device_id: str, channel: int, value: bool) -> bool:
@@ -399,7 +401,7 @@ class CasaITApi:
         if not bus:
             return False
 
-        async with self.lock:
+        async with self._lock:
             return await self.hass.async_add_executor_job(bus.ds2413.set_state, device_id, channel, value)
 
     async def read_led_config(self, device_id: str, *, use_cache: bool = True) -> LEDConfig | None:
@@ -410,7 +412,7 @@ class CasaITApi:
             return None
 
         read_job = partial(bus.read_led_config, device_id, use_cache)
-        async with self.lock:
+        async with self._lock:
             return await self.hass.async_add_executor_job(read_job)
 
     async def write_led_config(self, device_id: str, config: LEDConfig) -> bool:
@@ -421,5 +423,25 @@ class CasaITApi:
             return False
 
         write_job = partial(bus.write_led_config, device_id, config)
-        async with self.lock:
+        async with self._lock:
             return await self.hass.async_add_executor_job(write_job)
+
+    async def async_write_pcf_port(self, address: int, port: int, state: int) -> bool:
+        """Write a PCF8574 port while serializing hardware access."""
+
+        device = self.im117_om117.get(address)
+        if device is None:
+            return False
+
+        async with self._lock:
+            return await self.hass.async_add_executor_job(device.write_port, port, state)
+
+    async def async_write_dm117_port(self, address: int, config: DM117PortConfig) -> bool:
+        """Write a DM117 port while serializing hardware access."""
+
+        device = self.dm117.get(address)
+        if device is None:
+            return False
+
+        async with self._lock:
+            return await self.hass.async_add_executor_job(device.write_port, config)

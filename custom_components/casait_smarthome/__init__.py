@@ -11,6 +11,7 @@ from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.typing import ConfigType
 
 from .api import CasaITApi
@@ -68,6 +69,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> bo
     api = CasaITApi(
         hass,
         bus,
+        entry.entry_id,
         get_configured_onewire_profiles(entry.options),
         get_configured_onewire_poll_intervals(entry.options),
     )
@@ -83,6 +85,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> bo
         await hass.async_add_executor_job(api.bus.close)
         message = f"Failed to initialize casaIT devices: {api.initialization_error}"
         raise ConfigEntryNotReady(message) from api.initialization_error
+
+    device_registry = dr.async_get(hass)
+    for address in api.sm117:
+        device_registry.async_get_or_create(
+            config_entry_id=entry.entry_id,
+            identifiers={(DOMAIN, f"sm117_{address:02x}")},
+            name=f"SM117 Bus 0x{address:02X}",
+            manufacturer="CasaIT",
+            model="SM117 1-Wire bridge",
+        )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
