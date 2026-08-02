@@ -20,6 +20,7 @@ from .helpers import (
     get_configured_onewire_poll_intervals,
     get_configured_onewire_profiles,
     get_dm117_port_configuration,
+    migrate_options_to_nested,
     migrated_device_identifiers,
     migrated_entity_identity,
 )
@@ -50,7 +51,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Migrate entity IDs to the canonical hardware-based naming scheme."""
+    """Migrate a config entry to the current version."""
 
     if entry.version > CONFIG_ENTRY_VERSION:
         _LOGGER.error(
@@ -62,6 +63,26 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     if entry.version == CONFIG_ENTRY_VERSION:
         return True
+
+    # v1 -> v2 rewrote entity and device identifiers to be bridge-scoped.
+    if entry.version < 2 and not _migrate_entity_identities(hass, entry):
+        return False
+
+    # v2 -> v3 replaced the flat option namespace with nested sections.
+    options = migrate_options_to_nested(entry.options) if entry.version < 3 else dict(entry.options)
+
+    hass.config_entries.async_update_entry(entry, options=options, version=CONFIG_ENTRY_VERSION)
+    _LOGGER.info(
+        "Migrated casaIT config entry %s from version %s to %s",
+        entry.entry_id,
+        entry.version,
+        CONFIG_ENTRY_VERSION,
+    )
+    return True
+
+
+def _migrate_entity_identities(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Rewrite legacy entity and device identifiers to the bridge-scoped scheme."""
 
     entity_registry = er.async_get(hass)
     device_registry = dr.async_get(hass)
@@ -133,7 +154,6 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     for device_id, target_identifiers in device_migrations:
         device_registry.async_update_device(device_id, new_identifiers=target_identifiers)
 
-    hass.config_entries.async_update_entry(entry, version=CONFIG_ENTRY_VERSION)
     _LOGGER.info(
         "Migrated %s casaIT entities and %s devices to bridge-scoped identities",
         len(migrations),

@@ -27,7 +27,18 @@ from .const import (
     OM117_MODE_BLIND,
     OM117_MODE_SWITCH,
 )
-from .helpers import OM117PairConfig, get_address_range, get_om117_pair_configuration
+from .helpers import (
+    OM117PairConfig,
+    get_address_range,
+    get_configured_led_counts,
+    get_configured_onewire_poll_intervals,
+    get_configured_onewire_profiles,
+    get_dm117_slot_types,
+    get_om117_pair_configuration,
+    set_dm117_slots,
+    set_om117_pairs,
+    set_onewire_device,
+)
 from .services.smbus_proxy import DEFAULT_PORT, DEFAULT_TIMEOUT, SMBus, SMBusProxyError
 
 _LOGGER = logging.getLogger(__name__)
@@ -281,15 +292,16 @@ class OptionsFlowHandler(OptionsFlowWithReload):
         existing = get_om117_pair_configuration(self.config_entry.options).get(addr, {})
 
         if user_input is not None:
-            new_options = dict(self.config_entry.options)
-            for pair_index in range(1, 5):
-                option_prefix = f"om117_{addr}_pair_{pair_index}"
-                new_options[f"{option_prefix}_mode"] = user_input[f"pair_{pair_index}_mode"]
-                new_options[f"{option_prefix}_open_time"] = user_input[f"pair_{pair_index}_open_time"]
-                new_options[f"{option_prefix}_close_time"] = user_input[f"pair_{pair_index}_close_time"]
-                new_options[f"{option_prefix}_overrun_time"] = user_input[f"pair_{pair_index}_overrun_time"]
-
-            return self.async_create_entry(title="", data=new_options)
+            pairs = {
+                pair_index - 1: OM117PairConfig(
+                    mode=user_input[f"pair_{pair_index}_mode"],
+                    open_time=float(user_input[f"pair_{pair_index}_open_time"]),
+                    close_time=float(user_input[f"pair_{pair_index}_close_time"]),
+                    overrun_time=float(user_input[f"pair_{pair_index}_overrun_time"]),
+                )
+                for pair_index in range(1, 5)
+            }
+            return self.async_create_entry(title="", data=set_om117_pairs(self.config_entry.options, addr, pairs))
 
         schema: dict[Any, Any] = {}
         for idx in range(1, 5):
@@ -358,29 +370,18 @@ class OptionsFlowHandler(OptionsFlowWithReload):
     async def async_step_dm117_config(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Step 2: Configuration of the 8 slots for the selected module."""
 
+        if (addr := self._selected_dm117_addr) is None:
+            return self.async_abort(reason="integration_not_ready")
+
         if user_input is not None:
-            # Merge slot options for the selected module without touching others.
-            addr = self._selected_dm117_addr
-            new_options = dict(self.config_entry.options)
-            for i in range(1, 9):
-                slot_key = f"slot_{i}"
-                option_key = f"dm117_{addr}_slot_{i}"
-                if slot_key in user_input:
-                    new_options[option_key] = user_input[slot_key]
+            slots = {index - 1: user_input[f"slot_{index}"] for index in range(1, 9) if f"slot_{index}" in user_input}
+            return self.async_create_entry(title="", data=set_dm117_slots(self.config_entry.options, addr, slots))
 
-            return self.async_create_entry(title="", data=new_options)
-
-        # Build schema
-        schema = {}
-        current_options = self.config_entry.options
-        addr = self._selected_dm117_addr
-
-        for i in range(1, 9):  # Slot 1 to 8
-            # Key example: dm117_32_slot_1 (where 32 is the decimal address)
-            option_key = f"dm117_{addr}_slot_{i}"
-            default_val = current_options.get(option_key, "none")
-
-            schema[vol.Required(f"slot_{i}", default=default_val)] = vol.In(DM117_SLOT_TYPES)
+        configured = get_dm117_slot_types(self.config_entry.options).get(addr, {})
+        schema = {
+            vol.Required(f"slot_{index}", default=configured.get(index - 1, "none")): vol.In(DM117_SLOT_TYPES)
+            for index in range(1, 9)
+        }
 
         return self.async_show_form(
             step_id="dm117_config",
@@ -412,9 +413,10 @@ class OptionsFlowHandler(OptionsFlowWithReload):
             return await self.async_step_onewire_config()
 
         # List the devices with the current profile name (if already configured)
+        configured_profiles = get_configured_onewire_profiles(self.config_entry.options)
         options = {}
         for dev_id in detected_devices:
-            current_profile_key = self.config_entry.options.get(f"ow_{dev_id}_profile")
+            current_profile_key = configured_profiles.get(dev_id)
             profile_name = (
                 ONEWIRE_PROFILES.get(current_profile_key, "Unconfigured") if current_profile_key else "Unconfigured"
             )
@@ -430,36 +432,30 @@ class OptionsFlowHandler(OptionsFlowWithReload):
     async def async_step_onewire_config(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Step 2: Profile assignment for the selected OW device."""
 
-        if user_input is not None:
-            new_options = dict(self.config_entry.options)
-            option_key = f"ow_{self._selected_ow_id}_profile"
-            led_count_key = f"ow_{self._selected_ow_id}_led_count"
-            poll_interval_key = f"ow_{self._selected_ow_id}_poll_interval"
-            profile = user_input["profile"]
-
-            new_options[option_key] = profile
-            if "poll_interval" in user_input:
-                new_options[poll_interval_key] = user_input["poll_interval"]
-            else:
-                new_options.pop(poll_interval_key, None)
-
-            if profile == "ds28e17_led":
-                if "led_count" in user_input:
-                    new_options[led_count_key] = user_input["led_count"]
-            else:
-                new_options.pop(led_count_key, None)
-            return self.async_create_entry(title="", data=new_options)
-
-        dev_id = self._selected_ow_id
-        if dev_id is None:
+        if (dev_id := self._selected_ow_id) is None:
             return self.async_abort(reason="integration_not_ready")
-        key = f"ow_{dev_id}_profile"
-        default_val = self.config_entry.options.get(key, self._default_profile_for_device(dev_id))
 
-        led_count_default = self.config_entry.options.get(f"ow_{dev_id}_led_count", DEFAULT_LED_COUNT)
-        poll_interval_default = self.config_entry.options.get(
-            f"ow_{dev_id}_poll_interval",
-            DEFAULT_OW_POLL_INTERVAL.get(default_val, 60),
+        if user_input is not None:
+            profile = user_input["profile"]
+            return self.async_create_entry(
+                title="",
+                data=set_onewire_device(
+                    self.config_entry.options,
+                    dev_id,
+                    profile,
+                    # The LED count only means anything for the strip controller.
+                    led_count=user_input.get("led_count") if profile == "ds28e17_led" else None,
+                    poll_interval=user_input.get("poll_interval"),
+                ),
+            )
+
+        default_val = get_configured_onewire_profiles(self.config_entry.options).get(
+            dev_id, self._default_profile_for_device(dev_id)
+        )
+
+        led_count_default = get_configured_led_counts(self.config_entry.options).get(dev_id, DEFAULT_LED_COUNT)
+        poll_interval_default = get_configured_onewire_poll_intervals(self.config_entry.options).get(
+            dev_id, DEFAULT_OW_POLL_INTERVAL.get(default_val, 60)
         )
 
         return self.async_show_form(

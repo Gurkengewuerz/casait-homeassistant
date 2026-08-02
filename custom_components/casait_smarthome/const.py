@@ -2,10 +2,23 @@
 
 from typing import Final
 
-CONFIG_ENTRY_VERSION: Final = 2
+CONFIG_ENTRY_VERSION: Final = 3
 DOMAIN: Final = "casait_smarthome"
 
 CONF_TIMEOUT: Final = "timeout"
+
+# Top-level sections of the config entry options. Everything below them is keyed
+# by module address (decimal, as a string) or by 1-Wire device id. A flat
+# namespace was used up to entry version 2; see migrate_options_to_nested.
+OPT_MODULES: Final = "modules"
+OPT_ONEWIRE: Final = "onewire"
+OPT_SETTINGS: Final = "settings"
+
+# Per-module sub-keys
+OPT_PAIRS: Final = "pairs"
+OPT_SLOTS: Final = "slots"
+OPT_PORTS: Final = "ports"
+OPT_NAME: Final = "name"
 
 # I2C address ranges for device scanning
 I2C_ADDR_RANGES: Final = [

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Mapping
+from copy import deepcopy
 from dataclasses import dataclass
 import re
 from typing import Any
@@ -20,6 +21,11 @@ from .const import (
     I2C_ADDR_RANGES,
     OM117_MODE_BLIND,
     OM117_MODE_SWITCH,
+    OPT_MODULES,
+    OPT_ONEWIRE,
+    OPT_PAIRS,
+    OPT_SETTINGS,
+    OPT_SLOTS,
 )
 from .services.i2cClasses.dm117 import DeviceType
 
@@ -244,39 +250,62 @@ def _coerce_time(value: Any, default: float) -> float:
         return default
 
 
+def _section(options: Mapping[str, Any], *path: str) -> Mapping[str, Any]:
+    """Return a nested options section, or an empty mapping when absent."""
+
+    current: Any = options
+    for key in path:
+        if not isinstance(current, Mapping):
+            return {}
+        current = current.get(key)
+    return current if isinstance(current, Mapping) else {}
+
+
+def _module_entries(options: Mapping[str, Any], module: str) -> dict[int, Mapping[str, Any]]:
+    """Return the configured entries for one module kind, keyed by address."""
+
+    entries: dict[int, Mapping[str, Any]] = {}
+    for raw_address, config in _section(options, OPT_MODULES, module).items():
+        if not isinstance(config, Mapping):
+            continue
+        try:
+            address = int(raw_address)
+        except TypeError, ValueError:
+            continue
+        entries[address] = config
+    return entries
+
+
+def _index_items(section: Mapping[str, Any], count: int) -> list[tuple[int, Any]]:
+    """Yield (zero-based index, value) for one-based string keys within range."""
+
+    items: list[tuple[int, Any]] = []
+    for raw_index, value in section.items():
+        try:
+            index = int(raw_index) - 1
+        except TypeError, ValueError:
+            continue
+        if 0 <= index < count:
+            items.append((index, value))
+    return items
+
+
 def get_om117_pair_configuration(options: Mapping[str, Any]) -> dict[int, dict[int, OM117PairConfig]]:
     """Build a mapping of OM117 addresses to configured pair modes and timings."""
 
     pair_map: dict[int, dict[int, OM117PairConfig]] = defaultdict(dict)
 
-    for key, value in options.items():
-        if not key.startswith("om117_") or "_pair_" not in key:
-            continue
-
-        try:
-            addr_part, rest = key.removeprefix("om117_").split("_pair_", 1)
-            address = int(addr_part)
-            pair_part, field = rest.split("_", 1)
-            pair_index = int(pair_part) - 1
-        except ValueError, AttributeError:
-            continue
-
-        if pair_index < 0 or pair_index > 3:
-            continue
-
-        config = pair_map[address].get(pair_index, OM117PairConfig())
-
-        if field == "mode":
-            mode = str(value)
-            config.mode = mode if mode in {OM117_MODE_SWITCH, OM117_MODE_BLIND} else OM117_MODE_SWITCH
-        elif field == "open_time":
-            config.open_time = _coerce_time(value, DEFAULT_BLIND_OPEN_TIME)
-        elif field == "close_time":
-            config.close_time = _coerce_time(value, DEFAULT_BLIND_CLOSE_TIME)
-        elif field == "overrun_time":
-            config.overrun_time = _coerce_time(value, DEFAULT_BLIND_OVERRUN_TIME)
-
-        pair_map[address][pair_index] = config
+    for address, module in _module_entries(options, "om117").items():
+        for pair_index, raw in _index_items(_section(module, OPT_PAIRS), 4):
+            if not isinstance(raw, Mapping):
+                continue
+            mode = str(raw.get("mode", OM117_MODE_SWITCH))
+            pair_map[address][pair_index] = OM117PairConfig(
+                mode=mode if mode in {OM117_MODE_SWITCH, OM117_MODE_BLIND} else OM117_MODE_SWITCH,
+                open_time=_coerce_time(raw.get("open_time"), DEFAULT_BLIND_OPEN_TIME),
+                close_time=_coerce_time(raw.get("close_time"), DEFAULT_BLIND_CLOSE_TIME),
+                overrun_time=_coerce_time(raw.get("overrun_time"), DEFAULT_BLIND_OVERRUN_TIME),
+            )
 
     return pair_map
 
@@ -297,61 +326,71 @@ def get_dm117_port_configuration(
     """Build a mapping of DM117 addresses to configured port types."""
 
     slot_map: dict[int, dict[int, DeviceType]] = defaultdict(dict)
-    for key, value in options.items():
-        if not key.startswith(DM117_SLOT_PREFIX) or DM117_SLOT_SEPARATOR not in key:
-            continue
 
-        try:
-            addr_part, slot_part = key.removeprefix(DM117_SLOT_PREFIX).split(DM117_SLOT_SEPARATOR)
-            address = int(addr_part)
-            slot_index = int(slot_part)
-        except ValueError, AttributeError:
-            continue
-
-        device_type = SLOT_TYPE_TO_DEVICE_TYPE.get(value)
-        if device_type is None:
-            continue
-        if slot_index <= 0:
-            continue
-
-        slot_map[address][slot_index - 1] = device_type
+    for address, module in _module_entries(options, "dm117").items():
+        for slot_index, raw in _index_items(_section(module, OPT_SLOTS), 8):
+            device_type = SLOT_TYPE_TO_DEVICE_TYPE.get(raw)
+            if device_type is not None:
+                slot_map[address][slot_index] = device_type
 
     return slot_map
+
+
+def get_dm117_slot_types(options: Mapping[str, Any]) -> dict[int, dict[int, str]]:
+    """Return the raw slot-type strings per DM117 address.
+
+    The options flow needs the stored strings rather than the DeviceType values
+    that get_dm117_port_configuration resolves them to, because unassigned slots
+    ("none") have no DeviceType but still have to preselect in the form.
+    """
+
+    slot_map: dict[int, dict[int, str]] = defaultdict(dict)
+
+    for address, module in _module_entries(options, "dm117").items():
+        for slot_index, raw in _index_items(_section(module, OPT_SLOTS), 8):
+            if isinstance(raw, str):
+                slot_map[address][slot_index] = raw
+
+    return slot_map
+
+
+def _onewire_entries(options: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
+    """Return the configured 1-Wire devices, keyed by device id."""
+
+    entries: dict[str, Mapping[str, Any]] = {}
+    for device_id, config in _section(options, OPT_ONEWIRE).items():
+        if device_id and isinstance(config, Mapping):
+            entries[str(device_id)] = config
+    return entries
+
+
+def _bounded_int(value: Any, low: int, high: int) -> int | None:
+    """Return value as an int when it falls inside the inclusive bounds."""
+
+    try:
+        number = int(value)
+    except TypeError, ValueError:
+        return None
+    return number if low <= number <= high else None
 
 
 def get_configured_onewire_profiles(options: Mapping[str, Any]) -> dict[str, str]:
     """Extract configured OneWire profiles from config entry options."""
 
-    profiles: dict[str, str] = {}
-    for key, profile in options.items():
-        if not key.startswith("ow_") or not key.endswith("_profile"):
-            continue
-        device_id = key[3:-8]
-        if device_id:
-            profiles[device_id] = profile
-    return profiles
+    return {
+        device_id: str(config["profile"])
+        for device_id, config in _onewire_entries(options).items()
+        if config.get("profile")
+    }
 
 
 def get_configured_led_counts(options: Mapping[str, Any]) -> dict[str, int]:
     """Extract configured LED counts for DS28E17 devices from options."""
 
     counts: dict[str, int] = {}
-    for key, value in options.items():
-        if not key.startswith("ow_") or not key.endswith("_led_count"):
-            continue
-
-        device_id = key[3:-10]
-        if not device_id:
-            continue
-
-        try:
-            count = int(value)
-        except TypeError, ValueError:
-            continue
-
-        if 1 <= count <= 255:
+    for device_id, config in _onewire_entries(options).items():
+        if (count := _bounded_int(config.get("led_count"), 1, 255)) is not None:
             counts[device_id] = count
-
     return counts
 
 
@@ -359,23 +398,136 @@ def get_configured_onewire_poll_intervals(options: Mapping[str, Any]) -> dict[st
     """Extract configured polling intervals for OneWire devices from options."""
 
     intervals: dict[str, int] = {}
-    for key, value in options.items():
-        if not key.startswith("ow_") or not key.endswith("_poll_interval"):
-            continue
-
-        device_id = key[3:-14]
-        if not device_id:
-            continue
-
-        try:
-            interval = int(value)
-        except TypeError, ValueError:
-            continue
-
-        if 1 <= interval <= 3600:
+    for device_id, config in _onewire_entries(options).items():
+        if (interval := _bounded_int(config.get("poll_interval"), 1, 3600)) is not None:
             intervals[device_id] = interval
-
     return intervals
+
+
+def _mutable_section(options: dict[str, Any], *path: str) -> dict[str, Any]:
+    """Return a nested dict for writing, creating the path as needed."""
+
+    current = options
+    for key in path:
+        existing = current.get(key)
+        current[key] = dict(existing) if isinstance(existing, Mapping) else {}
+        current = current[key]
+    return current
+
+
+def set_om117_pairs(
+    options: Mapping[str, Any],
+    address: int,
+    pairs: Mapping[int, OM117PairConfig],
+) -> dict[str, Any]:
+    """Return options with one OM117 module's pair configuration replaced."""
+
+    updated = deepcopy(dict(options))
+    section = _mutable_section(updated, OPT_MODULES, "om117", str(address))
+    section[OPT_PAIRS] = {
+        str(index + 1): {
+            "mode": config.mode,
+            "open_time": config.open_time,
+            "close_time": config.close_time,
+            "overrun_time": config.overrun_time,
+        }
+        for index, config in sorted(pairs.items())
+    }
+    return updated
+
+
+def set_dm117_slots(options: Mapping[str, Any], address: int, slots: Mapping[int, str]) -> dict[str, Any]:
+    """Return options with one DM117 module's slot configuration replaced."""
+
+    updated = deepcopy(dict(options))
+    section = _mutable_section(updated, OPT_MODULES, "dm117", str(address))
+    section[OPT_SLOTS] = {str(index + 1): slot_type for index, slot_type in sorted(slots.items())}
+    return updated
+
+
+def set_onewire_device(
+    options: Mapping[str, Any],
+    device_id: str,
+    profile: str,
+    *,
+    led_count: int | None = None,
+    poll_interval: int | None = None,
+) -> dict[str, Any]:
+    """Return options with one 1-Wire device's configuration replaced."""
+
+    updated = deepcopy(dict(options))
+    device = _mutable_section(updated, OPT_ONEWIRE, device_id)
+    device.clear()
+    device["profile"] = profile
+    if led_count is not None:
+        device["led_count"] = led_count
+    if poll_interval is not None:
+        device["poll_interval"] = poll_interval
+    return updated
+
+
+def migrate_options_to_nested(options: Mapping[str, Any]) -> dict[str, Any]:
+    """Convert the flat option namespace used up to entry version 2.
+
+    Keys that match no known pattern are carried over untouched, so a stray
+    option is never silently dropped. Already-nested sections are preserved,
+    which makes the conversion safe to run more than once.
+    """
+
+    migrated = deepcopy(dict(options))
+    modules = _mutable_section(migrated, OPT_MODULES)
+    onewire = _mutable_section(migrated, OPT_ONEWIRE)
+
+    def module_section(kind: str, address: int, group: str) -> dict[str, Any]:
+        by_address = modules.setdefault(kind, {})
+        module = by_address.setdefault(str(address), {})
+        return module.setdefault(group, {})
+
+    for key, value in options.items():
+        if key in (OPT_MODULES, OPT_ONEWIRE, OPT_SETTINGS):
+            continue
+
+        if key.startswith("om117_") and "_pair_" in key:
+            try:
+                address_part, rest = key.removeprefix("om117_").split("_pair_", 1)
+                address = int(address_part)
+                pair_part, field = rest.split("_", 1)
+                pair = int(pair_part)
+            except ValueError:
+                continue
+            if field in {"mode", "open_time", "close_time", "overrun_time"} and 1 <= pair <= 4:
+                module_section("om117", address, OPT_PAIRS).setdefault(str(pair), {})[field] = value
+                migrated.pop(key, None)
+            continue
+
+        if key.startswith(DM117_SLOT_PREFIX) and DM117_SLOT_SEPARATOR in key:
+            try:
+                address_part, slot_part = key.removeprefix(DM117_SLOT_PREFIX).split(DM117_SLOT_SEPARATOR)
+                address = int(address_part)
+                slot = int(slot_part)
+            except ValueError:
+                continue
+            if 1 <= slot <= 8:
+                module_section("dm117", address, OPT_SLOTS)[str(slot)] = value
+                migrated.pop(key, None)
+            continue
+
+        if key.startswith("ow_"):
+            for suffix, field in (
+                ("_poll_interval", "poll_interval"),
+                ("_led_count", "led_count"),
+                ("_profile", "profile"),
+            ):
+                if key.endswith(suffix) and (device_id := key[3 : -len(suffix)]):
+                    onewire.setdefault(device_id, {})[field] = value
+                    migrated.pop(key, None)
+                    break
+
+    for section_key in (OPT_MODULES, OPT_ONEWIRE):
+        if not migrated.get(section_key):
+            migrated.pop(section_key, None)
+
+    return migrated
 
 
 def default_onewire_profile(meta: Mapping[str, Any]) -> str | None:
