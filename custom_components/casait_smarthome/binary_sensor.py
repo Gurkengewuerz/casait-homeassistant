@@ -226,9 +226,7 @@ class CasaITDS2413BinarySensor(BinarySensorEntity):
         channel_name = "A" if channel == 0 else "B"
         bridge_slug = build_bridge_slug(config_entry.entry_id, config_entry.unique_id)
         self._attr_unique_id = f"{config_entry.entry_id}_{device_id}_channel_{channel}_input"
-        self.entity_id = build_onewire_entity_id(
-            "binary_sensor", bridge_slug, device_id, meta, "input", channel_name
-        )
+        self.entity_id = build_onewire_entity_id("binary_sensor", bridge_slug, device_id, meta, "input", channel_name)
         self._attr_translation_placeholders = {"channel": channel_name}
         self._attr_device_info = build_onewire_device_info(config_entry.entry_id, device_id, meta)
 

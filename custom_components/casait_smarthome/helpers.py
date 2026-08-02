@@ -146,17 +146,13 @@ def migrated_entity_identity(
             ),
             unique_id,
         )
-    if entity_domain == "light" and (
-        match := re.fullmatch(rf"{entry_prefix}_dm117_(\d+)_(\d+)_dimmer", unique_id)
-    ):
+    if entity_domain == "light" and (match := re.fullmatch(rf"{entry_prefix}_dm117_(\d+)_(\d+)_dimmer", unique_id)):
         address, port = (int(value) for value in match.groups())
         return (
             build_i2c_entity_id("light", bridge_slug, "dm117", address, "slot", port + 1, "dimmer"),
             unique_id,
         )
-    if entity_domain == "cover" and (
-        match := re.fullmatch(rf"{entry_prefix}_om117_(\d+)_pair_(\d+)_blind", unique_id)
-    ):
+    if entity_domain == "cover" and (match := re.fullmatch(rf"{entry_prefix}_om117_(\d+)_pair_(\d+)_blind", unique_id)):
         address, pair = (int(value) for value in match.groups())
         return (build_i2c_entity_id("cover", bridge_slug, "om117", address, "blind", pair), unique_id)
     if entity_domain == "sensor" and unique_id == f"{config_entry_id}_debug":
@@ -244,7 +240,7 @@ def _coerce_time(value: Any, default: float) -> float:
 
     try:
         return float(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return default
 
 
@@ -262,7 +258,7 @@ def get_om117_pair_configuration(options: Mapping[str, Any]) -> dict[int, dict[i
             address = int(addr_part)
             pair_part, field = rest.split("_", 1)
             pair_index = int(pair_part) - 1
-        except (ValueError, AttributeError):
+        except ValueError, AttributeError:
             continue
 
         if pair_index < 0 or pair_index > 3:
@@ -309,7 +305,7 @@ def get_dm117_port_configuration(
             addr_part, slot_part = key.removeprefix(DM117_SLOT_PREFIX).split(DM117_SLOT_SEPARATOR)
             address = int(addr_part)
             slot_index = int(slot_part)
-        except (ValueError, AttributeError):
+        except ValueError, AttributeError:
             continue
 
         device_type = SLOT_TYPE_TO_DEVICE_TYPE.get(value)
@@ -350,7 +346,7 @@ def get_configured_led_counts(options: Mapping[str, Any]) -> dict[str, int]:
 
         try:
             count = int(value)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             continue
 
         if 1 <= count <= 255:
@@ -373,7 +369,7 @@ def get_configured_onewire_poll_intervals(options: Mapping[str, Any]) -> dict[st
 
         try:
             interval = int(value)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             continue
 
         if 1 <= interval <= 3600:

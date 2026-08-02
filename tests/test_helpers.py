@@ -136,9 +136,9 @@ def test_migrated_device_identifiers_contract() -> None:
     assert migrated_device_identifiers("entry-test", {("casait_smarthome", "sm117_18")}) == {
         ("casait_smarthome", "entry-test_sm117_18")
     }
-    assert migrated_device_identifiers(
-        "entry-test", {("casait_smarthome", "onewire_2800000000000001")}
-    ) == {("casait_smarthome", "entry-test_onewire_2800000000000001")}
+    assert migrated_device_identifiers("entry-test", {("casait_smarthome", "onewire_2800000000000001")}) == {
+        ("casait_smarthome", "entry-test_onewire_2800000000000001")
+    }
 
 
 def test_migrated_entity_identity_contract() -> None:
@@ -194,6 +194,5 @@ def test_migrated_entity_identity_contract() -> None:
     }
 
     assert {
-        identity: migrated_entity_identity("entry-test", "AA:BB:CC:DD:EE:FF", *identity)
-        for identity in legacy_entities
+        identity: migrated_entity_identity("entry-test", "AA:BB:CC:DD:EE:FF", *identity) for identity in legacy_entities
     } == legacy_entities

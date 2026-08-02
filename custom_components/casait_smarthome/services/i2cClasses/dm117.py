@@ -11,6 +11,7 @@ from crccheck.crc import Crc8Smbus
 
 _LOGGER = logging.getLogger(__name__)
 
+
 class DeviceType(enum.Enum):
     """Device types supported by DM117."""
 
@@ -206,9 +207,10 @@ class DM117:
             self.last_values = values
             self._last_read_time = current_time
 
-        except (OSError, ValueError):
+        except OSError, ValueError:
             return None
         return values
+
 
 @dataclass
 class DimmerConfig:
@@ -235,6 +237,7 @@ class DimmerConfig:
             value = 0
         percentage = (value / 4095.0) * 100
         return cls(int(percentage), speed)
+
 
 @dataclass
 class PortConfig:
@@ -272,6 +275,7 @@ class PortConfig:
         if value is None or value < 0 or value > 3:
             value = 0
         return cls(port_a=bool(value & 0x01), port_b=bool(value & 0x02))
+
 
 @dataclass
 class DM117PortConfig:

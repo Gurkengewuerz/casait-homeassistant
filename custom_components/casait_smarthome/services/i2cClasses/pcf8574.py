@@ -7,6 +7,7 @@ import time
 
 _LOGGER = logging.getLogger(__name__)
 
+
 class PCF8574:
     """PCF8574 I2C I/O expander implementation."""
 

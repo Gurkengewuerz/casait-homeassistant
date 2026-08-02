@@ -112,9 +112,7 @@ class CasaITBlindCover(CoverEntity, RestoreEntity):
 
         bridge_slug = build_bridge_slug(config_entry.entry_id, config_entry.unique_id)
         self._attr_unique_id = f"{config_entry.entry_id}_om117_{address}_pair_{pair_index + 1}_blind"
-        self.entity_id = build_i2c_entity_id(
-            "cover", bridge_slug, "om117", address, "blind", pair_index + 1
-        )
+        self.entity_id = build_i2c_entity_id("cover", bridge_slug, "om117", address, "blind", pair_index + 1)
         self._attr_translation_placeholders = {"pair": str(pair_index + 1)}
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, build_device_identifier(config_entry.entry_id, "om117", address))},
@@ -133,7 +131,7 @@ class CasaITBlindCover(CoverEntity, RestoreEntity):
         if last_state and (pos := last_state.attributes.get("current_position")) is not None:
             try:
                 self._position = float(pos)
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 self._position = 0.0
         elif last_state and last_state.state in (STATE_OPEN, STATE_CLOSED):
             self._position = 100.0 if last_state.state == STATE_OPEN else 0.0

@@ -95,7 +95,7 @@ class CasaITApi:
         except asyncio.CancelledError:
             self._init_done.set()
             raise
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self.initialization_error = exc
             _LOGGER.exception("Error initializing casaIT devices")
         finally:
@@ -150,7 +150,7 @@ class CasaITApi:
                 try:
                     async with self._lock:
                         await self.hass.async_add_executor_job(self.bus.write_quick, addr)
-                except (SMBusProxyError, OSError):
+                except SMBusProxyError, OSError:
                     continue
 
                 found_by_code[code].add(addr)

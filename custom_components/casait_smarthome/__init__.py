@@ -10,13 +10,11 @@ from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.helpers import config_validation as cv
-from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import config_validation as cv, device_registry as dr, entity_registry as er
 from homeassistant.helpers.typing import ConfigType
 
 from .api import CasaITApi
-from .const import CONFIG_ENTRY_VERSION, CONF_TIMEOUT, DOMAIN, PLATFORMS, SERVICE_SCAN_DEVICES
+from .const import CONF_TIMEOUT, CONFIG_ENTRY_VERSION, DOMAIN, PLATFORMS, SERVICE_SCAN_DEVICES
 from .helpers import (
     build_device_identifier,
     get_configured_onewire_poll_intervals,
@@ -187,9 +185,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> bo
     for address in api.sm117:
         device_registry.async_get_or_create(
             config_entry_id=entry.entry_id,
-            identifiers={
-                (DOMAIN, build_device_identifier(entry.entry_id, "sm117", f"{address:02x}"))
-            },
+            identifiers={(DOMAIN, build_device_identifier(entry.entry_id, "sm117", f"{address:02x}"))},
             name=f"SM117 0x{address:02X}",
             manufacturer="CasaIT",
             model="SM117 1-Wire bridge",

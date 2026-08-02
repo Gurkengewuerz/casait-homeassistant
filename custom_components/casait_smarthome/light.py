@@ -5,13 +5,7 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import Any
 
-from homeassistant.components.light import (
-    ATTR_BRIGHTNESS,
-    ATTR_EFFECT,
-    ATTR_RGB_COLOR,
-    ATTR_TRANSITION,
-    LightEntity,
-)
+from homeassistant.components.light import ATTR_BRIGHTNESS, ATTR_EFFECT, ATTR_RGB_COLOR, ATTR_TRANSITION, LightEntity
 from homeassistant.components.light.const import ColorMode, LightEntityFeature
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
@@ -119,9 +113,7 @@ class CasaITDM117Light(LightEntity):
         self._slot = port + 1
         bridge_slug = build_bridge_slug(config_entry.entry_id, config_entry.unique_id)
         self._attr_unique_id = f"{config_entry.entry_id}_dm117_{address}_{port}_dimmer"
-        self.entity_id = build_i2c_entity_id(
-            "light", bridge_slug, "dm117", address, "slot", self._slot, "dimmer"
-        )
+        self.entity_id = build_i2c_entity_id("light", bridge_slug, "dm117", address, "slot", self._slot, "dimmer")
         self._attr_translation_placeholders = {"slot": str(self._slot)}
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, build_device_identifier(config_entry.entry_id, "dm117", address))},
@@ -191,7 +183,7 @@ class CasaITDM117Light(LightEntity):
             return DimmerSpeed.DEFAULT
         try:
             seconds = max(0.0, float(transition))
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return DimmerSpeed.DEFAULT
         return min(DM117_TRANSITION_SECONDS, key=lambda speed: abs(DM117_TRANSITION_SECONDS[speed] - seconds))
 

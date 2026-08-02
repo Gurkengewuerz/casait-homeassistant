@@ -40,20 +40,14 @@ def _entities() -> dict[str, Any]:
     return {
         "im117_binary_sensor": CasaITBinarySensor(api, ENTRY, 0x38, 0),
         "dm117_binary_sensor": CasaITDM117BinarySensor(api, ENTRY, 0x10, 0, 0),
-        "ds2413_binary_sensor": CasaITDS2413BinarySensor(
-            api, ENTRY, "3a00000000000001", 0, _meta("DS2413")
-        ),
+        "ds2413_binary_sensor": CasaITDS2413BinarySensor(api, ENTRY, "3a00000000000001", 0, _meta("DS2413")),
         "om117_switch": CasaITSwitch(api, ENTRY, 0x20, 0),
         "dm117_switch": CasaITDM117Switch(api, ENTRY, 0x10, 0, 0),
         "ds2413_switch": CasaITDS2413Switch(api, ENTRY, "3a00000000000001", 0, _meta("DS2413")),
         "dm117_light": CasaITDM117Light(api, ENTRY, 0x10, 0),
-        "led_controller_light": CasaITLEDControllerLight(
-            api, ENTRY, "1900000000000001", _meta("DS28E17"), 30
-        ),
+        "led_controller_light": CasaITLEDControllerLight(api, ENTRY, "1900000000000001", _meta("DS28E17"), 30),
         "om117_cover": CasaITBlindCover(api, ENTRY, 0x20, 0, OM117PairConfig()),
-        "ds18b20_temperature": DS18B20TemperatureSensor(
-            api, ENTRY, "2800000000000001", _meta("DS18B20")
-        ),
+        "ds18b20_temperature": DS18B20TemperatureSensor(api, ENTRY, "2800000000000001", _meta("DS18B20")),
         "ds2438_sensor": DS2438Sensor(
             api,
             ENTRY,
