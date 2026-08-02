@@ -29,7 +29,45 @@ I2C_ADDR_RANGES: Final = [
 ]
 
 # Platforms
-PLATFORMS: Final = ["binary_sensor", "cover", "light", "sensor", "switch"]
+PLATFORMS: Final = ["binary_sensor", "cover", "event", "light", "sensor", "switch"]
+
+# What an IM117 input port is wired to. The default keeps every discovered port
+# a plain binary sensor, which is how the integration behaved before roles
+# existed - upgrading must not silently delete anyone's entities.
+IM117_ROLE_SWITCH: Final = "switch"
+IM117_ROLE_BUTTON: Final = "button"
+IM117_ROLE_CONTACT: Final = "contact"
+IM117_ROLE_UNUSED: Final = "unused"
+DEFAULT_IM117_ROLE: Final = IM117_ROLE_SWITCH
+
+# Device classes offered for the "contact" role.
+IM117_CONTACT_DEVICE_CLASSES: Final = [
+    "door",
+    "window",
+    "garage_door",
+    "motion",
+    "occupancy",
+    "smoke",
+    "moisture",
+    "gas",
+    "problem",
+    "safety",
+    "tamper",
+]
+
+# Event types published by button inputs.
+EVENT_PRESS: Final = "press"
+EVENT_LONG_PRESS: Final = "long_press"
+EVENT_DOUBLE_PRESS: Final = "double_press"
+BUTTON_EVENT_TYPES: Final = [EVENT_PRESS, EVENT_LONG_PRESS, EVENT_DOUBLE_PRESS]
+
+# Button timing. Double click defaults to off: waiting for a possible second
+# press would delay every single press by that window, and most inputs are
+# plain wall switches that should react immediately.
+OPT_LONG_PRESS_MS: Final = "long_press_ms"
+OPT_DOUBLE_CLICK_MS: Final = "double_click_ms"
+DEFAULT_LONG_PRESS_MS: Final = 500
+DEFAULT_DOUBLE_CLICK_MS: Final = 0
 
 # Shared I2C poll loop. Inputs decide how responsive the system feels, so they are
 # read every cycle. Outputs only ever change because Home Assistant changed them,

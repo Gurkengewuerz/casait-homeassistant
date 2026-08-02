@@ -16,14 +16,24 @@ from .const import (
     DEFAULT_BLIND_CLOSE_TIME,
     DEFAULT_BLIND_OPEN_TIME,
     DEFAULT_BLIND_OVERRUN_TIME,
+    DEFAULT_DOUBLE_CLICK_MS,
+    DEFAULT_IM117_ROLE,
+    DEFAULT_LONG_PRESS_MS,
     DEFAULT_OW_PROFILE,
     DOMAIN,
     I2C_ADDR_RANGES,
+    IM117_ROLE_BUTTON,
+    IM117_ROLE_CONTACT,
+    IM117_ROLE_SWITCH,
+    IM117_ROLE_UNUSED,
     OM117_MODE_BLIND,
     OM117_MODE_SWITCH,
+    OPT_DOUBLE_CLICK_MS,
+    OPT_LONG_PRESS_MS,
     OPT_MODULES,
     OPT_ONEWIRE,
     OPT_PAIRS,
+    OPT_PORTS,
     OPT_SETTINGS,
     OPT_SLOTS,
 )
@@ -31,6 +41,8 @@ from .services.i2cClasses.dm117 import DeviceType
 
 DM117_SLOT_PREFIX = "dm117_"
 DM117_SLOT_SEPARATOR = "_slot_"
+
+VALID_IM117_ROLES = frozenset({IM117_ROLE_SWITCH, IM117_ROLE_BUTTON, IM117_ROLE_CONTACT, IM117_ROLE_UNUSED})
 
 SLOT_TYPE_TO_DEVICE_TYPE: dict[str, DeviceType] = {
     "binary_input": DeviceType.INPUT,
@@ -334,6 +346,90 @@ def get_dm117_port_configuration(
                 slot_map[address][slot_index] = device_type
 
     return slot_map
+
+
+@dataclass
+class IM117PortConfig:
+    """What a single IM117 input port is wired to."""
+
+    role: str = DEFAULT_IM117_ROLE
+    device_class: str | None = None
+
+
+@dataclass
+class InputSettings:
+    """Timing thresholds shared by all button inputs."""
+
+    long_press_ms: int = DEFAULT_LONG_PRESS_MS
+    double_click_ms: int = DEFAULT_DOUBLE_CLICK_MS
+
+
+def get_im117_port_configuration(options: Mapping[str, Any]) -> dict[int, dict[int, IM117PortConfig]]:
+    """Return the configured role of every IM117 input port, keyed by address.
+
+    Ports without an entry are absent; callers fall back to DEFAULT_IM117_ROLE so
+    that a freshly discovered module still produces the binary sensors it always
+    did.
+    """
+
+    port_map: dict[int, dict[int, IM117PortConfig]] = defaultdict(dict)
+
+    for address, module in _module_entries(options, "im117").items():
+        for port_index, raw in _index_items(_section(module, OPT_PORTS), 8):
+            if not isinstance(raw, Mapping):
+                continue
+            role = str(raw.get("role", DEFAULT_IM117_ROLE))
+            if role not in VALID_IM117_ROLES:
+                role = DEFAULT_IM117_ROLE
+            device_class = raw.get("device_class")
+            port_map[address][port_index] = IM117PortConfig(
+                role=role,
+                device_class=str(device_class) if role == IM117_ROLE_CONTACT and device_class else None,
+            )
+
+    return port_map
+
+
+def get_input_settings(options: Mapping[str, Any]) -> InputSettings:
+    """Return the button timing thresholds, falling back to the defaults."""
+
+    settings = _section(options, OPT_SETTINGS)
+    long_press = _bounded_int(settings.get(OPT_LONG_PRESS_MS), 100, 5000)
+    double_click = _bounded_int(settings.get(OPT_DOUBLE_CLICK_MS), 0, 2000)
+    return InputSettings(
+        long_press_ms=DEFAULT_LONG_PRESS_MS if long_press is None else long_press,
+        double_click_ms=DEFAULT_DOUBLE_CLICK_MS if double_click is None else double_click,
+    )
+
+
+def set_im117_ports(
+    options: Mapping[str, Any],
+    address: int,
+    ports: Mapping[int, IM117PortConfig],
+) -> dict[str, Any]:
+    """Return options with one IM117 module's port roles replaced."""
+
+    updated = deepcopy(dict(options))
+    section = _mutable_section(updated, OPT_MODULES, "im117", str(address))
+    section[OPT_PORTS] = {
+        str(index + 1): (
+            {"role": config.role, "device_class": config.device_class}
+            if config.role == IM117_ROLE_CONTACT and config.device_class
+            else {"role": config.role}
+        )
+        for index, config in sorted(ports.items())
+    }
+    return updated
+
+
+def set_input_settings(options: Mapping[str, Any], settings: InputSettings) -> dict[str, Any]:
+    """Return options with the shared button timings replaced."""
+
+    updated = deepcopy(dict(options))
+    section = _mutable_section(updated, OPT_SETTINGS)
+    section[OPT_LONG_PRESS_MS] = settings.long_press_ms
+    section[OPT_DOUBLE_CLICK_MS] = settings.double_click_ms
+    return updated
 
 
 def get_dm117_slot_types(options: Mapping[str, Any]) -> dict[int, dict[int, str]]:

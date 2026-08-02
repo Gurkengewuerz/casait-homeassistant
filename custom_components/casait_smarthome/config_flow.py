@@ -24,18 +24,31 @@ from .const import (
     DEFAULT_OW_POLL_INTERVAL,
     DEFAULT_OW_PROFILE,
     DOMAIN,
+    IM117_CONTACT_DEVICE_CLASSES,
+    IM117_ROLE_BUTTON,
+    IM117_ROLE_CONTACT,
+    IM117_ROLE_SWITCH,
+    IM117_ROLE_UNUSED,
     OM117_MODE_BLIND,
     OM117_MODE_SWITCH,
+    OPT_DOUBLE_CLICK_MS,
+    OPT_LONG_PRESS_MS,
 )
 from .helpers import (
+    IM117PortConfig,
+    InputSettings,
     OM117PairConfig,
     get_address_range,
     get_configured_led_counts,
     get_configured_onewire_poll_intervals,
     get_configured_onewire_profiles,
     get_dm117_slot_types,
+    get_im117_port_configuration,
+    get_input_settings,
     get_om117_pair_configuration,
     set_dm117_slots,
+    set_im117_ports,
+    set_input_settings,
     set_om117_pairs,
     set_onewire_device,
 )
@@ -62,6 +75,18 @@ DM117_SLOT_TYPES = {
     "switch": "Digitaler Ausgang (24V)",
     "dimmer": "Analog Ausgang (Dimmer 0-10V)",
 }
+
+IM117_ROLES = {
+    IM117_ROLE_SWITCH: "Schalter (Dauerzustand)",
+    IM117_ROLE_BUTTON: "Taster (Impuls)",
+    IM117_ROLE_CONTACT: "Kontakt (mit Geräteklasse)",
+    IM117_ROLE_UNUSED: "Nicht belegt",
+}
+
+# voluptuous cannot express "no selection", so the absence of a device class is
+# carried as an explicit sentinel that is mapped back to None on save.
+NO_DEVICE_CLASS = "none"
+CONTACT_DEVICE_CLASS_OPTIONS = {NO_DEVICE_CLASS: "Keine", **{key: key for key in IM117_CONTACT_DEVICE_CLASSES}}
 
 ONEWIRE_PROFILES = {
     "ds18b20_temp": "DS18B20: Temperatursensor",
@@ -220,6 +245,7 @@ class OptionsFlowHandler(OptionsFlowWithReload):
 
     def __init__(self) -> None:
         """Initialize options flow."""
+        self._selected_im117_addr: int | None = None
         self._selected_om117_addr: int | None = None
         self._selected_dm117_addr: int | None = None
         self._selected_ow_id: str | None = None
@@ -249,7 +275,98 @@ class OptionsFlowHandler(OptionsFlowWithReload):
         """Manage the options menu."""
         return self.async_show_menu(
             step_id="init",
-            menu_options=["om117_select", "dm117_select", "onewire_select"],
+            menu_options=["im117_select", "om117_select", "dm117_select", "onewire_select", "input_settings"],
+        )
+
+    # ------------------------------------------------------------------
+    # IM117 CONFIGURATION
+    # ------------------------------------------------------------------
+
+    async def async_step_im117_select(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Step 1: Selection of the IM117 module."""
+
+        api = self._runtime_data
+        if not api:
+            return self.async_abort(reason="integration_not_ready")
+
+        input_range = get_address_range("IM117")
+        detected_modules = (
+            [addr for addr in api.im117_om117 if input_range[0] <= addr <= input_range[1]] if input_range else []
+        )
+
+        if not detected_modules:
+            return self.async_abort(reason="no_im117_found")
+
+        if user_input is not None:
+            self._selected_im117_addr = int(user_input["selected_module"])
+            return await self.async_step_im117_config()
+
+        options = {str(addr): f"IM117 at Address {addr} (0x{int(addr):02x})" for addr in sorted(detected_modules)}
+
+        return self.async_show_form(
+            step_id="im117_select",
+            data_schema=vol.Schema({vol.Required("selected_module"): vol.In(options)}),
+        )
+
+    async def async_step_im117_config(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Step 2: Role assignment for the 8 input ports of the selected module."""
+
+        if (addr := self._selected_im117_addr) is None:
+            return self.async_abort(reason="integration_not_ready")
+
+        if user_input is not None:
+            ports = {}
+            for index in range(1, 9):
+                role = user_input[f"port_{index}_role"]
+                device_class = user_input.get(f"port_{index}_device_class")
+                if role != IM117_ROLE_CONTACT or device_class == NO_DEVICE_CLASS:
+                    device_class = None
+                ports[index - 1] = IM117PortConfig(role=role, device_class=device_class)
+            return self.async_create_entry(title="", data=set_im117_ports(self.config_entry.options, addr, ports))
+
+        configured = get_im117_port_configuration(self.config_entry.options).get(addr, {})
+        schema: dict[Any, Any] = {}
+        for index in range(1, 9):
+            config = configured.get(index - 1, IM117PortConfig())
+            schema[vol.Required(f"port_{index}_role", default=config.role)] = vol.In(IM117_ROLES)
+            schema[vol.Optional(f"port_{index}_device_class", default=config.device_class or NO_DEVICE_CLASS)] = vol.In(
+                CONTACT_DEVICE_CLASS_OPTIONS
+            )
+
+        return self.async_show_form(
+            step_id="im117_config",
+            data_schema=vol.Schema(schema),
+            description_placeholders={"module_name": f"Address {addr}"},
+        )
+
+    # ------------------------------------------------------------------
+    # SHARED INPUT SETTINGS
+    # ------------------------------------------------------------------
+
+    async def async_step_input_settings(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Configure the button timings shared by every input."""
+
+        if user_input is not None:
+            settings = InputSettings(
+                long_press_ms=int(user_input[OPT_LONG_PRESS_MS]),
+                double_click_ms=int(user_input[OPT_DOUBLE_CLICK_MS]),
+            )
+            return self.async_create_entry(title="", data=set_input_settings(self.config_entry.options, settings))
+
+        current = get_input_settings(self.config_entry.options)
+
+        return self.async_show_form(
+            step_id="input_settings",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(OPT_LONG_PRESS_MS, default=current.long_press_ms): vol.All(
+                        vol.Coerce(int), vol.Range(min=100, max=5000)
+                    ),
+                    vol.Required(OPT_DOUBLE_CLICK_MS, default=current.double_click_ms): vol.All(
+                        vol.Coerce(int), vol.Range(min=0, max=2000)
+                    ),
+                }
+            ),
         )
 
     # ------------------------------------------------------------------

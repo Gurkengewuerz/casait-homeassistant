@@ -6,7 +6,7 @@ from datetime import timedelta
 import logging
 from typing import Any
 
-from homeassistant.components.binary_sensor import BinarySensorEntity
+from homeassistant.components.binary_sensor import BinarySensorDeviceClass, BinarySensorEntity
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
@@ -14,8 +14,9 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import CasaITConfigEntry
 from .api import CasaITApi
-from .const import DOMAIN, PCF8574_MAPPED_PORTS
+from .const import DOMAIN, IM117_ROLE_CONTACT, IM117_ROLE_SWITCH, PCF8574_MAPPED_PORTS
 from .helpers import (
+    IM117PortConfig,
     build_bridge_slug,
     build_device_identifier,
     build_i2c_entity_id,
@@ -25,6 +26,7 @@ from .helpers import (
     get_address_range,
     get_configured_onewire_profiles,
     get_dm117_port_configuration,
+    get_im117_port_configuration,
 )
 from .services.i2cClasses.dm117 import DeviceType, PortConfig
 
@@ -46,12 +48,18 @@ async def async_setup_entry(
 
     pcf_entities: list[BinarySensorEntity] = []
     if (input_range := get_address_range("IM117")) is not None:
-        pcf_entities = [
-            CasaITBinarySensor(api, config_entry, addr, port)
-            for addr in api.im117_om117
-            if input_range[0] <= addr <= input_range[1]
-            for port in range(8)
-        ]
+        port_config = get_im117_port_configuration(config_entry.options)
+        for addr in api.im117_om117:
+            if not input_range[0] <= addr <= input_range[1]:
+                continue
+            configured = port_config.get(addr, {})
+            for port in range(8):
+                # Ports default to a plain binary sensor, which is what every
+                # port used to be before roles existed.
+                config = configured.get(port, IM117PortConfig())
+                if config.role not in (IM117_ROLE_SWITCH, IM117_ROLE_CONTACT):
+                    continue
+                pcf_entities.append(CasaITBinarySensor(api, config_entry, addr, port, config))
 
     dm_entities: list[CasaITDM117BinarySensor] = []
     dm_config = get_dm117_port_configuration(config_entry.options)
@@ -85,12 +93,21 @@ class CasaITBinarySensor(BinarySensorEntity):
     _attr_should_poll = False
     _attr_translation_key = "im117_input"
 
-    def __init__(self, api: CasaITApi, config_entry: CasaITConfigEntry, address: int, port: int) -> None:
+    def __init__(
+        self,
+        api: CasaITApi,
+        config_entry: CasaITConfigEntry,
+        address: int,
+        port: int,
+        config: IM117PortConfig | None = None,
+    ) -> None:
         """Initialize the binary sensor."""
         self._api = api
         self._address = address
         self._port = port
         self._hardware_port = PCF8574_MAPPED_PORTS[port]
+        if config is not None and config.device_class:
+            self._attr_device_class = BinarySensorDeviceClass(config.device_class)
         bridge_slug = build_bridge_slug(config_entry.entry_id, config_entry.unique_id)
         self._attr_unique_id = f"{config_entry.entry_id}_im117_{address}_{port}"
         self.entity_id = build_i2c_entity_id("binary_sensor", bridge_slug, "im117", address, "input", port + 1)

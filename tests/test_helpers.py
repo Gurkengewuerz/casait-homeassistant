@@ -4,21 +4,34 @@ from custom_components.casait_smarthome.const import (
     DEFAULT_BLIND_CLOSE_TIME,
     DEFAULT_BLIND_OPEN_TIME,
     DEFAULT_BLIND_OVERRUN_TIME,
+    DEFAULT_DOUBLE_CLICK_MS,
+    DEFAULT_IM117_ROLE,
+    DEFAULT_LONG_PRESS_MS,
+    IM117_ROLE_BUTTON,
+    IM117_ROLE_CONTACT,
+    IM117_ROLE_SWITCH,
+    IM117_ROLE_UNUSED,
     OM117_MODE_BLIND,
     OM117_MODE_SWITCH,
 )
 from custom_components.casait_smarthome.helpers import (
+    IM117PortConfig,
+    InputSettings,
     OM117PairConfig,
     build_bridge_slug,
     get_configured_led_counts,
     get_configured_onewire_poll_intervals,
     get_configured_onewire_profiles,
     get_dm117_port_configuration,
+    get_im117_port_configuration,
+    get_input_settings,
     get_om117_pair_configuration,
     migrate_options_to_nested,
     migrated_device_identifiers,
     migrated_entity_identity,
     set_dm117_slots,
+    set_im117_ports,
+    set_input_settings,
     set_om117_pairs,
     set_onewire_device,
 )
@@ -137,6 +150,81 @@ def test_get_configured_onewire_poll_intervals_contract() -> None:
         "1900000000000001": 10,
         "2800000000000001": 3600,
     }
+
+
+def test_get_im117_port_configuration_contract() -> None:
+    options = {
+        "modules": {
+            "im117": {
+                "56": {
+                    "ports": {
+                        "1": {"role": "button"},
+                        "2": {"role": "contact", "device_class": "window"},
+                        "3": {"role": "unused"},
+                        "4": {"role": "bogus"},
+                        # A device class only means anything for the contact role.
+                        "5": {"role": "switch", "device_class": "door"},
+                        "0": {"role": "button"},
+                        "9": {"role": "button"},
+                    }
+                },
+                "invalid": {"ports": {"1": {"role": "button"}}},
+            }
+        }
+    }
+
+    parsed = get_im117_port_configuration(options)
+
+    assert set(parsed) == {56}
+    assert set(parsed[56]) == {0, 1, 2, 3, 4}
+    assert parsed[56][0].role == IM117_ROLE_BUTTON
+    assert parsed[56][1].role == IM117_ROLE_CONTACT
+    assert parsed[56][1].device_class == "window"
+    assert parsed[56][2].role == IM117_ROLE_UNUSED
+    assert parsed[56][3].role == DEFAULT_IM117_ROLE
+    assert parsed[56][4].device_class is None
+
+
+def test_get_input_settings_contract() -> None:
+    assert get_input_settings({}) == InputSettings(
+        long_press_ms=DEFAULT_LONG_PRESS_MS,
+        double_click_ms=DEFAULT_DOUBLE_CLICK_MS,
+    )
+
+    configured = get_input_settings({"settings": {"long_press_ms": 800, "double_click_ms": 250}})
+    assert configured == InputSettings(long_press_ms=800, double_click_ms=250)
+
+    # Out-of-range and malformed values fall back rather than propagate.
+    fallback = get_input_settings({"settings": {"long_press_ms": 10, "double_click_ms": "nope"}})
+    assert fallback == InputSettings(
+        long_press_ms=DEFAULT_LONG_PRESS_MS,
+        double_click_ms=DEFAULT_DOUBLE_CLICK_MS,
+    )
+
+
+def test_set_im117_ports_round_trip() -> None:
+    options = set_im117_ports(
+        {},
+        56,
+        {
+            0: IM117PortConfig(role=IM117_ROLE_BUTTON),
+            1: IM117PortConfig(role=IM117_ROLE_CONTACT, device_class="door"),
+            2: IM117PortConfig(role=IM117_ROLE_SWITCH, device_class="door"),
+        },
+    )
+
+    parsed = get_im117_port_configuration(options)[56]
+    assert parsed[0].role == IM117_ROLE_BUTTON
+    assert parsed[1].device_class == "door"
+    # A device class on a non-contact role is not persisted.
+    assert parsed[2].device_class is None
+
+
+def test_set_input_settings_round_trip() -> None:
+    options = set_input_settings({"unrelated": True}, InputSettings(long_press_ms=900, double_click_ms=300))
+
+    assert get_input_settings(options) == InputSettings(long_press_ms=900, double_click_ms=300)
+    assert options["unrelated"] is True
 
 
 def test_migrate_options_to_nested_contract() -> None:
