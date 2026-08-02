@@ -8,7 +8,7 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.config_entries import ConfigEntry, ConfigFlowResult, OptionsFlow
+from homeassistant.config_entries import ConfigEntry, ConfigFlowResult, OptionsFlow, OptionsFlowWithReload
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
@@ -16,6 +16,7 @@ from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 
 from .const import (
     CONF_TIMEOUT,
+    CONFIG_ENTRY_VERSION,
     DEFAULT_BLIND_CLOSE_TIME,
     DEFAULT_BLIND_OPEN_TIME,
     DEFAULT_BLIND_OVERRUN_TIME,
@@ -78,7 +79,7 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for casaIT : Smart Home."""
 
-    VERSION = 1
+    VERSION = CONFIG_ENTRY_VERSION
 
     def __init__(self) -> None:
         """Initialize the config flow."""
@@ -203,7 +204,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
 
-class OptionsFlowHandler(OptionsFlow):
+class OptionsFlowHandler(OptionsFlowWithReload):
     """Handle options flow for casaIT."""
 
     def __init__(self) -> None:

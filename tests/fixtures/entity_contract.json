@@ -1,91 +1,103 @@
 [
   {
     "case": "im117_binary_sensor",
-    "unique_id": "casait_smarthome_56_0",
-    "name": "Port 1",
-    "device_identifiers": [["casait_smarthome", "56"]],
-    "device_name": "Input module 0x38"
+    "entity_id": "binary_sensor.bridge_aabbccddeeff_im117_0x38_input_1",
+    "unique_id": "entry-test_im117_56_0",
+    "name": "Input 1",
+    "device_identifiers": [["casait_smarthome", "entry-test_im117_56"]],
+    "device_name": "IM117 0x38"
   },
   {
     "case": "dm117_binary_sensor",
+    "entity_id": "binary_sensor.bridge_aabbccddeeff_dm117_0x10_slot_1_input_a",
     "unique_id": "entry-test_dm117_16_0_input_0",
-    "name": "Slot 1 Port A",
-    "device_identifiers": [["casait_smarthome", "dm117_16"]],
-    "device_name": "DM117 module 0x10"
+    "name": "Slot 1 input A",
+    "device_identifiers": [["casait_smarthome", "entry-test_dm117_16"]],
+    "device_name": "DM117 0x10"
   },
   {
     "case": "ds2413_binary_sensor",
-    "unique_id": "3a00000000000001_channel_0_input",
-    "name": "Channel A input",
-    "device_identifiers": [["casait_smarthome", "onewire_3a00000000000001"]],
+    "entity_id": "binary_sensor.bridge_aabbccddeeff_ds2413_3a00000000000001_input_a",
+    "unique_id": "entry-test_3a00000000000001_channel_0_input",
+    "name": "Input A",
+    "device_identifiers": [["casait_smarthome", "entry-test_onewire_3a00000000000001"]],
     "device_name": "DS2413 3a00000000000001",
-    "via_device": ["casait_smarthome", "sm117_18"]
+    "via_device": ["casait_smarthome", "entry-test_sm117_18"]
   },
   {
     "case": "om117_switch",
-    "unique_id": "casait_smarthome_32_0",
-    "name": "Port 1",
-    "device_identifiers": [["casait_smarthome", "32"]],
-    "device_name": "Output module 0x20"
+    "entity_id": "switch.bridge_aabbccddeeff_om117_0x20_output_1",
+    "unique_id": "entry-test_om117_32_0",
+    "name": "Output 1",
+    "device_identifiers": [["casait_smarthome", "entry-test_om117_32"]],
+    "device_name": "OM117 0x20"
   },
   {
     "case": "dm117_switch",
+    "entity_id": "switch.bridge_aabbccddeeff_dm117_0x10_slot_1_output_a",
     "unique_id": "entry-test_dm117_16_0_output_0",
-    "name": "Slot 1 Port A",
-    "device_identifiers": [["casait_smarthome", "dm117_16"]],
-    "device_name": "DM117 module 0x10"
+    "name": "Slot 1 output A",
+    "device_identifiers": [["casait_smarthome", "entry-test_dm117_16"]],
+    "device_name": "DM117 0x10"
   },
   {
     "case": "ds2413_switch",
-    "unique_id": "3a00000000000001_channel_0_output",
-    "name": "Channel A output",
-    "device_identifiers": [["casait_smarthome", "onewire_3a00000000000001"]],
+    "entity_id": "switch.bridge_aabbccddeeff_ds2413_3a00000000000001_output_a",
+    "unique_id": "entry-test_3a00000000000001_channel_0_output",
+    "name": "Output A",
+    "device_identifiers": [["casait_smarthome", "entry-test_onewire_3a00000000000001"]],
     "device_name": "DS2413 3a00000000000001",
-    "via_device": ["casait_smarthome", "sm117_18"]
+    "via_device": ["casait_smarthome", "entry-test_sm117_18"]
   },
   {
     "case": "dm117_light",
+    "entity_id": "light.bridge_aabbccddeeff_dm117_0x10_slot_1_dimmer",
     "unique_id": "entry-test_dm117_16_0_dimmer",
-    "name": "Slot 1 Dimmer",
-    "device_identifiers": [["casait_smarthome", "dm117_16"]],
-    "device_name": "DM117 module 0x10"
+    "name": "Slot 1 dimmer",
+    "device_identifiers": [["casait_smarthome", "entry-test_dm117_16"]],
+    "device_name": "DM117 0x10"
   },
   {
     "case": "led_controller_light",
-    "unique_id": "1900000000000001_led_controller",
+    "entity_id": "light.bridge_aabbccddeeff_ds28e17_1900000000000001_led_controller",
+    "unique_id": "entry-test_1900000000000001_led_controller",
     "name": "LED controller",
-    "device_identifiers": [["casait_smarthome", "onewire_1900000000000001"]],
+    "device_identifiers": [["casait_smarthome", "entry-test_onewire_1900000000000001"]],
     "device_name": "DS28E17 1900000000000001",
-    "via_device": ["casait_smarthome", "sm117_18"]
+    "via_device": ["casait_smarthome", "entry-test_sm117_18"]
   },
   {
     "case": "om117_cover",
+    "entity_id": "cover.bridge_aabbccddeeff_om117_0x20_blind_1",
     "unique_id": "entry-test_om117_32_pair_1_blind",
-    "name": "Blind pair 1",
-    "device_identifiers": [["casait_smarthome", "32"]],
-    "device_name": "Output module 0x20"
+    "name": "Blind 1",
+    "device_identifiers": [["casait_smarthome", "entry-test_om117_32"]],
+    "device_name": "OM117 0x20"
   },
   {
     "case": "ds18b20_temperature",
-    "unique_id": "2800000000000001_temperature",
+    "entity_id": "sensor.bridge_aabbccddeeff_ds18b20_2800000000000001_temperature",
+    "unique_id": "entry-test_2800000000000001_temperature",
     "name": "Temperature",
-    "device_identifiers": [["casait_smarthome", "onewire_2800000000000001"]],
+    "device_identifiers": [["casait_smarthome", "entry-test_onewire_2800000000000001"]],
     "device_name": "DS18B20 2800000000000001",
-    "via_device": ["casait_smarthome", "sm117_18"]
+    "via_device": ["casait_smarthome", "entry-test_sm117_18"]
   },
   {
     "case": "ds2438_sensor",
-    "unique_id": "2600000000000001_humidity",
+    "entity_id": "sensor.bridge_aabbccddeeff_ds2438_2600000000000001_humidity",
+    "unique_id": "entry-test_2600000000000001_humidity",
     "name": "Humidity",
-    "device_identifiers": [["casait_smarthome", "onewire_2600000000000001"]],
+    "device_identifiers": [["casait_smarthome", "entry-test_onewire_2600000000000001"]],
     "device_name": "DS2438 2600000000000001",
-    "via_device": ["casait_smarthome", "sm117_18"]
+    "via_device": ["casait_smarthome", "entry-test_sm117_18"]
   },
   {
     "case": "debug_sensor",
+    "entity_id": "sensor.bridge_aabbccddeeff_diagnostics",
     "unique_id": "entry-test_debug",
-    "name": "casaIT debug",
-    "device_identifiers": [["casait_smarthome", "entry-test"]],
-    "device_name": "casaIT bus"
+    "name": "Diagnostics",
+    "device_identifiers": [["casait_smarthome", "entry-test_bridge_controller"]],
+    "device_name": "casaIT bridge"
   }
 ]

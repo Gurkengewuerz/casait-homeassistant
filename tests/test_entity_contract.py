@@ -24,14 +24,7 @@ from custom_components.casait_smarthome.sensor import (
 from custom_components.casait_smarthome.switch import CasaITDM117Switch, CasaITDS2413Switch, CasaITSwitch
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
-ENTRY = SimpleNamespace(entry_id="entry-test")
-PLATFORM_BY_CASE = {
-    "ds2413_binary_sensor": "binary_sensor",
-    "ds2413_switch": "switch",
-    "led_controller_light": "light",
-    "ds18b20_temperature": "sensor",
-    "ds2438_sensor": "sensor",
-}
+ENTRY = SimpleNamespace(entry_id="entry-test", unique_id="AA:BB:CC:DD:EE:FF")
 
 
 def _api() -> SimpleNamespace:
@@ -45,18 +38,25 @@ def _meta(device_type: str) -> dict[str, Any]:
 def _entities() -> dict[str, Any]:
     api = _api()
     return {
-        "im117_binary_sensor": CasaITBinarySensor(api, 0x38, 0),
+        "im117_binary_sensor": CasaITBinarySensor(api, ENTRY, 0x38, 0),
         "dm117_binary_sensor": CasaITDM117BinarySensor(api, ENTRY, 0x10, 0, 0),
-        "ds2413_binary_sensor": CasaITDS2413BinarySensor(api, "3a00000000000001", 0, _meta("DS2413")),
-        "om117_switch": CasaITSwitch(api, 0x20, 0),
+        "ds2413_binary_sensor": CasaITDS2413BinarySensor(
+            api, ENTRY, "3a00000000000001", 0, _meta("DS2413")
+        ),
+        "om117_switch": CasaITSwitch(api, ENTRY, 0x20, 0),
         "dm117_switch": CasaITDM117Switch(api, ENTRY, 0x10, 0, 0),
-        "ds2413_switch": CasaITDS2413Switch(api, "3a00000000000001", 0, _meta("DS2413")),
+        "ds2413_switch": CasaITDS2413Switch(api, ENTRY, "3a00000000000001", 0, _meta("DS2413")),
         "dm117_light": CasaITDM117Light(api, ENTRY, 0x10, 0),
-        "led_controller_light": CasaITLEDControllerLight(api, "1900000000000001", _meta("DS28E17"), 30),
+        "led_controller_light": CasaITLEDControllerLight(
+            api, ENTRY, "1900000000000001", _meta("DS28E17"), 30
+        ),
         "om117_cover": CasaITBlindCover(api, ENTRY, 0x20, 0, OM117PairConfig()),
-        "ds18b20_temperature": DS18B20TemperatureSensor(api, "2800000000000001", _meta("DS18B20")),
+        "ds18b20_temperature": DS18B20TemperatureSensor(
+            api, ENTRY, "2800000000000001", _meta("DS18B20")
+        ),
         "ds2438_sensor": DS2438Sensor(
             api,
+            ENTRY,
             "2600000000000001",
             _meta("DS2438"),
             OneWireSensorDescription(
@@ -75,13 +75,15 @@ def _normalize_entity(case: str, entity: Any) -> dict[str, Any]:
     assert device_info is not None
     identifiers = sorted([list(identifier) for identifier in device_info["identifiers"]])
     name = entity.name
-    if (platform := PLATFORM_BY_CASE.get(case)) is not None:
+    if (translation_key := entity.translation_key) is not None:
+        platform = entity.entity_id.split(".", 1)[0]
         strings_path = Path(__file__).parents[1] / "custom_components" / "casait_smarthome" / "strings.json"
         strings = json.loads(strings_path.read_text(encoding="utf-8"))
-        template = strings["entity"][platform][entity.translation_key]["name"]
+        template = strings["entity"][platform][translation_key]["name"]
         name = template.format(**getattr(entity, "_attr_translation_placeholders", {}))
     normalized = {
         "case": case,
+        "entity_id": entity.entity_id,
         "unique_id": entity.unique_id,
         "name": name,
         "device_identifiers": identifiers,

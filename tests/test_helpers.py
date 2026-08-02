@@ -8,11 +8,14 @@ from custom_components.casait_smarthome.const import (
     OM117_MODE_SWITCH,
 )
 from custom_components.casait_smarthome.helpers import (
+    build_bridge_slug,
     get_configured_led_counts,
     get_configured_onewire_poll_intervals,
     get_configured_onewire_profiles,
     get_dm117_port_configuration,
     get_om117_pair_configuration,
+    migrated_device_identifiers,
+    migrated_entity_identity,
 )
 from custom_components.casait_smarthome.services.i2cClasses.dm117 import DeviceType
 
@@ -116,3 +119,81 @@ def test_get_configured_onewire_poll_intervals_contract() -> None:
         "1900000000000001": 10,
         "2800000000000001": 3600,
     }
+
+
+def test_build_bridge_slug_contract() -> None:
+    assert build_bridge_slug("entry-test", "AA:BB:CC:DD:EE:FF") == "bridge_aabbccddeeff"
+    assert build_bridge_slug("12345678-90ab-cdef", None) == "bridge_1234567890ab"
+
+
+def test_migrated_device_identifiers_contract() -> None:
+    assert migrated_device_identifiers("entry-test", {("casait_smarthome", "56")}) == {
+        ("casait_smarthome", "entry-test_im117_56")
+    }
+    assert migrated_device_identifiers("entry-test", {("casait_smarthome", "32")}) == {
+        ("casait_smarthome", "entry-test_om117_32")
+    }
+    assert migrated_device_identifiers("entry-test", {("casait_smarthome", "sm117_18")}) == {
+        ("casait_smarthome", "entry-test_sm117_18")
+    }
+    assert migrated_device_identifiers(
+        "entry-test", {("casait_smarthome", "onewire_2800000000000001")}
+    ) == {("casait_smarthome", "entry-test_onewire_2800000000000001")}
+
+
+def test_migrated_entity_identity_contract() -> None:
+    legacy_entities = {
+        ("binary_sensor", "casait_smarthome_56_0"): (
+            "binary_sensor.bridge_aabbccddeeff_im117_0x38_input_1",
+            "entry-test_im117_56_0",
+        ),
+        ("binary_sensor", "entry-test_dm117_16_0_input_0"): (
+            "binary_sensor.bridge_aabbccddeeff_dm117_0x10_slot_1_input_a",
+            "entry-test_dm117_16_0_input_0",
+        ),
+        ("binary_sensor", "3a00000000000001_channel_0_input"): (
+            "binary_sensor.bridge_aabbccddeeff_ds2413_3a00000000000001_input_a",
+            "entry-test_3a00000000000001_channel_0_input",
+        ),
+        ("switch", "casait_smarthome_32_0"): (
+            "switch.bridge_aabbccddeeff_om117_0x20_output_1",
+            "entry-test_om117_32_0",
+        ),
+        ("switch", "entry-test_dm117_16_0_output_0"): (
+            "switch.bridge_aabbccddeeff_dm117_0x10_slot_1_output_a",
+            "entry-test_dm117_16_0_output_0",
+        ),
+        ("switch", "3a00000000000001_channel_0_output"): (
+            "switch.bridge_aabbccddeeff_ds2413_3a00000000000001_output_a",
+            "entry-test_3a00000000000001_channel_0_output",
+        ),
+        ("light", "entry-test_dm117_16_0_dimmer"): (
+            "light.bridge_aabbccddeeff_dm117_0x10_slot_1_dimmer",
+            "entry-test_dm117_16_0_dimmer",
+        ),
+        ("light", "1900000000000001_led_controller"): (
+            "light.bridge_aabbccddeeff_ds28e17_1900000000000001_led_controller",
+            "entry-test_1900000000000001_led_controller",
+        ),
+        ("cover", "entry-test_om117_32_pair_1_blind"): (
+            "cover.bridge_aabbccddeeff_om117_0x20_blind_1",
+            "entry-test_om117_32_pair_1_blind",
+        ),
+        ("sensor", "2800000000000001_temperature"): (
+            "sensor.bridge_aabbccddeeff_ds18b20_2800000000000001_temperature",
+            "entry-test_2800000000000001_temperature",
+        ),
+        ("sensor", "2600000000000001_humidity"): (
+            "sensor.bridge_aabbccddeeff_ds2438_2600000000000001_humidity",
+            "entry-test_2600000000000001_humidity",
+        ),
+        ("sensor", "entry-test_debug"): (
+            "sensor.bridge_aabbccddeeff_diagnostics",
+            "entry-test_debug",
+        ),
+    }
+
+    assert {
+        identity: migrated_entity_identity("entry-test", "AA:BB:CC:DD:EE:FF", *identity)
+        for identity in legacy_entities
+    } == legacy_entities

@@ -23,7 +23,11 @@ from . import CasaITConfigEntry
 from .api import CasaITApi
 from .const import DEFAULT_LED_COUNT, DOMAIN
 from .helpers import (
+    build_bridge_slug,
+    build_device_identifier,
+    build_i2c_entity_id,
     build_onewire_device_info,
+    build_onewire_entity_id,
     default_onewire_profile,
     get_configured_led_counts,
     get_configured_onewire_profiles,
@@ -77,6 +81,7 @@ async def async_setup_entry(
     led_entities = [
         CasaITLEDControllerLight(
             api,
+            config_entry,
             device_id,
             meta,
             led_counts.get(device_id, DEFAULT_LED_COUNT),
@@ -98,6 +103,7 @@ class CasaITDM117Light(LightEntity):
     _attr_color_mode = ColorMode.BRIGHTNESS
     _attr_should_poll = False
     _attr_supported_features = LightEntityFeature.TRANSITION
+    _attr_translation_key = "dm117_dimmer"
 
     def __init__(
         self,
@@ -111,19 +117,19 @@ class CasaITDM117Light(LightEntity):
         self._address = address
         self._port = port
         self._slot = port + 1
+        bridge_slug = build_bridge_slug(config_entry.entry_id, config_entry.unique_id)
         self._attr_unique_id = f"{config_entry.entry_id}_dm117_{address}_{port}_dimmer"
+        self.entity_id = build_i2c_entity_id(
+            "light", bridge_slug, "dm117", address, "slot", self._slot, "dimmer"
+        )
+        self._attr_translation_placeholders = {"slot": str(self._slot)}
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"dm117_{address}")},
-            name=f"DM117 module {hex(address)}",
+            identifiers={(DOMAIN, build_device_identifier(config_entry.entry_id, "dm117", address))},
+            name=f"DM117 0x{address:02X}",
             manufacturer="casaIT",
             model="DM117",
         )
         self._update_state()
-
-    @property
-    def name(self) -> str:
-        """Return the name of the light."""
-        return f"Slot {self._slot} Dimmer"
 
     def _update_state(self) -> None:
         states = self._api.dm117_states.get(self._address)
@@ -211,7 +217,14 @@ class CasaITLEDControllerLight(LightEntity):
     _attr_supported_features = LightEntityFeature.EFFECT
     _attr_translation_key = "led_controller"
 
-    def __init__(self, api: CasaITApi, device_id: str, meta: dict[str, Any], led_count: int) -> None:
+    def __init__(
+        self,
+        api: CasaITApi,
+        config_entry: CasaITConfigEntry,
+        device_id: str,
+        meta: dict[str, Any],
+        led_count: int,
+    ) -> None:
         """Initialize the LED controller light."""
 
         self._api = api
@@ -220,8 +233,10 @@ class CasaITLEDControllerLight(LightEntity):
         self._config: LEDConfig | None = None
         self._led_count = led_count or DEFAULT_LED_COUNT
         self._attr_effect_list = list(ANIMATION_EFFECTS.values())
-        self._attr_unique_id = f"{device_id}_led_controller"
-        self._attr_device_info = build_onewire_device_info(device_id, meta)
+        bridge_slug = build_bridge_slug(config_entry.entry_id, config_entry.unique_id)
+        self._attr_unique_id = f"{config_entry.entry_id}_{device_id}_led_controller"
+        self.entity_id = build_onewire_entity_id("light", bridge_slug, device_id, meta, "led", "controller")
+        self._attr_device_info = build_onewire_device_info(config_entry.entry_id, device_id, meta)
         self._attr_assumed_state = True
 
     @property

@@ -16,7 +16,11 @@ from . import CasaITConfigEntry
 from .api import CasaITApi
 from .const import DOMAIN, PCF8574_MAPPED_PORTS
 from .helpers import (
+    build_bridge_slug,
+    build_device_identifier,
+    build_i2c_entity_id,
     build_onewire_device_info,
+    build_onewire_entity_id,
     default_onewire_profile,
     get_address_range,
     get_configured_onewire_profiles,
@@ -43,7 +47,7 @@ async def async_setup_entry(
     pcf_entities: list[BinarySensorEntity] = []
     if (input_range := get_address_range("IM117")) is not None:
         pcf_entities = [
-            CasaITBinarySensor(api, addr, port)
+            CasaITBinarySensor(api, config_entry, addr, port)
             for addr in api.im117_om117
             if input_range[0] <= addr <= input_range[1]
             for port in range(8)
@@ -67,7 +71,9 @@ async def async_setup_entry(
         profile = configured_profiles.get(device_id) or default_onewire_profile(meta)
         if profile != "ds2413_in":
             continue
-        ds2413_entities.extend(CasaITDS2413BinarySensor(api, device_id, channel, meta) for channel in (0, 1))
+        ds2413_entities.extend(
+            CasaITDS2413BinarySensor(api, config_entry, device_id, channel, meta) for channel in (0, 1)
+        )
 
     async_add_entities([*pcf_entities, *dm_entities, *ds2413_entities])
 
@@ -77,26 +83,25 @@ class CasaITBinarySensor(BinarySensorEntity):
 
     _attr_has_entity_name = True
     _attr_should_poll = False
+    _attr_translation_key = "im117_input"
 
-    def __init__(self, api: CasaITApi, address: int, port: int) -> None:
+    def __init__(self, api: CasaITApi, config_entry: CasaITConfigEntry, address: int, port: int) -> None:
         """Initialize the binary sensor."""
         self._api = api
         self._address = address
         self._port = port
         self._hardware_port = PCF8574_MAPPED_PORTS[port]
-        self._attr_unique_id = f"{DOMAIN}_{address}_{port}"
+        bridge_slug = build_bridge_slug(config_entry.entry_id, config_entry.unique_id)
+        self._attr_unique_id = f"{config_entry.entry_id}_im117_{address}_{port}"
+        self.entity_id = build_i2c_entity_id("binary_sensor", bridge_slug, "im117", address, "input", port + 1)
+        self._attr_translation_placeholders = {"port": str(port + 1)}
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, str(address))},
-            name=f"Input module {hex(address)}",
+            identifiers={(DOMAIN, build_device_identifier(config_entry.entry_id, "im117", address))},
+            name=f"IM117 0x{address:02X}",
             manufacturer="casaIT",
             model="PCF8574 Input",
         )
         self._update_state()
-
-    @property
-    def name(self) -> str:
-        """Return the name of the sensor."""
-        return f"Port {self._port + 1}"
 
     def _update_state(self) -> None:
         """Update the state of the sensor."""
@@ -133,6 +138,7 @@ class CasaITDM117BinarySensor(BinarySensorEntity):
 
     _attr_has_entity_name = True
     _attr_should_poll = False
+    _attr_translation_key = "dm117_input"
 
     def __init__(
         self,
@@ -149,21 +155,20 @@ class CasaITDM117BinarySensor(BinarySensorEntity):
         self._port = port
         self._slot = port + 1
         self._channel = channel  # 0 for port A, 1 for port B
+        bridge_slug = build_bridge_slug(config_entry.entry_id, config_entry.unique_id)
         self._attr_unique_id = f"{config_entry.entry_id}_dm117_{address}_{port}_input_{channel}"
+        channel_name = "A" if channel == 0 else "B"
+        self.entity_id = build_i2c_entity_id(
+            "binary_sensor", bridge_slug, "dm117", address, "slot", self._slot, "input", channel_name
+        )
+        self._attr_translation_placeholders = {"slot": str(self._slot), "channel": channel_name}
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"dm117_{address}")},
-            name=f"DM117 module {hex(address)}",
+            identifiers={(DOMAIN, build_device_identifier(config_entry.entry_id, "dm117", address))},
+            name=f"DM117 0x{address:02X}",
             manufacturer="casaIT",
             model="DM117",
         )
         self._update_state()
-
-    @property
-    def name(self) -> str:
-        """Return the entity name."""
-
-        channel_name = "A" if self._channel == 0 else "B"
-        return f"Slot {self._slot} Port {channel_name}"
 
     def _update_state(self) -> None:
         states = self._api.dm117_states.get(self._address)
@@ -207,6 +212,7 @@ class CasaITDS2413BinarySensor(BinarySensorEntity):
     def __init__(
         self,
         api: CasaITApi,
+        config_entry: CasaITConfigEntry,
         device_id: str,
         channel: int,
         meta: dict[str, Any],
@@ -218,9 +224,13 @@ class CasaITDS2413BinarySensor(BinarySensorEntity):
         self._channel = channel
         self._meta = meta
         channel_name = "A" if channel == 0 else "B"
-        self._attr_unique_id = f"{device_id}_channel_{channel}_input"
+        bridge_slug = build_bridge_slug(config_entry.entry_id, config_entry.unique_id)
+        self._attr_unique_id = f"{config_entry.entry_id}_{device_id}_channel_{channel}_input"
+        self.entity_id = build_onewire_entity_id(
+            "binary_sensor", bridge_slug, device_id, meta, "input", channel_name
+        )
         self._attr_translation_placeholders = {"channel": channel_name}
-        self._attr_device_info = build_onewire_device_info(device_id, meta)
+        self._attr_device_info = build_onewire_device_info(config_entry.entry_id, device_id, meta)
 
     async def async_update(self) -> None:
         """Poll the DS2413 input state."""

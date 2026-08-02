@@ -7,6 +7,7 @@
 **casaIT : Smart Home** is a custom [Home Assistant](https://www.home-assistant.io/) integration that provides connectivity to casaIT smart home devices via I2C/SMBus protocol. It enables control and monitoring of modular smart home components including input/output modules, digital controllers, and various 1-Wire sensor devices.
 
 - **Domain:** `casait_smarthome`
+- **Minimum Home Assistant version:** `2026.7.4`
 - **Quality Scale:** Bronze
 - **Connection:** I2C/SMBus (via remote proxy)
 - **Main code:** `custom_components/casait_smarthome/`

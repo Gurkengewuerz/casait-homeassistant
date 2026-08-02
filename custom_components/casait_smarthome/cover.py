@@ -20,7 +20,14 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from . import CasaITConfigEntry
 from .api import CasaITApi
 from .const import DOMAIN, OM117_MODE_BLIND, PCF8574_MAPPED_PORTS
-from .helpers import OM117PairConfig, get_address_range, get_om117_pair_configuration
+from .helpers import (
+    OM117PairConfig,
+    build_bridge_slug,
+    build_device_identifier,
+    build_i2c_entity_id,
+    get_address_range,
+    get_om117_pair_configuration,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -75,6 +82,7 @@ class CasaITBlindCover(CoverEntity, RestoreEntity):
         CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE | CoverEntityFeature.STOP | CoverEntityFeature.SET_POSITION
     )
     _attr_assumed_state = True
+    _attr_translation_key = "om117_blind"
 
     def __init__(
         self,
@@ -102,11 +110,15 @@ class CasaITBlindCover(CoverEntity, RestoreEntity):
         self._active_direction: str | None = None
         self._movement_task: asyncio.Task | None = None
 
+        bridge_slug = build_bridge_slug(config_entry.entry_id, config_entry.unique_id)
         self._attr_unique_id = f"{config_entry.entry_id}_om117_{address}_pair_{pair_index + 1}_blind"
-        self._attr_name = f"Blind pair {pair_index + 1}"
+        self.entity_id = build_i2c_entity_id(
+            "cover", bridge_slug, "om117", address, "blind", pair_index + 1
+        )
+        self._attr_translation_placeholders = {"pair": str(pair_index + 1)}
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, str(address))},
-            name=f"Output module {hex(address)}",
+            identifiers={(DOMAIN, build_device_identifier(config_entry.entry_id, "om117", address))},
+            name=f"OM117 0x{address:02X}",
             manufacturer="casaIT",
             model="PCF8574 Output",
         )

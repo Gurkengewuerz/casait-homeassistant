@@ -12,14 +12,18 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.typing import ConfigType
 
 from .api import CasaITApi
-from .const import CONF_TIMEOUT, DOMAIN, PLATFORMS, SERVICE_SCAN_DEVICES
+from .const import CONFIG_ENTRY_VERSION, CONF_TIMEOUT, DOMAIN, PLATFORMS, SERVICE_SCAN_DEVICES
 from .helpers import (
+    build_device_identifier,
     get_configured_onewire_poll_intervals,
     get_configured_onewire_profiles,
     get_dm117_port_configuration,
+    migrated_device_identifiers,
+    migrated_entity_identity,
 )
 from .services.smbus_proxy import SMBus, SMBusProxyError
 
@@ -44,6 +48,99 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     hass.services.async_register(DOMAIN, SERVICE_SCAN_DEVICES, async_scan_devices_service, schema=vol.Schema({}))
 
+    return True
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migrate entity IDs to the canonical hardware-based naming scheme."""
+
+    if entry.version > CONFIG_ENTRY_VERSION:
+        _LOGGER.error(
+            "Cannot migrate config entry %s from newer version %s",
+            entry.entry_id,
+            entry.version,
+        )
+        return False
+
+    if entry.version == CONFIG_ENTRY_VERSION:
+        return True
+
+    entity_registry = er.async_get(hass)
+    device_registry = dr.async_get(hass)
+    migrations: list[tuple[str, str, str]] = []
+    for registry_entry in er.async_entries_for_config_entry(entity_registry, entry.entry_id):
+        target_identity = migrated_entity_identity(
+            entry.entry_id,
+            entry.unique_id,
+            registry_entry.domain,
+            registry_entry.unique_id,
+        )
+        if target_identity is None:
+            continue
+        target_entity_id, target_unique_id = target_identity
+        if conflicting_entry := entity_registry.async_get(target_entity_id):
+            if conflicting_entry.entity_id != registry_entry.entity_id:
+                _LOGGER.error(
+                    "Cannot migrate entity %s to %s because the target ID belongs to %s",
+                    registry_entry.entity_id,
+                    target_entity_id,
+                    conflicting_entry.entity_id,
+                )
+                return False
+        if conflicting_entity_id := entity_registry.async_get_entity_id(
+            registry_entry.domain,
+            registry_entry.platform,
+            target_unique_id,
+        ):
+            if conflicting_entity_id != registry_entry.entity_id:
+                _LOGGER.error(
+                    "Cannot migrate entity %s to unique ID %s because it belongs to %s",
+                    registry_entry.entity_id,
+                    target_unique_id,
+                    conflicting_entity_id,
+                )
+                return False
+        if target_entity_id != registry_entry.entity_id or target_unique_id != registry_entry.unique_id:
+            migrations.append((registry_entry.entity_id, target_entity_id, target_unique_id))
+
+    device_migrations: list[tuple[str, set[tuple[str, str]]]] = []
+    for device_entry in dr.async_entries_for_config_entry(device_registry, entry.entry_id):
+        config_entries = getattr(device_entry, "config_entries", None)
+        if config_entries and config_entries != {entry.entry_id}:
+            _LOGGER.warning(
+                "Skipping identifier migration for legacy device %s shared by config entries %s",
+                device_entry.id,
+                sorted(config_entries),
+            )
+            continue
+        target_identifiers = migrated_device_identifiers(entry.entry_id, device_entry.identifiers)
+        if target_identifiers is None:
+            continue
+        if conflicting_device := device_registry.async_get_device(identifiers=target_identifiers):
+            if conflicting_device.id != device_entry.id:
+                _LOGGER.error(
+                    "Cannot migrate device %s because the target identifier belongs to %s",
+                    device_entry.id,
+                    conflicting_device.id,
+                )
+                return False
+        device_migrations.append((device_entry.id, target_identifiers))
+
+    for old_entity_id, target_entity_id, target_unique_id in migrations:
+        entity_registry.async_update_entity(
+            old_entity_id,
+            new_entity_id=target_entity_id,
+            new_unique_id=target_unique_id,
+        )
+    for device_id, target_identifiers in device_migrations:
+        device_registry.async_update_device(device_id, new_identifiers=target_identifiers)
+
+    hass.config_entries.async_update_entry(entry, version=CONFIG_ENTRY_VERSION)
+    _LOGGER.info(
+        "Migrated %s casaIT entities and %s devices to bridge-scoped identities",
+        len(migrations),
+        len(device_migrations),
+    )
     return True
 
 
@@ -90,14 +187,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> bo
     for address in api.sm117:
         device_registry.async_get_or_create(
             config_entry_id=entry.entry_id,
-            identifiers={(DOMAIN, f"sm117_{address:02x}")},
-            name=f"SM117 Bus 0x{address:02X}",
+            identifiers={
+                (DOMAIN, build_device_identifier(entry.entry_id, "sm117", f"{address:02x}"))
+            },
+            name=f"SM117 0x{address:02X}",
             manufacturer="CasaIT",
             model="SM117 1-Wire bridge",
         )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
 
     _LOGGER.info("CasaIT : Smart Home integration setup complete")
 
@@ -118,9 +216,3 @@ async def async_unload_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> b
         await hass.async_add_executor_job(api.bus.close)
 
     return unload_ok
-
-
-async def _async_reload_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> None:
-    """Reload the config entry after its options change."""
-
-    await hass.config_entries.async_reload(entry.entry_id)

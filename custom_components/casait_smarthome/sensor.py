@@ -10,7 +10,7 @@ import logging
 from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorEntityDescription, SensorStateClass
-from homeassistant.const import LIGHT_LUX, PERCENTAGE, EntityCategory, UnitOfTemperature
+from homeassistant.const import LIGHT_LUX, EntityCategory, UnitOfRatio, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -18,7 +18,15 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from . import CasaITConfigEntry
 from .api import CasaITApi
 from .const import DOMAIN
-from .helpers import build_onewire_device_info, default_onewire_profile, get_configured_onewire_profiles
+from .helpers import (
+    build_bridge_slug,
+    build_device_identifier,
+    build_entity_id,
+    build_onewire_device_info,
+    build_onewire_entity_id,
+    default_onewire_profile,
+    get_configured_onewire_profiles,
+)
 from .services.i2cClasses.ds2438 import DS2438Reading
 
 TEMP_COMP_A = 1.0546
@@ -45,13 +53,21 @@ class OneWireEntity(SensorEntity):
 
     entity_description: OneWireSensorDescription
 
-    def __init__(self, device_id: str, meta: dict[str, Any], description: OneWireSensorDescription) -> None:
+    def __init__(
+        self,
+        entry: CasaITConfigEntry,
+        device_id: str,
+        meta: dict[str, Any],
+        description: OneWireSensorDescription,
+    ) -> None:
         """Initialize the entity."""
         self._device_id = device_id
         self._meta = meta
         self._bus_address: int | None = meta.get("bus_address")
         self.entity_description = description
-        self._attr_unique_id = f"{device_id}_{description.key}"
+        bridge_slug = build_bridge_slug(entry.entry_id, entry.unique_id)
+        self._attr_unique_id = f"{entry.entry_id}_{device_id}_{description.key}"
+        self.entity_id = build_onewire_entity_id("sensor", bridge_slug, device_id, meta, description.key)
         self._attr_device_class = description.device_class
         self._attr_native_unit_of_measurement = description.native_unit_of_measurement
         self._attr_state_class = description.state_class
@@ -60,15 +76,16 @@ class OneWireEntity(SensorEntity):
                 "OneWire device %s has no bus address; it will not be grouped under a common device in Home Assistant",
                 device_id,
             )
-        self._attr_device_info = build_onewire_device_info(device_id, meta)
+        self._attr_device_info = build_onewire_device_info(entry.entry_id, device_id, meta)
 
 
 class DS18B20TemperatureSensor(OneWireEntity):
     """Temperature sensor for DS18B20 devices."""
 
-    def __init__(self, api: CasaITApi, device_id: str, meta: dict[str, Any]) -> None:
+    def __init__(self, api: CasaITApi, entry: CasaITConfigEntry, device_id: str, meta: dict[str, Any]) -> None:
         """Initialize the DS18B20 temperature sensor entity."""
         super().__init__(
+            entry,
             device_id,
             meta,
             OneWireSensorDescription(
@@ -99,10 +116,15 @@ class DS2438Sensor(OneWireEntity):
     entity_description: OneWireSensorDescription
 
     def __init__(
-        self, api: CasaITApi, device_id: str, meta: dict[str, Any], description: OneWireSensorDescription
+        self,
+        api: CasaITApi,
+        entry: CasaITConfigEntry,
+        device_id: str,
+        meta: dict[str, Any],
+        description: OneWireSensorDescription,
     ) -> None:
         """Initialize the DS2438 sensor entity."""
-        super().__init__(device_id, meta, description)
+        super().__init__(entry, device_id, meta, description)
         self._api = api
 
     async def async_update(self) -> None:
@@ -122,16 +144,18 @@ class CasaITDebugSensor(SensorEntity):
 
     _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_translation_key = "diagnostics"
 
     def __init__(self, api: CasaITApi, entry: CasaITConfigEntry) -> None:
         """Initialize the debug sensor."""
 
         self._api = api
         self._attr_unique_id = f"{entry.entry_id}_debug"
-        self._attr_name = "casaIT debug"
+        bridge_slug = build_bridge_slug(entry.entry_id, entry.unique_id)
+        self.entity_id = build_entity_id("sensor", bridge_slug, "diagnostics")
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name="casaIT bus",
+            identifiers={(DOMAIN, build_device_identifier(entry.entry_id, "bridge", "controller"))},
+            name="casaIT bridge",
             manufacturer="CasaIT",
             model="SMBus proxy",
         )
@@ -235,7 +259,7 @@ async def async_setup_entry(
             continue
 
         if profile == "ds18b20_temp":
-            entities.append(DS18B20TemperatureSensor(api, device_id, meta))
+            entities.append(DS18B20TemperatureSensor(api, entry, device_id, meta))
             continue
 
         if profile in {"ds2438_hih4030_tept5600", "ds2438_hih5030_tept5600"}:
@@ -253,7 +277,7 @@ async def async_setup_entry(
                     key="humidity",
                     translation_key="humidity",
                     device_class=SensorDeviceClass.HUMIDITY,
-                    native_unit_of_measurement=PERCENTAGE,
+                    native_unit_of_measurement=UnitOfRatio.PERCENTAGE,
                     state_class=SensorStateClass.MEASUREMENT,
                     profile=profile,
                     value_fn=(_humidity_hih4030 if "4030" in profile else _humidity_hih5030),
@@ -269,7 +293,7 @@ async def async_setup_entry(
                 ),
             ]
 
-            entities.extend(DS2438Sensor(api, device_id, meta, description) for description in descriptions)
+            entities.extend(DS2438Sensor(api, entry, device_id, meta, description) for description in descriptions)
 
     if entities:
         async_add_entities(entities)

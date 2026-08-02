@@ -4,7 +4,7 @@ This guide will help you install and set up the casaIT : Smart Home custom integ
 
 ## Prerequisites
 
-- Home Assistant 2025.7.0 or newer
+- Home Assistant 2026.7.4 or newer
 - HACS (Home Assistant Community Store) installed
 - Network connectivity to [external service/device]
 

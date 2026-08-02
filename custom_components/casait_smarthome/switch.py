@@ -17,7 +17,11 @@ from . import CasaITConfigEntry
 from .api import CasaITApi
 from .const import DOMAIN, OM117_MODE_BLIND, PCF8574_MAPPED_PORTS
 from .helpers import (
+    build_bridge_slug,
+    build_device_identifier,
+    build_i2c_entity_id,
     build_onewire_device_info,
+    build_onewire_entity_id,
     default_onewire_profile,
     get_address_range,
     get_configured_onewire_profiles,
@@ -59,7 +63,7 @@ async def async_setup_entry(
             base_port = pair_index * 2
             for offset in (0, 1):
                 port = base_port + offset
-                pcf_entities.append(CasaITSwitch(api, addr, port))
+                pcf_entities.append(CasaITSwitch(api, config_entry, addr, port))
 
     dm_entities: list[CasaITDM117Switch] = []
     dm_config = get_dm117_port_configuration(config_entry.options)
@@ -79,7 +83,7 @@ async def async_setup_entry(
         profile = configured_profiles.get(device_id) or default_onewire_profile(meta)
         if profile != "ds2413_out":
             continue
-        ds2413_entities.extend(CasaITDS2413Switch(api, device_id, channel, meta) for channel in (0, 1))
+        ds2413_entities.extend(CasaITDS2413Switch(api, config_entry, device_id, channel, meta) for channel in (0, 1))
 
     async_add_entities([*pcf_entities, *dm_entities, *ds2413_entities])
 
@@ -89,26 +93,25 @@ class CasaITSwitch(SwitchEntity):
 
     _attr_has_entity_name = True
     _attr_should_poll = False
+    _attr_translation_key = "om117_output"
 
-    def __init__(self, api: CasaITApi, address: int, port: int) -> None:
+    def __init__(self, api: CasaITApi, config_entry: CasaITConfigEntry, address: int, port: int) -> None:
         """Initialize the switch."""
         self._api = api
         self._address = address
         self._port = port
         self._hardware_port = PCF8574_MAPPED_PORTS[port]
-        self._attr_unique_id = f"{DOMAIN}_{address}_{port}"
+        bridge_slug = build_bridge_slug(config_entry.entry_id, config_entry.unique_id)
+        self._attr_unique_id = f"{config_entry.entry_id}_om117_{address}_{port}"
+        self.entity_id = build_i2c_entity_id("switch", bridge_slug, "om117", address, "output", port + 1)
+        self._attr_translation_placeholders = {"port": str(port + 1)}
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, str(address))},
-            name=f"Output module {hex(address)}",
+            identifiers={(DOMAIN, build_device_identifier(config_entry.entry_id, "om117", address))},
+            name=f"OM117 0x{address:02X}",
             manufacturer="casaIT",
             model="PCF8574 Output",
         )
         self._update_state()
-
-    @property
-    def name(self) -> str:
-        """Return the name of the switch."""
-        return f"Port {self._port + 1}"
 
     def _update_state(self) -> None:
         """Update the state of the switch."""
@@ -164,6 +167,7 @@ class CasaITDM117Switch(SwitchEntity):
 
     _attr_has_entity_name = True
     _attr_should_poll = False
+    _attr_translation_key = "dm117_output"
 
     def __init__(
         self,
@@ -179,20 +183,20 @@ class CasaITDM117Switch(SwitchEntity):
         self._port = port
         self._slot = port + 1
         self._channel = channel
+        bridge_slug = build_bridge_slug(config_entry.entry_id, config_entry.unique_id)
         self._attr_unique_id = f"{config_entry.entry_id}_dm117_{address}_{port}_output_{channel}"
+        channel_name = "A" if channel == 0 else "B"
+        self.entity_id = build_i2c_entity_id(
+            "switch", bridge_slug, "dm117", address, "slot", self._slot, "output", channel_name
+        )
+        self._attr_translation_placeholders = {"slot": str(self._slot), "channel": channel_name}
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"dm117_{address}")},
-            name=f"DM117 module {hex(address)}",
+            identifiers={(DOMAIN, build_device_identifier(config_entry.entry_id, "dm117", address))},
+            name=f"DM117 0x{address:02X}",
             manufacturer="casaIT",
             model="DM117",
         )
         self._update_state()
-
-    @property
-    def name(self) -> str:
-        """Return the name of the switch."""
-        channel_name = "A" if self._channel == 0 else "B"
-        return f"Slot {self._slot} Port {channel_name}"
 
     def _update_state(self) -> None:
         states = self._api.dm117_states.get(self._address)
@@ -259,6 +263,7 @@ class CasaITDS2413Switch(SwitchEntity):
     def __init__(
         self,
         api: CasaITApi,
+        config_entry: CasaITConfigEntry,
         device_id: str,
         channel: int,
         meta: dict[str, Any],
@@ -270,9 +275,11 @@ class CasaITDS2413Switch(SwitchEntity):
         self._channel = channel
         self._meta = meta
         channel_name = "A" if channel == 0 else "B"
-        self._attr_unique_id = f"{device_id}_channel_{channel}_output"
+        bridge_slug = build_bridge_slug(config_entry.entry_id, config_entry.unique_id)
+        self._attr_unique_id = f"{config_entry.entry_id}_{device_id}_channel_{channel}_output"
+        self.entity_id = build_onewire_entity_id("switch", bridge_slug, device_id, meta, "output", channel_name)
         self._attr_translation_placeholders = {"channel": channel_name}
-        self._attr_device_info = build_onewire_device_info(device_id, meta)
+        self._attr_device_info = build_onewire_device_info(config_entry.entry_id, device_id, meta)
 
     async def async_update(self) -> None:
         """Poll current DS2413 output state."""

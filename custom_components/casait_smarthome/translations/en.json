@@ -28,18 +28,38 @@
   },
   "entity": {
     "binary_sensor": {
+      "im117_input": {
+        "name": "Input {port}"
+      },
+      "dm117_input": {
+        "name": "Slot {slot} input {channel}"
+      },
       "ds2413_input": {
-        "name": "Channel {channel} input"
+        "name": "Input {channel}"
       }
     },
     "switch": {
+      "om117_output": {
+        "name": "Output {port}"
+      },
+      "dm117_output": {
+        "name": "Slot {slot} output {channel}"
+      },
       "ds2413_output": {
-        "name": "Channel {channel} output"
+        "name": "Output {channel}"
       }
     },
     "light": {
+      "dm117_dimmer": {
+        "name": "Slot {slot} dimmer"
+      },
       "led_controller": {
         "name": "LED controller"
+      }
+    },
+    "cover": {
+      "om117_blind": {
+        "name": "Blind {pair}"
       }
     },
     "sensor": {
@@ -51,6 +71,9 @@
       },
       "illuminance": {
         "name": "Illuminance"
+      },
+      "diagnostics": {
+        "name": "Diagnostics"
       }
     }
   },

@@ -2,6 +2,7 @@
 
 from typing import Final
 
+CONFIG_ENTRY_VERSION: Final = 2
 DOMAIN: Final = "casait_smarthome"
 
 CONF_TIMEOUT: Final = "timeout"

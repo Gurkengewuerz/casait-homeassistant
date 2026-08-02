@@ -28,18 +28,38 @@
   },
   "entity": {
     "binary_sensor": {
+      "im117_input": {
+        "name": "Eingang {port}"
+      },
+      "dm117_input": {
+        "name": "Slot {slot} Eingang {channel}"
+      },
       "ds2413_input": {
-        "name": "Kanal {channel} Eingang"
+        "name": "Eingang {channel}"
       }
     },
     "switch": {
+      "om117_output": {
+        "name": "Ausgang {port}"
+      },
+      "dm117_output": {
+        "name": "Slot {slot} Ausgang {channel}"
+      },
       "ds2413_output": {
-        "name": "Kanal {channel} Ausgang"
+        "name": "Ausgang {channel}"
       }
     },
     "light": {
+      "dm117_dimmer": {
+        "name": "Slot {slot} Dimmer"
+      },
       "led_controller": {
         "name": "LED-Controller"
+      }
+    },
+    "cover": {
+      "om117_blind": {
+        "name": "Jalousie {pair}"
       }
     },
     "sensor": {
@@ -51,6 +71,9 @@
       },
       "illuminance": {
         "name": "Beleuchtungsstärke"
+      },
+      "diagnostics": {
+        "name": "Diagnose"
       }
     }
   },
