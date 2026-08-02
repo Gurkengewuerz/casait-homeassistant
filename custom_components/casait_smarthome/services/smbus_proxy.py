@@ -27,6 +27,15 @@ CMD_PING = 0x11
 DEFAULT_PORT = 8555
 DEFAULT_TIMEOUT = 2.0
 
+# Adaptive spacing between consecutive frames. The bridge drops frames when it is
+# flooded, so the client throttles itself. Rather than paying a fixed worst-case
+# price on every round trip, start fast and back off only when the link complains.
+MIN_SEND_INTERVAL = 0.001
+MAX_SEND_INTERVAL = 0.005
+SEND_INTERVAL_STEP = 0.001
+# Consecutive error-free frames required before the spacing is relaxed one step.
+SEND_INTERVAL_RECOVERY_FRAMES = 50
+
 
 class SMBusProxyError(Exception):
     """Exception raised for SMBus proxy errors."""
@@ -76,7 +85,13 @@ class SMBus:
         self._sock: socket.socket | None = None
         self._io_lock = threading.Lock()
         self._last_send: float = 0.0
-        self._min_send_interval = 0.005  # 5 ms spacing to avoid flooding bridge
+        self._min_send_interval = MIN_SEND_INTERVAL
+        self._consecutive_ok = 0
+        self._crc_errors = 0
+        self._timeouts = 0
+        self._io_errors = 0
+        self._frames = 0
+        self._last_rtt = 0.0
         _LOGGER.debug(
             "Initializing SMBusProxy with host=%s, port=%s, timeout=%s",
             self.host,
@@ -164,8 +179,49 @@ class SMBus:
         frame = length_bytes + payload
         crc_expected = self._calc_crc8(frame)
         if crc_recv != crc_expected:
+            self._crc_errors += 1
             raise SMBusProxyError("CRC mismatch in bridge response")
         return payload
+
+    def _note_success(self, rtt: float) -> None:
+        """Record a clean round trip and relax the spacing once it looks safe.
+
+        Must be called while holding ``_io_lock``.
+        """
+
+        self._frames += 1
+        self._last_rtt = rtt
+        self._consecutive_ok += 1
+
+        if self._consecutive_ok >= SEND_INTERVAL_RECOVERY_FRAMES and self._min_send_interval > MIN_SEND_INTERVAL:
+            self._consecutive_ok = 0
+            self._min_send_interval = max(MIN_SEND_INTERVAL, self._min_send_interval - SEND_INTERVAL_STEP)
+            _LOGGER.debug("Relaxing SMBus send spacing to %.1f ms", self._min_send_interval * 1000)
+
+    def _note_failure(self) -> None:
+        """Record a failed round trip and back the spacing off one step.
+
+        Must be called while holding ``_io_lock``.
+        """
+
+        self._consecutive_ok = 0
+        if self._min_send_interval < MAX_SEND_INTERVAL:
+            self._min_send_interval = min(MAX_SEND_INTERVAL, self._min_send_interval + SEND_INTERVAL_STEP)
+            _LOGGER.debug("Backing SMBus send spacing off to %.1f ms", self._min_send_interval * 1000)
+
+    @property
+    def stats(self) -> dict[str, float | int]:
+        """Return transport counters for diagnostics."""
+
+        return {
+            "send_interval_ms": round(self._min_send_interval * 1000, 3),
+            "last_roundtrip_ms": round(self._last_rtt * 1000, 3),
+            "frames": self._frames,
+            "crc_errors": self._crc_errors,
+            "timeouts": self._timeouts,
+            "io_errors": self._io_errors,
+            "connected": self._sock is not None,
+        }
 
     def _send_command(self, payload: bytes) -> bytes:
         """Send a framed command and return payload of response."""
@@ -182,12 +238,14 @@ class SMBus:
                     delta = now - self._last_send
                     if delta < self._min_send_interval:
                         time.sleep(self._min_send_interval - delta)
-                    self._last_send = time.monotonic()
+                    send_start = time.monotonic()
+                    self._last_send = send_start
 
                     frame = bytes([len(payload)]) + payload
                     crc = self._calc_crc8(frame)
                     self._sock.sendall(frame + bytes([crc]))
                     response = self._receive_frame()
+                    rtt = time.monotonic() - send_start
 
                     # Bridge may signal maintenance; back off to avoid busy reconnect loops
                     if len(response) >= 3 and response[:3] == b"\xff\xee\x01":
@@ -195,6 +253,8 @@ class SMBus:
                         time.sleep(2)
                         raise SMBusProxyError("Bridge in maintenance mode")  # noqa: TRY301
                 except TimeoutError as e:
+                    self._timeouts += 1
+                    self._note_failure()
                     _LOGGER.warning(
                         "SMBus proxy communication timeout (attempt %d/%d)",
                         attempt + 1,
@@ -206,6 +266,7 @@ class SMBus:
                         continue
                     raise SMBusProxyError("Communication timeout") from e
                 except SMBusProxyError as e:
+                    self._note_failure()
                     _LOGGER.warning(
                         "SMBus proxy error (attempt %d/%d): %s",
                         attempt + 1,
@@ -218,6 +279,8 @@ class SMBus:
                         continue
                     raise
                 except OSError as e:
+                    self._io_errors += 1
+                    self._note_failure()
                     _LOGGER.warning(
                         "SMBus proxy communication error (attempt %d/%d): %s",
                         attempt + 1,
@@ -230,6 +293,7 @@ class SMBus:
                         continue
                     raise SMBusProxyError(f"Communication error: {e}") from e
                 else:
+                    self._note_success(rtt)
                     return response
             return b""
 

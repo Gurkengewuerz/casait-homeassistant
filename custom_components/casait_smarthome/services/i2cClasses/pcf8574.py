@@ -2,10 +2,36 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 import logging
 import time
 
 _LOGGER = logging.getLogger(__name__)
+
+# Reads between forced re-arming of the quasi-bidirectional inputs. Writes and
+# errors re-arm immediately; this is only a safety net against a latch that
+# drifted low without anyone noticing.
+SET_HIGH_REFRESH_READS = 50
+
+
+@dataclass
+class PCF8574Reading:
+    """Result of a single port read.
+
+    ``edges`` maps a hardware port to the raw levels it transitioned to since the
+    previous read, in order. The values are chip levels, not logical states -
+    callers apply their own active-low interpretation.
+    """
+
+    port_states: list[int]
+    value: int
+    edges: dict[int, list[bool]] = field(default_factory=dict)
+
+    @property
+    def ok(self) -> bool:
+        """Return True when the read produced usable data."""
+
+        return bool(self.port_states)
 
 
 class PCF8574:
@@ -18,45 +44,60 @@ class PCF8574:
         self.last_value = -1
         self.debounce_time = debounce_time  # ms
         self.port_states = [0] * 8
-        self._new_value = 0
-        self._new_value_time = 0
+        self._needs_set_high = True
+        self._reads_since_set_high = 0
+        self._last_change = [0.0] * 8
 
-    def read_ports(self, set_high: bool = True) -> tuple[list[int], int]:
-        """Read all ports with debouncing."""
+    def invalidate(self) -> None:
+        """Force the next read to re-arm the inputs before sampling."""
+
+        self._needs_set_high = True
+
+    def read_ports(self, set_high: bool = True) -> PCF8574Reading:
+        """Read all ports, debounce per bit and report the observed edges."""
         try:
-            # Locking this early prevents concurrent threads from writing
-            # different values at the same time.
-            # Set all ports high first
-            if set_high:
+            # Quasi-bidirectional ports only need re-arming after a write, after an
+            # error, or periodically as a safety net. Doing it on every read costs a
+            # round trip plus a 5 ms settle for no gain.
+            if set_high and (self._needs_set_high or self._reads_since_set_high >= SET_HIGH_REFRESH_READS):
                 self.bus.write_byte(self.address, 0xFF)
                 time.sleep(0.005)  # 5ms delay for I2C bus to settle
+                self._needs_set_high = False
+                self._reads_since_set_high = 0
 
-            # Read current value
             value = self.bus.read_byte(self.address)
-            curr_time = time.time() * 1000
-
-            port_values = [(value & (1 << i)) >> i for i in range(8)]
-            if self.debounce_time > 0:
-                # Debounce logic
-                if value != self.last_value:
-                    if value != self._new_value:
-                        # First detection of new value
-                        self._new_value = value
-                        self._new_value_time = curr_time
-                        value = self.last_value
-                    # Check if debounce time passed
-                    elif curr_time - self._new_value_time >= self.debounce_time:
-                        # Update port states
-                        self.port_states = port_values
-                        self.last_value = value
-            else:
-                # No debounce
-                self.port_states = port_values
-                self.last_value = value
-
         except OSError:
-            return [], -1
-        return self.port_states, value
+            self._needs_set_high = True
+            return PCF8574Reading([], -1)
+
+        self._reads_since_set_high += 1
+        curr_time = time.monotonic() * 1000
+        port_values = [(value & (1 << i)) >> i for i in range(8)]
+
+        if self.last_value < 0:
+            # First successful read: adopt the level without reporting edges.
+            self.port_states = port_values
+            self.last_value = value
+            self._last_change = [curr_time] * 8
+            return PCF8574Reading(list(self.port_states), value)
+
+        edges: dict[int, list[bool]] = {}
+        for bit in range(8):
+            if port_values[bit] == self.port_states[bit]:
+                continue
+            # Leading-edge debounce: adopt the change immediately, then ignore
+            # further transitions on this bit for debounce_time. Deferring the
+            # change instead (the trailing-edge variant) loses a button press that
+            # is already released again by the time of the next read.
+            if self.debounce_time > 0 and curr_time - self._last_change[bit] < self.debounce_time:
+                continue
+            self.port_states[bit] = port_values[bit]
+            self._last_change[bit] = curr_time
+            edges.setdefault(bit, []).append(bool(port_values[bit]))
+
+        self.last_value = sum(state << bit for bit, state in enumerate(self.port_states))
+
+        return PCF8574Reading(list(self.port_states), self.last_value, edges)
 
     def write_port(self, port: int, state: int, verify: bool = True) -> bool:
         """Write to specific port with optional verification."""
@@ -91,6 +132,9 @@ class PCF8574:
 
             # Write the new value
             self.bus.write_byte(self.address, new_value)
+            # The latch no longer holds the all-high pattern the inputs are sampled
+            # against, so the next read has to re-arm it.
+            self._needs_set_high = True
 
             # When turning ON (state=0, active low), relay energizes causing
             # electrical noise. Give more settling time before verification.
@@ -108,8 +152,12 @@ class PCF8574:
 
             self.last_value = new_value
             self.port_states[port] = state
+            # Own writes are not input edges; keep the debounce window aligned so the
+            # next read does not report the change we just made.
+            self._last_change[port] = time.monotonic() * 1000
 
         except OSError:
+            self._needs_set_high = True
             _LOGGER.exception("PCF8574 write error at 0x%02X port %s", self.address, port)
             return False
         return True

@@ -124,7 +124,7 @@ class CasaITBinarySensor(BinarySensorEntity):
         """Register callbacks when entity is added to hass."""
         await super().async_added_to_hass()
         self.async_on_remove(
-            async_dispatcher_connect(self.hass, self._api.state_update_signal, self._handle_state_update)
+            async_dispatcher_connect(self.hass, self._api.address_signal(self._address), self._handle_state_update)
         )
 
     @property
@@ -193,7 +193,7 @@ class CasaITDM117BinarySensor(BinarySensorEntity):
         """Register callbacks when entity is added to hass."""
         await super().async_added_to_hass()
         self.async_on_remove(
-            async_dispatcher_connect(self.hass, self._api.state_update_signal, self._handle_state_update)
+            async_dispatcher_connect(self.hass, self._api.address_signal(self._address), self._handle_state_update)
         )
 
     @property

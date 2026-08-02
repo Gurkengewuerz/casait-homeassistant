@@ -137,7 +137,7 @@ class CasaITBlindCover(CoverEntity, RestoreEntity):
             self._position = 100.0 if last_state.state == STATE_OPEN else 0.0
 
         self.async_on_remove(
-            async_dispatcher_connect(self.hass, self._api.state_update_signal, self._handle_state_update)
+            async_dispatcher_connect(self.hass, self._api.address_signal(self._address), self._handle_state_update)
         )
 
     async def async_will_remove_from_hass(self) -> None:
@@ -302,8 +302,6 @@ class CasaITBlindCover(CoverEntity, RestoreEntity):
                 _LOGGER.error("Failed to release blind outputs on 0x%02x pair %s", self._address, self._pair_index + 1)
             else:
                 raise HomeAssistantError("Unable to write blind output state")
-
-        await self._api.async_force_refresh()
 
     @callback
     def _handle_state_update(self) -> None:

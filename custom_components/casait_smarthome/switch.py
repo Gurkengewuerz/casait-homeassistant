@@ -134,7 +134,7 @@ class CasaITSwitch(SwitchEntity):
         """Register callbacks when entity is added to hass."""
         await super().async_added_to_hass()
         self.async_on_remove(
-            async_dispatcher_connect(self.hass, self._api.state_update_signal, self._handle_state_update)
+            async_dispatcher_connect(self.hass, self._api.address_signal(self._address), self._handle_state_update)
         )
 
     async def async_turn_on(self, **kwargs: Any) -> None:
@@ -149,12 +149,10 @@ class CasaITSwitch(SwitchEntity):
 
     async def _async_set_state(self, state: int) -> None:
         """Set the state of the switch."""
-        success = await self._api.async_write_pcf_port(self._address, self._hardware_port, state)
-
-        if not success:
+        # A successful write publishes the verified state, which updates this entity
+        # through the dispatcher. A failed one leaves the old state in place.
+        if not await self._api.async_write_pcf_port(self._address, self._hardware_port, state):
             raise HomeAssistantError("Unable to write PCF8574 output state")
-
-        await self._api.async_force_refresh()
 
     @property
     def available(self) -> bool:
@@ -218,7 +216,7 @@ class CasaITDM117Switch(SwitchEntity):
         """Register callbacks when entity is added to hass."""
         await super().async_added_to_hass()
         self.async_on_remove(
-            async_dispatcher_connect(self.hass, self._api.state_update_signal, self._handle_state_update)
+            async_dispatcher_connect(self.hass, self._api.address_signal(self._address), self._handle_state_update)
         )
 
     async def async_turn_on(self, **kwargs: Any) -> None:
@@ -240,12 +238,8 @@ class CasaITDM117Switch(SwitchEntity):
             digital=digital,
         )
 
-        success = await self._api.async_write_dm117_port(self._address, config)
-
-        if not success:
+        if not await self._api.async_write_dm117_port(self._address, config):
             raise HomeAssistantError("Unable to write DM117 output state")
-
-        await self._api.async_force_refresh()
 
     @property
     def available(self) -> bool:

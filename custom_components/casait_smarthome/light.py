@@ -145,7 +145,7 @@ class CasaITDM117Light(LightEntity):
         """Register callbacks when entity is added to hass."""
         await super().async_added_to_hass()
         self.async_on_remove(
-            async_dispatcher_connect(self.hass, self._api.state_update_signal, self._handle_state_update)
+            async_dispatcher_connect(self.hass, self._api.address_signal(self._address), self._handle_state_update)
         )
 
     async def async_turn_on(self, **kwargs: Any) -> None:
@@ -168,12 +168,8 @@ class CasaITDM117Light(LightEntity):
             dimmer=dimmer,
         )
 
-        success = await self._api.async_write_dm117_port(self._address, config)
-
-        if not success:
+        if not await self._api.async_write_dm117_port(self._address, config):
             raise HomeAssistantError("Unable to write DM117 dimmer value")
-
-        await self._api.async_force_refresh()
 
     @staticmethod
     def _transition_speed(transition: Any) -> DimmerSpeed:

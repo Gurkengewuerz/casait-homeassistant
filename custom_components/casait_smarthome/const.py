@@ -18,6 +18,12 @@ I2C_ADDR_RANGES: Final = [
 # Platforms
 PLATFORMS: Final = ["binary_sensor", "cover", "light", "sensor", "switch"]
 
+# Shared I2C poll loop. Inputs decide how responsive the system feels, so they are
+# read every cycle. Outputs only ever change because Home Assistant changed them,
+# so they are re-read on a slow cadence purely to catch drift.
+DEFAULT_FAST_POLL_INTERVAL: Final = 0.02
+DEFAULT_SLOW_POLL_INTERVAL: Final = 5.0
+
 # Services
 SERVICE_SCAN_DEVICES: Final = "scan_devices"
 

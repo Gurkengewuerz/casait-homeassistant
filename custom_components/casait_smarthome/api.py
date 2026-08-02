@@ -4,15 +4,25 @@ from __future__ import annotations
 
 import asyncio
 from collections import defaultdict
-from collections.abc import Iterable, Mapping
+from collections.abc import AsyncIterator, Iterable, Mapping
+from contextlib import asynccontextmanager
 from functools import partial
 import logging
+import time
 from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
-from .const import DEFAULT_OW_POLL_INTERVAL, DEFAULT_OW_PROFILE, I2C_ADDR_RANGES, SIGNAL_STATE_UPDATED
+from .const import (
+    DEFAULT_FAST_POLL_INTERVAL,
+    DEFAULT_OW_POLL_INTERVAL,
+    DEFAULT_OW_PROFILE,
+    DEFAULT_SLOW_POLL_INTERVAL,
+    I2C_ADDR_RANGES,
+    SIGNAL_STATE_UPDATED,
+)
+from .helpers import get_address_range
 from .services.i2cClasses.dm117 import DM117, DeviceType, DM117PortConfig
 from .services.i2cClasses.ds2438 import DS2438Reading
 from .services.i2cClasses.led_controller import LEDConfig
@@ -50,7 +60,16 @@ class CasaITApi:
         self._pcf_states: dict[int, list[int]] = {}
         self._dm117_states: dict[int, dict[int, int]] = {}
         self._read_errors: set[tuple[str, int]] = set()
-        self._poll_interval = 0.002
+        self._poll_interval = DEFAULT_FAST_POLL_INTERVAL
+        self._slow_poll_interval = DEFAULT_SLOW_POLL_INTERVAL
+        self._dm_config: dict[int, dict[int, DeviceType]] = {}
+        # Writes claim priority over the poll loop so a button press is not queued
+        # behind a full sweep of the bus.
+        self._write_pending = 0
+        self._writes_idle = asyncio.Event()
+        self._writes_idle.set()
+        self._last_fast_cycle = 0.0
+        self._last_full_cycle = 0.0
         self._stop_event: asyncio.Event | None = None
         self._poll_task: asyncio.Task | None = None
         self._init_done = asyncio.Event()
@@ -86,6 +105,8 @@ class CasaITApi:
         """Perform initial discovery, configuration, and start polling."""
 
         try:
+            self._dm_config = {address: dict(slots) for address, slots in (dm_config or {}).items()}
+
             await self.scan_devices()
 
             if dm_config:
@@ -123,7 +144,39 @@ class CasaITApi:
                 for code, addresses in self.found_i2c_devices.items()
             },
             "found_onewire_devices": sorted(self.ow_ids),
+            "poll": {
+                "fast_cycle_ms": round(self._last_fast_cycle * 1000, 2),
+                "full_cycle_ms": round(self._last_full_cycle * 1000, 2),
+                "fast_interval_ms": round(self._poll_interval * 1000, 2),
+                "slow_interval_s": self._slow_poll_interval,
+                "fast_addresses": [f"0x{address:02X}" for address in sorted(self._fast_pcf_addresses())],
+            },
+            "transport": self.bus.stats,
         }
+
+    def address_signal(self, address: int) -> str:
+        """Return the dispatcher signal carrying state changes for one module."""
+
+        return f"{self.state_update_signal}_{address:02x}"
+
+    def edge_signal(self, address: int) -> str:
+        """Return the dispatcher signal carrying input edges for one module."""
+
+        return f"{self.state_update_signal}_edge_{address:02x}"
+
+    @asynccontextmanager
+    async def _write_access(self) -> AsyncIterator[None]:
+        """Claim the bus for a write, holding the poll loop off until it is done."""
+
+        self._write_pending += 1
+        self._writes_idle.clear()
+        try:
+            async with self._lock:
+                yield
+        finally:
+            self._write_pending -= 1
+            if not self._write_pending:
+                self._writes_idle.set()
 
     async def scan_devices(
         self,
@@ -189,54 +242,123 @@ class CasaITApi:
         """Continuously poll devices and dispatch updates."""
 
         assert self._stop_event is not None
+        slow_due = 0.0
         while not self._stop_event.is_set():
             try:
-                await self._poll_once()
+                include_slow = time.monotonic() >= slow_due
+                await self._poll_cycle(include_slow=include_slow)
+                if include_slow:
+                    slow_due = time.monotonic() + self._slow_poll_interval
             except Exception:
                 _LOGGER.exception("Error polling casaIT devices")
-                await asyncio.sleep(self._poll_interval)
-                continue
             try:
                 await asyncio.wait_for(self._stop_event.wait(), timeout=self._poll_interval)
             except TimeoutError:
                 continue
 
-    async def _poll_once(self) -> None:
-        """Read all PCF8574 and DM117 devices once and broadcast state."""
+    def _fast_pcf_addresses(self) -> set[int]:
+        """Return PCF8574 addresses carrying inputs, which drive perceived latency."""
 
-        pcf_states: dict[int, list[int]] = {}
-        dm_states: dict[int, dict[int, int]] = {}
+        input_range = get_address_range("IM117")
+        if input_range is None:
+            return set()
+        return {address for address in self.im117_om117 if input_range[0] <= address <= input_range[1]}
 
-        for addr, device in self.im117_om117.items():
-            set_high = 0x38 <= addr <= 0x3F
-            try:
-                async with self._lock:
-                    port_states, _ = await self.hass.async_add_executor_job(device.read_ports, set_high)
-            except Exception as exc:  # noqa: BLE001
-                self._record_read_error("PCF8574", addr, exc)
-            else:
-                if not port_states:
-                    self._record_read_error("PCF8574", addr)
-                else:
-                    self._clear_read_error("PCF8574", addr)
-                    pcf_states[addr] = port_states
+    def _fast_dm117_addresses(self) -> set[int]:
+        """Return DM117 addresses with at least one slot configured as an input."""
 
-        for addr, device in self.dm117.items():
-            try:
-                async with self._lock:
-                    port_states = await self.hass.async_add_executor_job(device.read_ports)
-            except Exception as exc:  # noqa: BLE001
-                self._record_read_error("DM117", addr, exc)
-            else:
-                if port_states is None:
-                    self._record_read_error("DM117", addr)
-                else:
-                    self._clear_read_error("DM117", addr)
-                    dm_states[addr] = port_states
+        return {address for address in self.dm117 if DeviceType.INPUT in self._dm_config.get(address, {}).values()}
 
-        self._pcf_states = pcf_states
-        self._dm117_states = dm_states
-        async_dispatcher_send(self.hass, self.state_update_signal)
+    async def _poll_cycle(self, *, include_slow: bool) -> None:
+        """Read one class of devices and publish only what actually changed.
+
+        Outputs cannot change on their own, so a fast cycle skips them entirely and
+        the slow cycle picks them up to catch drift.
+        """
+
+        started = time.monotonic()
+
+        fast_pcf = self._fast_pcf_addresses()
+        pcf_addresses = set(self.im117_om117) if include_slow else fast_pcf
+        dm_addresses = set(self.dm117) if include_slow else self._fast_dm117_addresses()
+
+        for address in sorted(pcf_addresses):
+            await self._poll_pcf8574(address, is_input=address in fast_pcf)
+
+        for address in sorted(dm_addresses):
+            await self._poll_dm117(address)
+
+        duration = time.monotonic() - started
+        if include_slow:
+            self._last_full_cycle = duration
+        else:
+            self._last_fast_cycle = duration
+
+    async def _poll_pcf8574(self, address: int, *, is_input: bool) -> None:
+        """Read one PCF8574 and publish state changes plus any input edges."""
+
+        device = self.im117_om117.get(address)
+        if device is None:
+            return
+
+        await self._writes_idle.wait()
+
+        try:
+            async with self._lock:
+                reading = await self.hass.async_add_executor_job(device.read_ports, is_input)
+        except Exception as exc:  # noqa: BLE001
+            self._record_read_error("PCF8574", address, exc)
+            self._drop_state(self._pcf_states, address)
+            return
+
+        if not reading.ok:
+            self._record_read_error("PCF8574", address)
+            self._drop_state(self._pcf_states, address)
+            return
+
+        self._clear_read_error("PCF8574", address)
+        previous = self._pcf_states.get(address)
+        self._pcf_states[address] = reading.port_states
+
+        if reading.edges:
+            async_dispatcher_send(self.hass, self.edge_signal(address), reading.edges)
+        if previous != reading.port_states:
+            async_dispatcher_send(self.hass, self.address_signal(address))
+
+    async def _poll_dm117(self, address: int) -> None:
+        """Read one DM117 and publish state changes."""
+
+        device = self.dm117.get(address)
+        if device is None:
+            return
+
+        await self._writes_idle.wait()
+
+        try:
+            async with self._lock:
+                port_states = await self.hass.async_add_executor_job(device.read_ports)
+        except Exception as exc:  # noqa: BLE001
+            self._record_read_error("DM117", address, exc)
+            self._drop_state(self._dm117_states, address)
+            return
+
+        if port_states is None:
+            self._record_read_error("DM117", address)
+            self._drop_state(self._dm117_states, address)
+            return
+
+        self._clear_read_error("DM117", address)
+        previous = self._dm117_states.get(address)
+        self._dm117_states[address] = dict(port_states)
+
+        if previous != port_states:
+            async_dispatcher_send(self.hass, self.address_signal(address))
+
+    def _drop_state(self, states: dict[int, Any], address: int) -> None:
+        """Forget a module's cached state and tell its entities it went away."""
+
+        if states.pop(address, None) is not None:
+            async_dispatcher_send(self.hass, self.address_signal(address))
 
     def _record_read_error(self, device_type: str, address: int, exc: Exception | None = None) -> None:
         """Log a device read failure only when it first becomes unavailable."""
@@ -262,18 +384,21 @@ class CasaITApi:
         _LOGGER.info("%s device at 0x%02X is available again", device_type, address)
 
     async def async_force_refresh(self) -> None:
-        """Force a single poll and dispatch."""
+        """Force a full poll of every device and publish what changed."""
 
-        await self._poll_once()
+        await self._poll_cycle(include_slow=True)
 
     def _refresh_pcf8574(self, found_by_code: dict[str, set[int]]) -> None:
         found = set()
         for code in ("IM117", "OM117"):
             found.update(found_by_code.get(code, set()))
 
+        input_addresses = found_by_code.get("IM117", set())
         for addr in found:
             if addr not in self.im117_om117:
-                self.im117_om117[addr] = PCF8574(self.bus, addr)
+                # Debouncing only makes sense for inputs. An output latch is driven by
+                # Home Assistant, so suppressing a change there would hide a real write.
+                self.im117_om117[addr] = PCF8574(self.bus, addr, debounce_time=40 if addr in input_addresses else 0)
 
         for addr in list(self.im117_om117):
             if addr not in found:
@@ -415,7 +540,7 @@ class CasaITApi:
         if not bus:
             return False
 
-        async with self._lock:
+        async with self._write_access():
             return await self.hass.async_add_executor_job(bus.ds2413.set_state, device_id, channel, value)
 
     async def read_led_config(self, device_id: str, *, use_cache: bool = True) -> LEDConfig | None:
@@ -437,25 +562,49 @@ class CasaITApi:
             return False
 
         write_job = partial(bus.write_led_config, device_id, config)
-        async with self._lock:
+        async with self._write_access():
             return await self.hass.async_add_executor_job(write_job)
 
     async def async_write_pcf_port(self, address: int, port: int, state: int) -> bool:
-        """Write a PCF8574 port while serializing hardware access."""
+        """Write a PCF8574 port and publish the resulting state."""
 
         device = self.im117_om117.get(address)
         if device is None:
             return False
 
-        async with self._lock:
-            return await self.hass.async_add_executor_job(device.write_port, port, state)
+        async with self._write_access():
+            written = await self.hass.async_add_executor_job(device.write_port, port, state)
+
+        if not written:
+            return False
+
+        # write_port already read the value back to verify it, so the driver's
+        # port_states are authoritative. Polling again would only add latency.
+        previous = self._pcf_states.get(address)
+        self._pcf_states[address] = list(device.port_states)
+        if previous != device.port_states:
+            async_dispatcher_send(self.hass, self.address_signal(address))
+        return True
 
     async def async_write_dm117_port(self, address: int, config: DM117PortConfig) -> bool:
-        """Write a DM117 port while serializing hardware access."""
+        """Write a DM117 port and publish the resulting state."""
 
         device = self.dm117.get(address)
         if device is None:
             return False
 
-        async with self._lock:
-            return await self.hass.async_add_executor_job(device.write_port, config)
+        async with self._write_access():
+            written = await self.hass.async_add_executor_job(device.write_port, config)
+
+        if not written:
+            return False
+
+        # The DM117 does not echo writes back, so mirror the value the driver sent.
+        # For a ramped dimmer that is the target value, which is what HA should show.
+        states = dict(self._dm117_states.get(address) or {})
+        states[config.port] = device.last_values.get(config.port, 0)
+        previous = self._dm117_states.get(address)
+        self._dm117_states[address] = states
+        if previous != states:
+            async_dispatcher_send(self.hass, self.address_signal(address))
+        return True
