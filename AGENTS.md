@@ -23,6 +23,11 @@ This is a Home Assistant custom integration that was generated from a blueprint 
 
 **Always use the project's scripts** — do NOT craft your own `hass`, `pip`, `pytest`, or similar commands. The scripts handle environment setup, virtual environments, port management, and cleanup that raw commands miss. Agents that bypass scripts frequently break.
 
+**Devcontainer CLI tools:** The devcontainer provides agent-facing tools including `bat`, `delta`/`git-delta`,
+`eza`, `fd`, `fzf`, `httpie`, `hyperfine`, `ipython`, `jq`, `jo`, `miller`, `rg`, `shellcheck`, `shfmt`,
+`sqlite3`, `tree`, `yq`, and `yamllint`. Prefer these explicit tools over assuming an editor extension exposes
+an equivalent CLI. The installed `yq` is the Mike Farah variant.
+
 **Start Home Assistant:**
 
 ```bash
@@ -57,6 +62,7 @@ If you're using GitHub Copilot, path-specific instructions in `.github/instructi
 **Other agent entry points:**
 
 - **Claude Code:** See [`CLAUDE.md`](CLAUDE.md) (pointer to this file)
+- **ChatGPT Codex:** See [`CODEX.md`](CODEX.md) (pointer to this file)
 - **Gemini:** See [`GEMINI.md`](GEMINI.md) (pointer to this file)
 - **GitHub Copilot:** See [`.github/copilot-instructions.md`](.github/copilot-instructions.md) (compact version of this file)
 
@@ -113,7 +119,14 @@ See `.github/copilot-instructions.md` for detailed documentation strategy.
 
 When a task completes and the developer moves to a new topic, suggest committing changes. Offer a commit message based on the work done.
 
-**Commit message format:** Follow [Conventional Commits](https://www.conventionalcommits.org/) specification
+**Commit rules (CRITICAL):**
+
+- Never commit automatically; commit only when the developer explicitly requests it
+- A previous commit request is not standing permission for a later task
+- Never ask about pushing; the developer handles `git push`
+
+**Commit message format:** Follow [Conventional Commits](https://www.conventionalcommits.org/) and
+`.github/instructions/blueprint.commit-message.instructions.md`.
 
 **Common types:** `feat:`, `fix:`, `chore:`, `refactor:`, `docs:`
 
@@ -168,9 +181,11 @@ As an AI agent, **aim for Silver or Gold Quality Scale** when generating code:
 
 **For comprehensive standards, see:**
 
-- `.github/instructions/python.instructions.md` - Python patterns, imports, type hints
-- `.github/instructions/yaml.instructions.md` - YAML structure and HA-specific patterns
-- `.github/instructions/json.instructions.md` - JSON formatting and schema validation
+- `.github/instructions/blueprint.python.instructions.md` - Python patterns, imports, type hints
+- `.github/instructions/blueprint.yaml.instructions.md` - YAML structure and HA-specific patterns
+- `.github/instructions/blueprint.json.instructions.md` - JSON formatting and schema validation
+- `.github/instructions/blueprint.shell.instructions.md` - Shell style, `shfmt`, and `shellcheck`
+- `.github/instructions/blueprint.commit-message.instructions.md` - commit message conventions
 
 **GitHub Copilot users:** These instruction files are automatically provided based on file type.
 
@@ -224,8 +239,8 @@ This integration uses the following identifiers consistently:
 
 **For detailed patterns, see:**
 
-- `.github/instructions/entities.instructions.md` - Entity platform patterns
-- `.github/instructions/api.instructions.md` - API client patterns
+- `.github/instructions/blueprint.entities.instructions.md` - Entity platform patterns
+- `.github/instructions/blueprint.api.instructions.md` - API client patterns
 
 ### Device Info
 
@@ -270,7 +285,7 @@ All entities should provide consistent device info. I2C modules are devices; eac
 
 **single_config_entry:** Set `true` to allow only one config entry per integration
 
-See `.github/instructions/manifest.instructions.md` for comprehensive manifest documentation.
+See `.github/instructions/blueprint.manifest.instructions.md` for comprehensive manifest documentation.
 
 ### Config Flow Best Practices
 
@@ -311,7 +326,7 @@ python3 -m script.scaffold config_flow_oauth2     # OAuth2 flow
 - Support user setup, discovery, reauth, reconfigure
 - Always set unique_id for discovered entries
 
-See `.github/instructions/config_flow.instructions.md` for comprehensive patterns.
+See `.github/instructions/blueprint.config_flow.instructions.md` for comprehensive patterns.
 
 **Service actions:**
 
@@ -333,7 +348,7 @@ See `.github/instructions/config_flow.instructions.md` for comprehensive pattern
 - Read shared I2C state from `CasaITApi` caches or call its async 1-Wire methods
 - Use `EntityDescription` for static metadata
 
-See `.github/instructions/entities.instructions.md` for entity patterns.
+See `.github/instructions/blueprint.entities.instructions.md` for entity patterns.
 
 **Repairs:**
 
@@ -342,7 +357,7 @@ See `.github/instructions/entities.instructions.md` for entity patterns.
 - Implement `RepairsFlow` for guided user fixes
 - Delete issues after successful repair
 
-See `.github/instructions/repairs.instructions.md` for comprehensive patterns.
+See `.github/instructions/blueprint.repairs.instructions.md` for comprehensive patterns.
 
 **Entity availability:**
 
@@ -376,14 +391,24 @@ See `.github/instructions/repairs.instructions.md` for comprehensive patterns.
 
 ## Validation Scripts
 
-**Before committing, run:**
+**Before committing, always run the full check-only suite:**
 
 ```bash
-script/check      # Full validation (type + lint + spell)
-script/lint       # Auto-format and fix linting issues
-script/type-check # Pyright type checking only
-script/test       # Run unit tests
+script/check
 ```
+
+For focused work, use the targeted scripts:
+
+| Changed files | Fix command | Check command |
+| --- | --- | --- |
+| Python | `script/python` | `script/python-check` + `script/type-check` |
+| YAML | — | `script/yaml-check` |
+| Shell | `script/shell` | `script/shell-check` |
+| Markdown | `script/markdown` | `script/markdown-check` |
+| Spelling | `script/spell` | `script/spell-check` |
+
+Use `script/lint` to format and check all supported file types. `script/lint-check` and `script/check` are
+check-only and must not modify files.
 
 **Configured tools:**
 
@@ -400,11 +425,11 @@ script/test       # Run unit tests
 
 Aim for zero validation errors in generated code. The developer expects production-ready output.
 
-See `.github/instructions/python.instructions.md` for linter overrides and error recovery strategies.
+See `.github/instructions/blueprint.python.instructions.md` for linter overrides and error recovery strategies.
 
 - You may use `# noqa: CODE` or `# type: ignore` when genuinely necessary
 - Use sparingly and only with good reason (e.g., false positives, external library issues)
-See `.github/instructions/python.instructions.md` for linter overrides and error recovery strategies.
+See `.github/instructions/blueprint.python.instructions.md` for linter overrides and error recovery strategies.
 
 ### Error Recovery Strategy
 
@@ -457,7 +482,7 @@ script/test --cov-html                # With coverage report
 script/test --snapshot-update         # Update Syrupy snapshots
 ```
 
-See `.github/instructions/tests.instructions.md` for comprehensive testing patterns.
+See `.github/instructions/blueprint.tests.instructions.md` for comprehensive testing patterns.
 
 ## Breaking Changes
 

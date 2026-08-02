@@ -10,7 +10,7 @@ import logging
 from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorEntityDescription, SensorStateClass
-from homeassistant.const import LIGHT_LUX, EntityCategory, UnitOfRatio, UnitOfTemperature
+from homeassistant.const import LIGHT_LUX, PERCENTAGE, EntityCategory, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -277,7 +277,7 @@ async def async_setup_entry(
                     key="humidity",
                     translation_key="humidity",
                     device_class=SensorDeviceClass.HUMIDITY,
-                    native_unit_of_measurement=UnitOfRatio.PERCENTAGE,
+                    native_unit_of_measurement=PERCENTAGE,
                     state_class=SensorStateClass.MEASUREMENT,
                     profile=profile,
                     value_fn=(_humidity_hih4030 if "4030" in profile else _humidity_hih5030),

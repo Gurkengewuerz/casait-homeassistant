@@ -6,6 +6,10 @@ description: "Diagnose and fix data update coordinator problems like stale data 
 
 # Debug Coordinator Issue
 
+> **casaIT project override:** This integration has no `DataUpdateCoordinator`. Diagnose the entry-scoped `CasaITApi`,
+> free-running poll loop, dispatcher signals, state caches, and hardware lock instead. Do not apply the coordinator
+> examples below to casaIT code.
+
 Your goal is to diagnose and fix issues with the data update coordinator.
 
 ## Common Issues to Check
@@ -44,29 +48,27 @@ Your goal is to diagnose and fix issues with the data update coordinator.
 ## Debugging Steps
 
 1. **Enable Debug Logging:**
-
    - Add/verify in `config/configuration.yaml`:
+
      ```yaml
      logger:
        logs:
-         custom_components.casait_smarthome: debug
+         custom_components.{domain}: debug
      ```
+
    - Restart Home Assistant: `./script/develop`
 
 2. **Check Logs:**
-
    - Look at terminal output where `./script/develop` is running
    - Or check `config/home-assistant.log`
    - Search for error traces and `UpdateFailed` exceptions
 
 3. **Verify Coordinator State:**
-
    - Check `coordinator.last_update_success`
    - Inspect `coordinator.data` in debugger or logs
    - Verify `coordinator.update_interval` is set correctly
 
 4. **Test API Client Separately:**
-
    - Use `mcp_pylance_mcp_s_pylanceRunCodeSnippet` to test API calls
    - Verify data format matches expectations
    - Check for network issues or authentication failures
@@ -119,9 +121,9 @@ super().__init__(
 
 ## Related Files to Review
 
-- [#file:custom_components/casait_smarthome/coordinator/base.py]
-- [#file:custom_components/casait_smarthome/api/client.py]
-- [#file:custom_components/casait_smarthome/entity/base.py]
+- [#file:custom_components/{domain}/coordinator/base.py]
+- [#file:custom_components/{domain}/api/client.py]
+- [#file:custom_components/{domain}/entity/base.py]
 - [#file:config/configuration.yaml] - for log levels
 - [#file:config/home-assistant.log] - for error traces
 

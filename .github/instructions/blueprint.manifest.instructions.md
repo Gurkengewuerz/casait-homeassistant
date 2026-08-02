@@ -4,7 +4,7 @@ applyTo: "**/manifest.json"
 
 # Manifest Instructions
 
-**Applies to:** `custom_components/casait_smarthome/manifest.json`
+**Applies to:** `custom_components/<your_domain>/manifest.json`
 
 ## Schema Validation
 
@@ -16,14 +16,14 @@ This schema combines Home Assistant's official manifest requirements with HACS-s
 
 ```json
 {
-  "domain": "casait_smarthome",
-  "name": "casaIT : Smart Home",
-  "codeowners": ["@Gurkengewuerz"],
+  "domain": "your_domain",
+  "name": "Your Integration Title",
+  "codeowners": ["@your_github_username"],
   "config_flow": true,
-  "documentation": "https://github.com/Gurkengewuerz/casait-homeassistant",
+  "documentation": "https://github.com/your_org/your_repo",
   "integration_type": "device",
   "iot_class": "cloud_polling",
-  "issue_tracker": "https://github.com/Gurkengewuerz/casait-homeassistant/issues",
+  "issue_tracker": "https://github.com/your_org/your_repo/issues",
   "requirements": [],
   "version": "0.0.0"
 }
@@ -82,7 +82,7 @@ GitHub usernames with `@` prefix:
 
 ```json
 "codeowners": [
-  "@Gurkengewuerz"
+  "@jpawlowski"
 ]
 ```
 

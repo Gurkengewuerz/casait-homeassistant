@@ -6,6 +6,10 @@ applyTo: "**/*.py"
 
 **Applies to:** All Python files in the integration
 
+> **casaIT architecture override:** Keep the existing flat platform modules and route hardware access through
+> `CasaITApi`. This integration deliberately does not use a `DataUpdateCoordinator`, a shared base entity package,
+> or per-platform packages. This project-specific rule takes precedence over generic blueprint examples below.
+
 ## File Structure
 
 ### Module Organization
@@ -31,7 +35,7 @@ applyTo: "**/*.py"
 
 **Example structure:**
 
-```
+```text
 sensor/
   __init__.py          # Setup and entity list (50 lines)
   air_quality.py       # Air quality sensor class (200 lines)
@@ -43,7 +47,7 @@ sensor/
 **Naming:**
 
 - Files: `snake_case.py`
-- Classes: `PascalCase` prefixed with `CasaITSmartHome`
+- Classes: `PascalCase` prefixed with the integration's class prefix (defined in project identity)
 - Functions/methods: `snake_case`
 - Constants: `UPPER_SNAKE_CASE`
 
@@ -176,9 +180,9 @@ See [Integration Setup Failures](https://developers.home-assistant.io/docs/integ
 
 **Structure requirements:**
 
-- Inherit from both platform entity and `CasaITSmartHomeEntity` (order matters)
+- Inherit from the Home Assistant platform entity class
 - Set `_attr_unique_id` in `__init__` (format: `{entry_id}_{key}`)
-- Use coordinator data only - Never call API directly
+- Read API state caches or call async `CasaITApi` methods; never access synchronous drivers directly
 - Handle unavailability via `_attr_available`
 
 ## Error Handling
@@ -213,29 +217,36 @@ If you are asked to write tests for entities:
 
 import pytest
 
-from custom_components.casait_smarthome.sensor import async_setup_entry
+from custom_components.{domain}.sensor import async_setup_entry
 
 @pytest.mark.unit
-async def test_sensor_setup(hass, config_entry, coordinator):
+async def test_sensor_setup(hass, config_entry, api):
     """Test sensor platform setup."""
     # Test implementation
 ```
 
 ## Common Patterns
 
-**Config entry data:** `entry_data: CasaITSmartHomeData = hass.data[DOMAIN][entry.entry_id]`
+**Config entry runtime:** `entry.runtime_data` is the entry-scoped `CasaITApi` created during `async_setup_entry()`.
 
-**Device info:** Provided via base entity class (manufacturer, model, serial, config URL, firmware)
+**Device info:** Use the shared casaIT helpers so bridge, module, and 1-Wire identifiers remain entry-scoped.
 
 ## Validation
 
-Run before submitting: `script/type-check`, `script/lint`, `script/test`
+**Recommended workflow — run fix scripts first, they report what they couldn't fix:**
+
+```bash
+script/python       # Ruff format + ruff check --fix — output shows remaining errors
+script/type-check   # Pyright — no auto-fix, always manual
+```
+
+Repeat until both exit 0. Only manually edit files for errors that remain in the output.
 
 **When validation fails:**
 
 - Look up error codes: [Ruff rules](https://docs.astral.sh/ruff/rules/), [Pyright docs](https://microsoft.github.io/pyright/)
 - Search [HA docs](https://developers.home-assistant.io/) for patterns
-- Fix root cause - Don't bypass checks
+- Fix root cause — don't bypass checks
 
 **Suppressing checks (use sparingly for false positives/library issues):**
 

@@ -6,6 +6,9 @@ description: "Add a new configuration option to initial setup or options flow wi
 
 # Add Config Option
 
+> **casaIT project override:** Keep the existing flat config/options flow and propagate runtime behavior through
+> `CasaITApi`. Do not introduce coordinator or config-flow packages.
+
 Your goal is to add a new configuration option to the config flow (setup or options flow).
 
 If not provided, ask for:

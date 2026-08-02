@@ -21,13 +21,13 @@ For development and testing, keep configuration minimal:
 default_config:
 
 # Enable your integration
-casait_smarthome:
+your_domain:
 
 # Logging for development
 logger:
   default: info
   logs:
-    custom_components.casait_smarthome: debug
+    custom_components.your_domain: debug
 ```
 
 ## Modern Syntax Only
@@ -82,7 +82,7 @@ logger:
   default: warning
   logs:
     # Your integration - verbose
-    custom_components.casait_smarthome: debug
+    custom_components.your_domain: debug
 
     # Reduce noise from other components
     homeassistant.components.http: warning

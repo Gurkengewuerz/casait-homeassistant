@@ -6,6 +6,10 @@ description: "Comprehensive quality review of integration code and configuration
 
 # Review Integration
 
+> **casaIT project override:** Review the intentional free-running API poll loop, dispatcher caches, serialized
+> hardware lock, and flat platforms. A missing `DataUpdateCoordinator` is not a defect; introducing one would be an
+> architectural change.
+
 Your goal is to perform a comprehensive quality review of this Home Assistant integration, identifying issues and suggesting improvements.
 
 If not provided, ask for:
@@ -40,7 +44,7 @@ Report any errors found. Fix critical issues before proceeding.
 
 **Entity Organization:**
 
-- [ ] Entities inherit from both platform base and `CasaITSmartHomeEntity`
+- [ ] Entities inherit from both platform base and `{ClassPrefix}Entity`
 - [ ] `_attr_has_entity_name = True` for all new entities (MANDATORY 2025)
 - [ ] Entity names use `translation_key` instead of hardcoded `name`
 - [ ] Entity IDs are stable (won't change on restart)
@@ -123,7 +127,7 @@ requests.get(url)
 
 **Naming Conventions:**
 
-- [ ] Classes use `PascalCase` with `CasaITSmartHome` prefix
+- [ ] Classes use `PascalCase` with `{ClassPrefix}` prefix
 - [ ] Functions and variables use `snake_case`
 - [ ] Constants use `UPPER_SNAKE_CASE`
 - [ ] Private members have `_leading_underscore`
@@ -358,8 +362,8 @@ Create report in `.ai-scratch/review-report.md`:
 
 ## Integration Context
 
-- **Domain:** `casait_smarthome`
-- **Class prefix:** `CasaITSmartHome`
+- **Domain:** `{domain}`
+- **Class prefix:** `{ClassPrefix}`
 - **Instructions:** `.github/instructions/*.instructions.md`
 - **Guidelines:** `AGENTS.md`, `CONTRIBUTING.md`
 

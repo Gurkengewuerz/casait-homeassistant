@@ -110,10 +110,15 @@ turn_on:
 
 ## Related Files
 
-Service action implementations are in `custom_components/casait_smarthome/service_actions/`.
+Service action implementations are in `custom_components/<your_domain>/service_actions/`.
 
 ## Validation
 
-Service actions are validated by Home Assistant on integration load. Check logs for schema errors.
+```bash
+script/yaml-check   # yamllint — catches YAML syntax and style errors
+```
 
-Reference: https://developers.home-assistant.io/docs/dev_101_services/
+Service action schemas are also validated by Home Assistant on integration load.
+Check `config/home-assistant.log` for runtime schema errors.
+
+Reference: <https://developers.home-assistant.io/docs/dev_101_services/>

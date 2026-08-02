@@ -6,6 +6,9 @@ description: "Add a new sensor entity with proper structure, coordinator integra
 
 # Add New Sensor
 
+> **casaIT project override:** Extend the existing flat `sensor.py`. Read shared state from `CasaITApi` caches or call
+> its async 1-Wire methods; do not create a sensor package or coordinator. Ignore conflicting generic examples below.
+
 Your goal is to add a new sensor entity to this Home Assistant integration.
 
 If not provided, ask for:
@@ -20,8 +23,8 @@ If not provided, ask for:
 
 **Entity Implementation:**
 
-- Create new sensor file in `custom_components/casait_smarthome/sensor/`
-- Inherit from `CasaITSmartHomeEntity` and `SensorEntity`
+- Create new sensor file in `custom_components/{domain}/sensor/`
+- Inherit from `{ClassPrefix}Entity` and `SensorEntity`
 - Use `SensorEntityDescription` for static metadata
 - Implement `native_value` property to return sensor value from coordinator data
 - Add proper type hints for all methods and properties
@@ -48,7 +51,7 @@ If not provided, ask for:
 **Entity Template:**
 
 ```python
-"""[Sensor description] for casaIT : Smart Home."""
+"""[Sensor description] for [Integration Title]."""
 
 from __future__ import annotations
 
@@ -62,12 +65,12 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import [UNIT_CONSTANT]  # e.g., PERCENTAGE, UnitOfTemperature
 from homeassistant.core import callback
 
-from ..coordinator import CasaITSmartHomeDataUpdateCoordinator
-from ..entity import CasaITSmartHomeEntity
+from ..coordinator import {ClassPrefix}DataUpdateCoordinator
+from ..entity import {ClassPrefix}Entity
 
 
-class CasaITSmartHome[SensorName]Sensor(
-    CasaITSmartHomeEntity,
+class {ClassPrefix}[SensorName]Sensor(
+    {ClassPrefix}Entity,
     SensorEntity,
 ):
     """Sensor for [description]."""
@@ -85,7 +88,7 @@ class CasaITSmartHome[SensorName]Sensor(
 
     def __init__(
         self,
-        coordinator: CasaITSmartHomeDataUpdateCoordinator,
+        coordinator: {ClassPrefix}DataUpdateCoordinator,
         entry: ConfigEntry,
     ) -> None:
         """Initialize the sensor."""
@@ -151,9 +154,9 @@ async def async_setup_entry(
 
 **Related Files:**
 
-- Entity: `custom_components/casait_smarthome/sensor/[sensor_name].py`
-- Platform: `custom_components/casait_smarthome/sensor/__init__.py`
-- Translations: `custom_components/casait_smarthome/translations/*.json`
+- Entity: `custom_components/{domain}/sensor/[sensor_name].py`
+- Platform: `custom_components/{domain}/sensor/__init__.py`
+- Translations: `custom_components/{domain}/translations/*.json`
 - Documentation: Reference [#file:docs/development/ARCHITECTURE.md]
 
 **DO NOT create tests unless explicitly requested.**

@@ -32,7 +32,7 @@ tests/
 **Categorize tests:**
 
 - `@pytest.mark.unit` - Fast, isolated (no external dependencies)
-- `@pytest.mark.integration` - With coordinator, time service, etc.
+- `@pytest.mark.integration` - With the API poll loop, time service, etc.
 
 ## Fixtures
 
@@ -40,8 +40,8 @@ tests/
 
 - `hass` - Mock Home Assistant instance
 - `config_entry` - `MockConfigEntry` from `pytest-homeassistant-custom-component`
-- `coordinator` - CasaITSmartHomeDataUpdateCoordinator
-- `mock_api_client` - Mocked API client
+- `api` - The project's `CasaITApi` instance
+- `mock_api` - Mocked integration API
 
 **Define fixtures in `conftest.py`:** Use `MockConfigEntry` from `pytest-homeassistant-custom-component`
 
@@ -73,6 +73,7 @@ tests/
 **Mocking:**
 
 ✅ **Mock:** External APIs, network calls, time-dependent operations
+
 - Use `patch.object()` for success cases, `side_effect` for errors
 - Pattern: `with patch.object(client, "method", return_value=data):`
 

@@ -6,6 +6,9 @@ description: "Add a new service action to the integration with proper schema and
 
 # Add Service Action
 
+> **casaIT project override:** Register integration-wide handlers from `async_setup()` and route device operations
+> through the entry-scoped `CasaITApi`. Do not introduce coordinator or service-action packages for simple handlers.
+
 Your goal is to add a new **service action** to this Home Assistant integration that users can call from automations, scripts, or the UI.
 
 **Terminology:**
@@ -26,7 +29,7 @@ If not provided, ask for:
 
 ### 1. Define Service Action in `services.yaml`
 
-**File:** `custom_components/casait_smarthome/services.yaml`
+**File:** `custom_components/{domain}/services.yaml`
 
 **Note:** `services.yaml` is a legacy filename from when these were called "services". We now call them "service actions" in code and "actions" for users.
 
@@ -44,7 +47,7 @@ Add service action definition:
     entity:
       domain: [platform] # sensor, switch, etc.
       # OR
-      integration: casait_smarthome
+      integration: { domain }
 
   # Service action parameters - organize with sections for better UX
   fields:
@@ -86,7 +89,7 @@ Add service action definition:
 
   target:
     entity:
-      integration: casait_smarthome
+      integration: { domain }
 
   fields:
     # Basic section - always visible
@@ -136,17 +139,14 @@ This allows translating the option labels via `selector.[translation_key].option
 **Best Practices for Schema Definition:**
 
 1. **Always add icons** - Provide meaningful icons for sections AND individual fields where applicable
-
    - Sections: `icon: mdi:cog-outline` (basic), `icon: mdi:tune-vertical` (advanced)
    - Fields: Consider field type and purpose (e.g., `mdi:timer` for duration, `mdi:thermometer` for temperature)
 
 2. **Always add descriptions** - Provide descriptions wherever the schema allows (sections, fields)
-
    - Makes the UI more user-friendly
    - Helps users understand what each parameter does
 
 3. **Markdown support** - Be aware of where markdown is supported:
-
    - ✅ **Service action descriptions** - Markdown is supported
    - ✅ **Section descriptions** - Markdown is supported
    - ❌ **Field names** - Plain text only (keep short, 2-4 words)
@@ -166,10 +166,10 @@ This allows translating the option labels via `selector.[translation_key].option
 
 **Option A: Simple service action in `service_actions/` directory**
 
-Create `custom_components/casait_smarthome/service_actions/[action_name].py`:
+Create `custom_components/{domain}/service_actions/[action_name].py`:
 
 ```python
-"""[Action name] service action for casaIT : Smart Home."""
+"""[Action name] service action for [Integration Title]."""
 
 from __future__ import annotations
 
@@ -269,7 +269,7 @@ async def async_setup_service_action(hass: HomeAssistant) -> None:
 
 ### 3. Register Service Action in `__init__.py`
 
-**File:** `custom_components/casait_smarthome/__init__.py`
+**File:** `custom_components/{domain}/__init__.py`
 
 **CRITICAL:** Service actions must register in `async_setup` or `setup`, NOT in `async_setup_entry`!
 
@@ -323,7 +323,7 @@ async def async_setup_entry(...) -> None:
 
 ### 4. Add Service Action Constants
 
-**File:** `custom_components/casait_smarthome/const.py`
+**File:** `custom_components/{domain}/const.py`
 
 ```python
 # Service action names (use SERVICE_ prefix for legacy compatibility)
@@ -625,7 +625,7 @@ async def async_handle_service_action(call: ServiceCall) -> None:
 
 1. Start Home Assistant: `script/develop`
 2. Go to Developer Tools > Actions tab (user-facing: "Actions", not "Services")
-3. Find service action: `casait_smarthome.[action_name]`
+3. Find service action: `{domain}.[action_name]`
 4. Test with valid parameters
 5. Test with invalid parameters (should show validation errors)
 6. Test with edge cases
@@ -641,11 +641,11 @@ async def async_handle_service_action(call: ServiceCall) -> None:
 
 ## Integration Context
 
-- **Domain:** `casait_smarthome`
-- **Service actions directory:** `custom_components/casait_smarthome/service_actions/` (preferred) or `actions/`
-- **Service actions definition:** `custom_components/casait_smarthome/services.yaml` (legacy filename)
-- **Icons:** `custom_components/casait_smarthome/icons.json` under `services` key (legacy)
-- **Translations:** `custom_components/casait_smarthome/translations/*.json` under `services` key (legacy)
+- **Domain:** `{domain}`
+- **Service actions directory:** `custom_components/{domain}/service_actions/` (preferred) or `actions/`
+- **Service actions definition:** `custom_components/{domain}/services.yaml` (legacy filename)
+- **Icons:** `custom_components/{domain}/icons.json` under `services` key (legacy)
+- **Translations:** `custom_components/{domain}/translations/*.json` under `services` key (legacy)
 
 Follow patterns from existing service actions in the integration.
 

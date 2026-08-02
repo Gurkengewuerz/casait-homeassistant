@@ -6,6 +6,10 @@ description: "Create structured implementation plan for new features or refactor
 
 # Create Implementation Plan
 
+> **casaIT project override:** Plans must preserve the flat platform modules, entry-scoped `CasaITApi`, dispatcher
+> caches, free-running poll loop, and serialized hardware access unless the developer explicitly requests an
+> architectural replacement.
+
 Your goal is to create a comprehensive, phased implementation plan for a new feature, major refactoring, or architectural change in this Home Assistant integration.
 
 If not provided, ask for:
@@ -85,20 +89,17 @@ Break down into logical phases (typically 3-5):
 ## Process
 
 1. **Research Phase:**
-
    - Analyze existing code patterns
    - Check Home Assistant documentation for best practices
    - Review similar integrations if helpful
    - Identify all files that need changes
 
 2. **Create Plan:**
-
    - Write comprehensive plan in `.ai-scratch/`
    - Get developer confirmation before implementation
    - Adjust based on feedback
 
 3. **Implementation Phase:**
-
    - Work through phases sequentially
    - Run `script/check` after each phase
    - Test functionality before moving to next phase
@@ -132,9 +133,9 @@ Break down into logical phases (typically 3-5):
 
 **Integration-specific considerations:**
 
-- Domain: `casait_smarthome`
-- Title: casaIT : Smart Home
-- Class prefix: `CasaITSmartHome`
+- Domain: `{domain}`
+- Title: (your integration title)
+- Class prefix: `{ClassPrefix}`
 - Follow patterns in `AGENTS.md` and path-specific `.instructions.md`
 
 ## Example Phase Structure
@@ -144,8 +145,8 @@ Break down into logical phases (typically 3-5):
 
 **Files to modify:**
 
-- `custom_components/casait_smarthome/sensor/__init__.py`
-- `custom_components/casait_smarthome/sensor/new_sensor.py` (create)
+- `custom_components/{domain}/sensor/__init__.py`
+- `custom_components/{domain}/sensor/new_sensor.py` (create)
 
 **Changes:**
 

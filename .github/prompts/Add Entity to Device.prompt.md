@@ -6,6 +6,10 @@ description: "Add a new entity to an existing device while maintaining proper de
 
 # Add Entity to Device
 
+> **casaIT project override:** Add the entity to the existing flat platform module and access hardware only through
+> `CasaITApi`. Do not introduce a coordinator, base entity package, or direct driver access. Ignore conflicting generic
+> examples below.
+
 Your goal is to add a new entity to an existing device in this Home Assistant integration.
 
 If not provided, ask for:
@@ -20,7 +24,7 @@ If not provided, ask for:
 **Entity Implementation:**
 
 - Create entity file in appropriate platform directory
-- Inherit from `CasaITSmartHomeEntity` and platform base class
+- Inherit from `{ClassPrefix}Entity` and platform base class
 - Ensure `device_info` property returns same identifiers as other entities on this device
 - Coordinate device_info generation via `entity_utils/device_info.py` helper
 
@@ -66,8 +70,8 @@ If not provided, ask for:
 
 **Related Files:**
 
-- Entity: `custom_components/casait_smarthome/[platform]/[entity_name].py`
-- Platform: `custom_components/casait_smarthome/[platform]/__init__.py`
+- Entity: `custom_components/{domain}/[platform]/[entity_name].py`
+- Platform: `custom_components/{domain}/[platform]/__init__.py`
 - Device Info Helper: `entity_utils/device_info.py`
 - Translations: `translations/*.json`
 - Documentation: Reference [#file:docs/development/ARCHITECTURE.md]
