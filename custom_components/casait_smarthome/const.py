@@ -56,15 +56,25 @@ IM117_CONTACT_DEVICE_CLASSES: Final = [
     "tamper",
 ]
 
-# Event types published by button inputs.
-EVENT_PRESS: Final = "press"
-EVENT_LONG_PRESS: Final = "long_press"
+# Event types published by button inputs. Presses report the moment the edge is
+# seen and releases report when the button comes back up, so an automation can
+# react while the user is still holding the button.
+EVENT_SINGLE_PRESS: Final = "single_press"
+EVENT_SINGLE_RELEASE: Final = "single_release"
 EVENT_DOUBLE_PRESS: Final = "double_press"
-BUTTON_EVENT_TYPES: Final = [EVENT_PRESS, EVENT_LONG_PRESS, EVENT_DOUBLE_PRESS]
+EVENT_LONG_PRESS: Final = "long_press"
+EVENT_LONG_RELEASE: Final = "long_release"
+BUTTON_EVENT_TYPES: Final = [
+    EVENT_SINGLE_PRESS,
+    EVENT_SINGLE_RELEASE,
+    EVENT_DOUBLE_PRESS,
+    EVENT_LONG_PRESS,
+    EVENT_LONG_RELEASE,
+]
 
-# Button timing. Double click defaults to off: waiting for a possible second
-# press would delay every single press by that window, and most inputs are
-# plain wall switches that should react immediately.
+# Button timing. Double click defaults to off: a second press is only reported
+# as a double press while this window is open, and most inputs are plain wall
+# switches where the extra gesture is not wanted.
 OPT_LONG_PRESS_MS: Final = "long_press_ms"
 OPT_DOUBLE_CLICK_MS: Final = "double_click_ms"
 OPT_FAST_POLL_INTERVAL_MS: Final = "fast_poll_interval_ms"

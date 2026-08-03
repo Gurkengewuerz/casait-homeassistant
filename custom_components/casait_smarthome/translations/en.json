@@ -134,9 +134,11 @@
         "state_attributes": {
           "event_type": {
             "state": {
-              "press": "Press",
+              "single_press": "Press",
+              "single_release": "Release",
+              "double_press": "Double press",
               "long_press": "Long press",
-              "double_press": "Double press"
+              "long_release": "Long release"
             }
           }
         }
@@ -186,9 +188,11 @@
   },
   "device_automation": {
     "trigger_type": {
-      "press": "Pressed",
+      "single_press": "Pressed",
+      "single_release": "Released",
+      "double_press": "Double pressed",
       "long_press": "Long pressed",
-      "double_press": "Double pressed"
+      "long_release": "Released after long press"
     },
     "trigger_subtype": {
       "button_1": "Button 1",

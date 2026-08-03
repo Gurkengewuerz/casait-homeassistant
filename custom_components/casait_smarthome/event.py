@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from typing import Any
 
 from homeassistant.components.event import EventDeviceClass, EventEntity
@@ -23,7 +22,9 @@ from .const import (
     EVENT_DATA_SUBTYPE,
     EVENT_DOUBLE_PRESS,
     EVENT_LONG_PRESS,
-    EVENT_PRESS,
+    EVENT_LONG_RELEASE,
+    EVENT_SINGLE_PRESS,
+    EVENT_SINGLE_RELEASE,
     IM117_ROLE_BUTTON,
     PCF8574_MAPPED_PORTS,
 )
@@ -75,6 +76,12 @@ class CasaITButtonEvent(EventEntity):
 
     Presses are derived from the edges the poll loop latches, so a tap that was
     visible in only a single sample still produces an event.
+
+    Every edge reports immediately: "single_press" when the button goes down,
+    "long_press" the moment the hold threshold passes while it is still down,
+    and "single_release" or "long_release" when it comes back up. A press that
+    lands inside the double click window adds "double_press". Automations
+    therefore react while the user is still holding the button.
     """
 
     _attr_has_entity_name = True
@@ -98,8 +105,10 @@ class CasaITButtonEvent(EventEntity):
         self._port = port
         self._hardware_port = PCF8574_MAPPED_PORTS[port]
         self._settings = settings
-        self._pressed_at: float | None = None
-        self._pending_single: CALLBACK_TYPE | None = None
+        self._held = False
+        self._long_reported = False
+        self._pending_double: CALLBACK_TYPE | None = None
+        self._pending_long: CALLBACK_TYPE | None = None
 
         bridge_slug = build_bridge_slug(config_entry.entry_id, config_entry.unique_id)
         self._attr_unique_id = f"{config_entry.entry_id}_im117_{address}_{port}_button"
@@ -120,7 +129,8 @@ class CasaITButtonEvent(EventEntity):
         self.async_on_remove(
             async_dispatcher_connect(self.hass, self._api.edge_signal(self._address), self._handle_edges)
         )
-        self.async_on_remove(self._cancel_pending_single)
+        self.async_on_remove(self._close_double_window)
+        self.async_on_remove(self._cancel_pending_long)
 
     @property
     def available(self) -> bool:
@@ -129,12 +139,20 @@ class CasaITButtonEvent(EventEntity):
         return self._address in self._api.pcf_states
 
     @callback
-    def _cancel_pending_single(self) -> None:
-        """Drop a queued single press, if any."""
+    def _close_double_window(self) -> None:
+        """Stop treating the next press as the second half of a double press."""
 
-        if self._pending_single is not None:
-            self._pending_single()
-            self._pending_single = None
+        if self._pending_double is not None:
+            self._pending_double()
+            self._pending_double = None
+
+    @callback
+    def _cancel_pending_long(self) -> None:
+        """Drop the running hold timer, if any."""
+
+        if self._pending_long is not None:
+            self._pending_long()
+            self._pending_long = None
 
     @callback
     def _handle_edges(self, edges: dict[int, list[bool]]) -> None:
@@ -145,44 +163,70 @@ class CasaITButtonEvent(EventEntity):
             if level:
                 self._handle_release()
             else:
-                self._pressed_at = time.monotonic()
+                self._handle_press()
 
     @callback
-    def _handle_release(self) -> None:
-        """Classify a completed press once the button comes back up."""
+    def _handle_press(self) -> None:
+        """Report the press itself and arm the hold timer."""
 
-        if self._pressed_at is None:
-            return
+        self._cancel_pending_long()
+        self._held = True
+        self._long_reported = False
+        self._fire(EVENT_SINGLE_PRESS)
 
-        held_ms = (time.monotonic() - self._pressed_at) * 1000
-        self._pressed_at = None
-
-        if held_ms >= self._settings.long_press_ms:
-            self._cancel_pending_single()
-            self._fire(EVENT_LONG_PRESS)
-            return
-
-        if self._settings.double_click_ms <= 0:
-            self._fire(EVENT_PRESS)
-            return
-
-        if self._pending_single is not None:
-            self._cancel_pending_single()
+        if self._pending_double is not None:
+            # A press that lands inside the window opened by the previous
+            # release completes a double press.
+            self._close_double_window()
             self._fire(EVENT_DOUBLE_PRESS)
-            return
 
-        self._pending_single = async_call_later(
+        self._pending_long = async_call_later(
             self.hass,
-            self._settings.double_click_ms / 1000,
-            self._flush_single_press,
+            self._settings.long_press_ms / 1000,
+            self._flush_long_press,
         )
 
     @callback
-    def _flush_single_press(self, _now: Any) -> None:
-        """Emit the single press once the double click window has passed."""
+    def _flush_long_press(self, _now: Any) -> None:
+        """Report the long press as soon as the button has been held long enough.
 
-        self._pending_single = None
-        self._fire(EVENT_PRESS)
+        Waiting for the release would delay the feedback until the user lets go,
+        which makes a hold feel unresponsive.
+        """
+
+        self._pending_long = None
+        self._long_reported = True
+        self._fire(EVENT_LONG_PRESS)
+
+    @callback
+    def _handle_release(self) -> None:
+        """Report the matching release once the button comes back up."""
+
+        if not self._held:
+            return
+
+        self._held = False
+        self._cancel_pending_long()
+
+        if self._long_reported:
+            self._long_reported = False
+            self._fire(EVENT_LONG_RELEASE)
+            return
+
+        self._fire(EVENT_SINGLE_RELEASE)
+
+        if self._settings.double_click_ms > 0:
+            self._pending_double = async_call_later(
+                self.hass,
+                self._settings.double_click_ms / 1000,
+                self._expire_double_window,
+            )
+
+    @callback
+    def _expire_double_window(self, _now: Any) -> None:
+        """Forget the previous release once the double click window has passed."""
+
+        self._pending_double = None
 
     @callback
     def _fire(self, event_type: str) -> None:

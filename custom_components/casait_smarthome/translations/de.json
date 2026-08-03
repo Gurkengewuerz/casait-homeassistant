@@ -134,9 +134,11 @@
         "state_attributes": {
           "event_type": {
             "state": {
-              "press": "Kurzer Druck",
+              "single_press": "Kurzer Druck",
+              "single_release": "Losgelassen",
+              "double_press": "Doppeldruck",
               "long_press": "Langer Druck",
-              "double_press": "Doppeldruck"
+              "long_release": "Nach langem Druck losgelassen"
             }
           }
         }
@@ -186,9 +188,11 @@
   },
   "device_automation": {
     "trigger_type": {
-      "press": "Kurz gedr\u00fcckt",
+      "single_press": "Gedr\u00fcckt",
+      "single_release": "Losgelassen",
+      "double_press": "Doppelt gedr\u00fcckt",
       "long_press": "Lange gedr\u00fcckt",
-      "double_press": "Doppelt gedr\u00fcckt"
+      "long_release": "Nach langem Druck losgelassen"
     },
     "trigger_subtype": {
       "button_1": "Taster 1",
