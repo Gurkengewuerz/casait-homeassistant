@@ -7,6 +7,8 @@ This allows I2C operations to be performed remotely via a network-connected
 microcontroller (e.g., ESP32 with W5500) running the SMBus Bridge firmware.
 """
 
+from __future__ import annotations
+
 import contextlib
 import logging
 import socket
@@ -21,7 +23,29 @@ CMD_WRITE_BYTE_DATA = 0x02
 CMD_READ_BYTE = 0x03
 CMD_READ_BYTE_DATA = 0x04
 CMD_WRITE_I2C_BLOCK_DATA = 0x05
+CMD_READ_I2C_BLOCK = 0x06
+CMD_BATCH = 0x07
 CMD_PING = 0x11
+
+# Batch sub-opcodes, numbered like the top-level commands so both sides stay readable
+BOP_WRITE_BYTE = 0x01
+BOP_WRITE_BYTE_DATA = 0x02
+BOP_READ_BYTE = 0x03
+BOP_READ_BYTE_DATA = 0x04
+BOP_READ_BLOCK = 0x06
+BOP_WAIT_STATUS = 0x07
+BOP_DELAY = 0x08
+
+# The bridge frames both directions as [len][payload][crc] with a single length byte
+# and a 128 byte buffer, and a block read or batch spends one payload byte on status.
+MAX_FRAME_PAYLOAD = 126
+MAX_BLOCK_READ = MAX_FRAME_PAYLOAD - 1
+MAX_BATCH_RESULTS = MAX_FRAME_PAYLOAD - 1
+
+# The bridge clamps these too; keeping the client honest makes overruns visible here
+# rather than as a silently shortened wait on the wire.
+MAX_WAIT_STATUS_MS = 50
+MAX_DELAY_MS = 10
 
 # Default configuration from environment variables
 DEFAULT_PORT = 8555
@@ -39,6 +63,119 @@ SEND_INTERVAL_RECOVERY_FRAMES = 50
 
 class SMBusProxyError(Exception):
     """Exception raised for SMBus proxy errors."""
+
+
+class I2CBatch:
+    """A list of I2C operations the bridge executes in one round trip.
+
+    Every operation over this transport costs a full network round trip, so
+    drivers that need several dependent operations for one logical read pay for
+    the network far more than for the bus. Collecting those operations here moves
+    the dependency chain onto the bridge, where each step costs microseconds.
+
+    Methods are chainable. Build a batch, hand it to ``SMBus.execute_batch``, and
+    read back one entry per result-producing operation, in order.
+    """
+
+    def __init__(self) -> None:
+        """Start an empty batch."""
+
+        self._payload = bytearray([CMD_BATCH])
+        self._result_count = 0
+        self._op_count = 0
+
+    def __len__(self) -> int:
+        """Return the number of queued operations."""
+
+        return self._op_count
+
+    def __bytes__(self) -> bytes:
+        """Return the wire payload for this batch."""
+
+        return bytes(self._payload)
+
+    @property
+    def result_count(self) -> int:
+        """Return how many result bytes the bridge will send back."""
+
+        return self._result_count
+
+    def capacity_for(self, *, request_bytes: int, result_bytes: int) -> int:
+        """Return how many more operations of this shape still fit in the frame.
+
+        Drivers that transfer a variable number of bytes use this to decide where
+        to split, instead of discovering the overflow as a failed batch.
+        """
+
+        return min(
+            (MAX_FRAME_PAYLOAD - len(self._payload)) // request_bytes,
+            (MAX_BATCH_RESULTS - self._result_count) // result_bytes,
+        )
+
+    def _add(self, op: bytes, results: int = 0) -> I2CBatch:
+        """Append one operation and account for its result bytes."""
+
+        if len(self._payload) + len(op) > MAX_FRAME_PAYLOAD:
+            raise ValueError(f"Batch exceeds the {MAX_FRAME_PAYLOAD} byte frame payload")
+        if self._result_count + results > MAX_BATCH_RESULTS:
+            raise ValueError(f"Batch exceeds the {MAX_BATCH_RESULTS} byte result limit")
+
+        self._payload.extend(op)
+        self._result_count += results
+        self._op_count += 1
+        return self
+
+    def write_byte(self, addr: int, value: int) -> I2CBatch:
+        """Queue a single byte write. Produces no result."""
+
+        return self._add(bytes([BOP_WRITE_BYTE, addr, value]))
+
+    def write_byte_data(self, addr: int, reg: int, value: int) -> I2CBatch:
+        """Queue a register write. Produces no result."""
+
+        return self._add(bytes([BOP_WRITE_BYTE_DATA, addr, reg, value]))
+
+    def read_byte(self, addr: int) -> I2CBatch:
+        """Queue a single byte read. Produces one result byte."""
+
+        return self._add(bytes([BOP_READ_BYTE, addr]), results=1)
+
+    def read_byte_data(self, addr: int, reg: int) -> I2CBatch:
+        """Queue a register read. Produces one result byte."""
+
+        return self._add(bytes([BOP_READ_BYTE_DATA, addr, reg]), results=1)
+
+    def read_block(self, addr: int, count: int) -> I2CBatch:
+        """Queue a multi-byte read in one I2C transaction. Produces count results."""
+
+        if not 1 <= count <= MAX_BATCH_RESULTS:
+            raise ValueError(f"Block read count must be between 1 and {MAX_BATCH_RESULTS}, got {count}")
+        return self._add(bytes([BOP_READ_BLOCK, addr, count]), results=count)
+
+    def wait_status(
+        self,
+        addr: int,
+        mask: int,
+        expected: int,
+        timeout_ms: int = MAX_WAIT_STATUS_MS,
+    ) -> I2CBatch:
+        """Queue a poll of a status register until it matches, on the bridge.
+
+        The batch fails at this operation if the timeout expires. Produces one
+        result byte carrying the last status read, which callers need for the
+        other flags in the same register.
+        """
+
+        if not 0 <= timeout_ms <= MAX_WAIT_STATUS_MS:
+            raise ValueError(f"Wait timeout must be between 0 and {MAX_WAIT_STATUS_MS} ms, got {timeout_ms}")
+        return self._add(bytes([BOP_WAIT_STATUS, addr, mask, expected, timeout_ms]), results=1)
+
+    def delay(self, ms: int) -> I2CBatch:
+        """Queue a fixed pause on the bridge. Produces no result."""
+
+        if not 0 <= ms <= MAX_DELAY_MS:
+            raise ValueError(f"Delay must be between 0 and {MAX_DELAY_MS} ms, got {ms}")
+        return self._add(bytes([BOP_DELAY, ms]))
 
 
 class SMBus:
@@ -410,6 +547,71 @@ class SMBus:
             if len(response) >= 1 and response[0] == 0x00:
                 return
             raise OSError(f"Write byte data failed for address 0x{addr:02X} register 0x{reg:02X}")
+        except SMBusProxyError as e:
+            raise OSError(str(e)) from e
+
+    def new_batch(self) -> I2CBatch:
+        """Return an empty batch bound to this transport's frame limits.
+
+        Drivers build batches through their bus so they do not have to know how
+        the transport frames things.
+        """
+
+        return I2CBatch()
+
+    def execute_batch(self, batch: I2CBatch) -> list[int]:
+        """Run a batch on the bridge and return its result bytes in order.
+
+        Args:
+            batch: The operations to execute
+
+        Returns:
+            One entry per result-producing operation, in queue order
+
+        Raises:
+            OSError: If any operation failed; the message names the operation index
+        """
+        if not len(batch):
+            return []
+
+        try:
+            response = self._send_command(bytes(batch))
+        except SMBusProxyError as e:
+            raise OSError(str(e)) from e
+
+        if response and response[0] == 0x00 and len(response) >= batch.result_count + 1:
+            return list(response[1 : batch.result_count + 1])
+        if len(response) >= 2 and response[0] == 0xFF:
+            raise OSError(f"I2C batch failed at operation {response[1]} of {len(batch)}")
+        raise OSError("I2C batch returned a malformed response")
+
+    def read_i2c_block(self, addr: int, count: int) -> list[int]:
+        """Read ``count`` bytes from a device in a single I2C transaction.
+
+        This has no smbus2 counterpart because SMBus block reads carry a register
+        and a length byte. Slaves that stream a prepared response buffer need a
+        plain multi-byte read instead, and doing it in one bridge round trip is
+        what makes it worth having.
+
+        Args:
+            addr: I2C address (7-bit)
+            count: Number of bytes to read, at most MAX_BLOCK_READ
+
+        Returns:
+            The bytes read from the device
+
+        Raises:
+            OSError: If the read fails (matching smbus2 behavior)
+            ValueError: If count is outside the supported range
+        """
+        if not 1 <= count <= MAX_BLOCK_READ:
+            raise ValueError(f"Block read count must be between 1 and {MAX_BLOCK_READ}, got {count}")
+
+        try:
+            response = self._send_command(bytes([CMD_READ_I2C_BLOCK, addr, count]))
+            if len(response) >= count + 1 and response[0] == 0x00:
+                return list(response[1 : count + 1])
+            raise OSError(f"Read i2c block failed for address 0x{addr:02X}")
         except SMBusProxyError as e:
             raise OSError(str(e)) from e
 

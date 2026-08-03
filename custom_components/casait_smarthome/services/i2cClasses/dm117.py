@@ -44,6 +44,10 @@ class DM117:
     CMD_WRITE = 0x02
     CMD_READ = 0x03
 
+    # Module count byte, then up to 8 slots of one type byte plus one value byte
+    # (two for a dimmer), then the CRC. The slave caps its own buffer at 32.
+    READ_RESPONSE_SIZE = 26
+
     def __init__(self, bus, address: int) -> None:
         """Initialize DM117 device."""
         self.bus = bus
@@ -176,16 +180,23 @@ class DM117:
             self.bus.write_byte(self.address, self.CMD_READ)
             time.sleep(0.001)
 
-            num_modules = self.bus.read_byte(self.address)
+            # The slave streams its whole prepared buffer from a single transaction
+            # and answers 0xFF once it runs out, so reading the worst-case length in
+            # one go is safe and costs one round trip instead of up to 26.
+            block = self.bus.read_i2c_block(self.address, self.READ_RESPONSE_SIZE)
+
+            num_modules = block[0]
             if num_modules > 8:  # Sanity check
                 raise ValueError(f"Invalid number of modules: {num_modules}")  # noqa: TRY301
 
             values: dict[int, int] = {}
             port_types: dict[int, DeviceType] = {}
             data = [num_modules]  # Start with num_modules for CRC calculation
+            offset = 1
 
             for i in range(num_modules):
-                module_type = self.bus.read_byte(self.address)
+                module_type = block[offset]
+                offset += 1
                 data.append(module_type)
 
                 type_map = {0: DeviceType.INPUT, 1: DeviceType.DIMMER, 2: DeviceType.OUTPUT}
@@ -193,17 +204,18 @@ class DM117:
                     port_types[i] = device_type
 
                 if module_type == 1:  # DAC/Dimmer
-                    high = self.bus.read_byte(self.address)
-                    low = self.bus.read_byte(self.address)
+                    high, low = block[offset], block[offset + 1]
+                    offset += 2
                     value = (high << 8) | low
                     data.extend([high, low])
                 else:
-                    value = self.bus.read_byte(self.address)
+                    value = block[offset]
+                    offset += 1
                     data.append(value)
 
                 values[i] = value
 
-            received_crc = self.bus.read_byte(self.address)
+            received_crc = block[offset]
 
             # Verify CRC
             calculated_crc = Crc8Smbus.calc(data)

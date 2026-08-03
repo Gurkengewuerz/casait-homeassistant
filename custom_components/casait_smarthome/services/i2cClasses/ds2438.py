@@ -289,11 +289,7 @@ class DS2438:
         if not self.bus.select_device(device_id):
             return False
 
-        self.bus.bridge.wire_write_byte(self.CMD_WRITE_SCRATCHPAD)
-        self.bus.bridge.wire_write_byte(0x00)  # Page 0
-        self.bus.bridge.wire_write_byte(config)
-
-        return True
+        return self.bus.bridge.wire_write_bytes([self.CMD_WRITE_SCRATCHPAD, 0x00, config])  # Page 0
 
     def _start_voltage_conversion(self, device_id: str) -> bool:
         """Start voltage conversion."""
@@ -319,15 +315,11 @@ class DS2438:
         if not self.bus.select_device(device_id):
             return None
 
-        self.bus.bridge.wire_write_byte(self.CMD_READ_SCRATCHPAD)
-        self.bus.bridge.wire_write_byte(0x00)  # Page 0
+        self.bus.bridge.wire_write_bytes([self.CMD_READ_SCRATCHPAD, 0x00])  # Page 0
 
-        scratchpad = []
-        for _ in range(9):
-            byte = self.bus.bridge.wire_read_byte()
-            if byte is None:
-                return None
-            scratchpad.append(byte)
+        scratchpad = self.bus.bridge.wire_read_bytes(9)
+        if scratchpad is None:
+            return None
 
         _LOGGER.debug("%s scratchpad: %s", device_id, " ".join(f"{x:02X}" for x in scratchpad))
 
@@ -358,4 +350,4 @@ class DS2438:
         if not self.bus.select_device(device_id):
             return False
 
-        return self.bus.bridge.wire_write_byte(self.CMD_RECALL_MEMORY) and self.bus.bridge.wire_write_byte(0x00)
+        return self.bus.bridge.wire_write_bytes([self.CMD_RECALL_MEMORY, 0x00])

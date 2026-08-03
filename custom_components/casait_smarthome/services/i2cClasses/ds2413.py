@@ -209,9 +209,9 @@ class DS2413:
 
             try:
                 # Write command sequence
-                self.bus.bridge.wire_write_byte(self.CMD_PIO_ACCESS_WRITE)
-                self.bus.bridge.wire_write_byte(state_byte)
-                self.bus.bridge.wire_write_byte(~state_byte & 0xFF)  # Complement
+                self.bus.bridge.wire_write_bytes(
+                    [self.CMD_PIO_ACCESS_WRITE, state_byte, ~state_byte & 0xFF]  # Complement
+                )
 
                 confirm = self.bus.bridge.wire_read_byte()
                 if confirm != 0xAA:

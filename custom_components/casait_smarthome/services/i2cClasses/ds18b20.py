@@ -167,12 +167,9 @@ class DS18B20:
             return None
 
         self.bus.bridge.wire_write_byte(self.CMD_READ_SCRATCHPAD)
-        scratchpad = []
-        for _ in range(9):
-            byte = self.bus.bridge.wire_read_byte()
-            if byte is None:
-                return None
-            scratchpad.append(byte)
+        scratchpad = self.bus.bridge.wire_read_bytes(9)
+        if scratchpad is None:
+            return None
 
         if self.bus.calc_crc8(bytes(scratchpad[:-1])) != scratchpad[-1]:
             _LOGGER.error("CRC check failed for %s", device_id)

@@ -17,6 +17,10 @@ _LOGGER = logging.getLogger(__name__)
 
 MAX_FAILURES = 3
 TIMEOUT_DURATION = 300  # 5 minutes
+ROM_BITS = 64
+# One pass yields one device. The cap only exists so a bus that keeps reporting
+# discrepancies cannot spin here while holding the hardware lock.
+MAX_SEARCH_PASSES = 64
 
 
 class OneWireType(enum.Enum):
@@ -69,88 +73,105 @@ class OneWireBus:
         return self.devices
 
     def _scan_bus(self):
-        """Scan 1-Wire bus for devices using proper search algorithm."""
-        if not self.bridge.wire_reset():
-            return {}
+        """Scan the 1-Wire bus for devices using the DS2482 search triplet.
 
+        The bridge resolves each bit position in hardware, and the direction a pass
+        takes at every position follows from the previous pass alone. A whole
+        64-bit pass is therefore computed up front and issued as a handful of
+        batches, rather than three network round trips per bit.
+
+        A partial scan leaves the cached device list untouched, so a transient bus
+        fault does not make known devices disappear.
+        """
         _LOGGER.info("Scanning 1-Wire bus %02x for devices", self.bridge.address)
-        devices = {}
+        devices: dict[str, dict[str, Any]] = {}
         rom_no = bytearray(8)  # 64-bit ROM code
         last_discrepancy = 0
-        last_device_flag = False
 
-        while not last_device_flag:
-            # Initialize for search
-            self.bridge.wire_reset()
-            self.bridge.wire_write_byte(self.CMD_SEARCH_ROM)
+        for _ in range(MAX_SEARCH_PASSES):
+            if not self.bridge.wire_reset():
+                return devices
+            if not self.bridge.wire_write_byte(self.CMD_SEARCH_ROM):
+                return devices
 
-            last_zero = 0
-            id_bit_number = 1
+            statuses = self.bridge.wire_triplets(self._search_directions(rom_no, last_discrepancy))
+            if statuses is None or len(statuses) != ROM_BITS:
+                return devices
 
-            # Search all 64 bits of ROM code
-            while id_bit_number <= 64:
-                # Read two bits and get their complement
-                id_bit = self.bridge.wire_single_bit(True)
-                cmp_id_bit = self.bridge.wire_single_bit(True)
+            outcome = self._apply_search_pass(statuses)
+            if outcome is None:
+                # Both read bits high at some position: nothing answered
+                return devices
+            rom_no, last_zero = outcome
 
-                if id_bit is None or cmp_id_bit is None:
-                    return devices
-
-                # Check for no devices on the bus
-                if id_bit and cmp_id_bit:
-                    return devices
-
-                # Determine search direction
-                if id_bit != cmp_id_bit:
-                    search_direction = id_bit  # Bits differ, use actual
-                else:
-                    # Bits are both 0 or both 1
-                    if id_bit_number == last_discrepancy:
-                        search_direction = 1
-                    elif id_bit_number > last_discrepancy:
-                        search_direction = 0
-                    else:
-                        search_direction = (rom_no[(id_bit_number - 1) // 8] >> ((id_bit_number - 1) % 8)) & 0x01
-
-                    if search_direction == 0:
-                        last_zero = id_bit_number
-
-                # Set or clear bit in ROM byte
-                byte_index = (id_bit_number - 1) // 8
-                bit_mask = 1 << ((id_bit_number - 1) % 8)
-
-                if search_direction:
-                    rom_no[byte_index] |= bit_mask
-                else:
-                    rom_no[byte_index] &= ~bit_mask
-
-                # Write the search direction bit
-                self.bridge.wire_single_bit(bool(search_direction))
-                id_bit_number += 1
-
-            # Check if valid device found
-            if id_bit_number < 65:
-                last_device_flag = True
+            if self.calc_crc8(bytes(rom_no[:-1])) == rom_no[7]:
+                device_id = "".join(f"{x:02x}" for x in rom_no)
+                family_code = rom_no[0]
+                devices[device_id] = {
+                    "family_code": family_code,
+                    "device_type": self._get_device_type(family_code),
+                    "rom": list(rom_no),
+                }
             else:
-                # Valid device found, process ROM code
-                crc8 = self.calc_crc8(bytes(rom_no[:-1]))
-                if crc8 == rom_no[7]:  # CRC check
-                    device_id = "".join(f"{x:02x}" for x in rom_no)
-                    family_code = rom_no[0]
+                _LOGGER.warning("Discarding 1-Wire ROM code with a bad CRC on bus %02x", self.bridge.address)
 
-                    devices[device_id] = {
-                        "family_code": family_code,
-                        "device_type": self._get_device_type(family_code),
-                        "rom": list(rom_no),
-                    }
-
-                last_discrepancy = last_zero
-                if last_discrepancy == 0:
-                    last_device_flag = True
+            last_discrepancy = last_zero
+            if last_discrepancy == 0:
+                break
+        else:
+            _LOGGER.warning(
+                "1-Wire search on bus %02x did not terminate within %d passes",
+                self.bridge.address,
+                MAX_SEARCH_PASSES,
+            )
+            return devices
 
         self.devices = devices
         _LOGGER.info("1-Wire bus scan found %d devices", len(devices))
         return devices
+
+    @staticmethod
+    def _search_directions(rom_no: bytes | bytearray, last_discrepancy: int) -> list[bool]:
+        """Decide the branch to take at every bit position of the next pass.
+
+        Positions below the last discrepancy repeat the previous pass, and the rest
+        follow from the loop index, so no result of the pass itself is needed. That
+        is what allows the pass to be batched.
+        """
+        directions = []
+        for bit_number in range(1, ROM_BITS + 1):
+            if bit_number < last_discrepancy:
+                index = bit_number - 1
+                directions.append(bool(rom_no[index // 8] >> (index % 8) & 0x01))
+            else:
+                directions.append(bit_number == last_discrepancy)
+        return directions
+
+    @staticmethod
+    def _apply_search_pass(statuses: list[int]) -> tuple[bytearray, int] | None:
+        """Build the ROM code a pass discovered, plus where it last branched low.
+
+        Returns None when a position reports both bits high, which means no device
+        drove the bus.
+        """
+        rom_no = bytearray(8)
+        last_zero = 0
+
+        for index, status in enumerate(statuses):
+            id_bit = bool(status & DS2482.STATUS_SBR)
+            cmp_id_bit = bool(status & DS2482.STATUS_TSB)
+            direction = bool(status & DS2482.STATUS_DIR)
+
+            if id_bit and cmp_id_bit:
+                return None
+
+            if not id_bit and not cmp_id_bit and not direction:
+                last_zero = index + 1
+
+            if direction:
+                rom_no[index // 8] |= 1 << (index % 8)
+
+        return rom_no, last_zero
 
     def _get_device_type(self, family_code: int) -> str:
         """Map family code to device type string."""
@@ -214,12 +235,12 @@ class OneWireBus:
             self._increment_failures(device_id)
             return False
 
-        self.bridge.wire_write_byte(self.CMD_MATCH_ROM)
-        for byte in self.devices[device_id]["rom"]:
-            if not self.bridge.wire_write_byte(byte):
-                _LOGGER.error("Failed to write ROM byte for device %s", device_id)
-                self._increment_failures(device_id)
-                return False
+        # Command plus the eight ROM bytes go out as one batch, so selecting a
+        # device costs one round trip instead of nine.
+        if not self.bridge.wire_write_bytes([self.CMD_MATCH_ROM, *self.devices[device_id]["rom"]]):
+            _LOGGER.error("Failed to address device %s", device_id)
+            self._increment_failures(device_id)
+            return False
         return True
 
     def _increment_failures(self, device_id: str) -> None:
