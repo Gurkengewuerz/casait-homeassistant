@@ -395,13 +395,15 @@
     "step": {
       "init": {
         "title": "casaIT configuration",
+        "description": "Configure as many modules as you like. Changes are only applied once you select \"Save and close\" - closing this dialog discards them.",
         "menu_options": {
           "im117_select": "Configure IM117 modules",
           "om117_select": "Configure OM117 modules",
           "dm117_select": "Configure DM117 modules",
           "sm117_select": "Configure SM117 modules",
           "onewire_select": "Configure OneWire devices",
-          "global_settings": "Global settings"
+          "global_settings": "Global settings",
+          "save": "Save and close"
         }
       },
       "im117_select": {

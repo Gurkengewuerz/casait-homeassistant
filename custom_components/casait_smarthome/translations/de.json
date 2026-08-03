@@ -395,13 +395,15 @@
     "step": {
       "init": {
         "title": "casaIT-Konfiguration",
+        "description": "Es k\u00f6nnen beliebig viele Module nacheinander konfiguriert werden. \u00c4nderungen werden erst mit \"Speichern und schlie\u00dfen\" \u00fcbernommen - beim Schlie\u00dfen des Dialogs gehen sie verloren.",
         "menu_options": {
           "im117_select": "IM117-Module konfigurieren",
           "om117_select": "OM117-Module konfigurieren",
           "dm117_select": "DM117-Module konfigurieren",
           "sm117_select": "SM117-Module konfigurieren",
           "onewire_select": "OneWire-Ger\u00e4te konfigurieren",
-          "global_settings": "Globale Einstellungen"
+          "global_settings": "Globale Einstellungen",
+          "save": "Speichern und schlie\u00dfen"
         }
       },
       "im117_select": {

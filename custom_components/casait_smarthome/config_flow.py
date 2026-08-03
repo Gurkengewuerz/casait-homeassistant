@@ -321,6 +321,27 @@ class OptionsFlowHandler(OptionsFlowWithReload):
         self._selected_ow_profile: str | None = None
         self._pending_om117_modes: dict[int, str] | None = None
         self._pending_om117_name: str | None = None
+        self._staged_options: dict[str, Any] | None = None
+
+    @property
+    def _options(self) -> Mapping[str, Any]:
+        """Return the options being edited, including changes not yet written.
+
+        Every sub-flow reads its defaults from here so that a module edited
+        earlier in the same session shows the staged values, not the ones the
+        config entry still holds.
+        """
+        return self.config_entry.options if self._staged_options is None else self._staged_options
+
+    async def _stage(self, options: dict[str, Any]) -> ConfigFlowResult:
+        """Keep one module's edit in memory and return to the menu.
+
+        Writing the config entry here would end the options flow and reload the
+        integration after every single module, so changes are collected and
+        written once in async_step_save.
+        """
+        self._staged_options = options
+        return await self.async_step_init()
 
     @property
     def _runtime_data(self):
@@ -359,8 +380,17 @@ class OptionsFlowHandler(OptionsFlowWithReload):
                 "sm117_select",
                 "onewire_select",
                 "global_settings",
+                "save",
             ],
         )
+
+    async def async_step_save(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Write every staged change in one go and close the flow.
+
+        This is the only step that touches the config entry, so the integration
+        reloads once no matter how many modules were configured.
+        """
+        return self.async_create_entry(title="", data=dict(self._options))
 
     def _module_selector_options(self, module_kind: str, addresses: list[int]) -> list[SelectOptionDict]:
         """Return language-neutral labels for dynamically detected modules."""
@@ -370,7 +400,7 @@ class OptionsFlowHandler(OptionsFlowWithReload):
             {
                 "value": str(address),
                 "label": get_module_name(
-                    self.config_entry.options,
+                    self._options,
                     module_kind,
                     address,
                     f"{module_code} 0x{address:02X}",
@@ -427,18 +457,17 @@ class OptionsFlowHandler(OptionsFlowWithReload):
                 if role != IM117_ROLE_CONTACT or device_class == NO_DEVICE_CLASS:
                     device_class = None
                 ports[index - 1] = IM117PortConfig(role=role, device_class=device_class)
-            return self.async_create_entry(
-                title="",
-                data=set_im117_ports(
-                    self.config_entry.options,
+            return await self._stage(
+                set_im117_ports(
+                    self._options,
                     addr,
                     ports,
                     name=str(user_input["module_name"]),
-                ),
+                )
             )
 
-        configured = get_im117_port_configuration(self.config_entry.options).get(addr, {})
-        module_name = get_module_name(self.config_entry.options, "im117", addr, f"IM117 0x{addr:02X}")
+        configured = get_im117_port_configuration(self._options).get(addr, {})
+        module_name = get_module_name(self._options, "im117", addr, f"IM117 0x{addr:02X}")
         schema: dict[Any, Any] = {vol.Required("module_name", default=module_name): TextSelector(TextSelectorConfig())}
         for index in range(1, 9):
             config = configured.get(index - 1, IM117PortConfig())
@@ -479,11 +508,11 @@ class OptionsFlowHandler(OptionsFlowWithReload):
                 slow_poll_interval=float(user_input[OPT_SLOW_POLL_INTERVAL]),
                 max_send_interval=float(user_input[OPT_MAX_SEND_INTERVAL_MS]) / 1000,
             )
-            options = set_input_settings(self.config_entry.options, input_settings)
-            return self.async_create_entry(title="", data=set_polling_settings(options, polling_settings))
+            options = set_input_settings(self._options, input_settings)
+            return await self._stage(set_polling_settings(options, polling_settings))
 
-        current_input = get_input_settings(self.config_entry.options)
-        current_polling = get_polling_settings(self.config_entry.options)
+        current_input = get_input_settings(self._options)
+        current_polling = get_polling_settings(self._options)
 
         return self.async_show_form(
             step_id="global_settings",
@@ -552,7 +581,7 @@ class OptionsFlowHandler(OptionsFlowWithReload):
             return self.async_abort(reason="integration_not_ready")
 
         addr = self._selected_om117_addr
-        existing = get_om117_pair_configuration(self.config_entry.options).get(addr, {})
+        existing = get_om117_pair_configuration(self._options).get(addr, {})
 
         if user_input is not None:
             self._pending_om117_name = str(user_input["module_name"])
@@ -575,17 +604,16 @@ class OptionsFlowHandler(OptionsFlowWithReload):
                 )
                 for pair_index, mode in self._pending_om117_modes.items()
             }
-            return self.async_create_entry(
-                title="",
-                data=set_om117_pairs(
-                    self.config_entry.options,
+            return await self._stage(
+                set_om117_pairs(
+                    self._options,
                     addr,
                     pairs,
                     name=self._pending_om117_name,
-                ),
+                )
             )
 
-        module_name = get_module_name(self.config_entry.options, "om117", addr, f"OM117 0x{addr:02X}")
+        module_name = get_module_name(self._options, "om117", addr, f"OM117 0x{addr:02X}")
         schema: dict[Any, Any] = {vol.Required("module_name", default=module_name): TextSelector(TextSelectorConfig())}
         for idx in range(1, 5):
             config: OM117PairConfig = existing.get(idx - 1, OM117PairConfig())
@@ -605,7 +633,7 @@ class OptionsFlowHandler(OptionsFlowWithReload):
         if (addr := self._selected_om117_addr) is None or self._pending_om117_modes is None:
             return self.async_abort(reason="integration_not_ready")
 
-        existing = get_om117_pair_configuration(self.config_entry.options).get(addr, {})
+        existing = get_om117_pair_configuration(self._options).get(addr, {})
         if user_input is not None:
             pairs: dict[int, OM117PairConfig] = {}
             for pair_index, mode in self._pending_om117_modes.items():
@@ -619,14 +647,13 @@ class OptionsFlowHandler(OptionsFlowWithReload):
                     tilt_time=float(user_input.get(f"pair_{field_index}_tilt_time", current.tilt_time)),
                     pulse_duration=float(user_input.get(f"pair_{field_index}_pulse_duration", current.pulse_duration)),
                 )
-            return self.async_create_entry(
-                title="",
-                data=set_om117_pairs(
-                    self.config_entry.options,
+            return await self._stage(
+                set_om117_pairs(
+                    self._options,
                     addr,
                     pairs,
                     name=self._pending_om117_name,
-                ),
+                )
             )
 
         schema: dict[Any, Any] = {}
@@ -702,18 +729,17 @@ class OptionsFlowHandler(OptionsFlowWithReload):
 
         if user_input is not None:
             slots = {index - 1: user_input[f"slot_{index}"] for index in range(1, 9) if f"slot_{index}" in user_input}
-            return self.async_create_entry(
-                title="",
-                data=set_dm117_slots(
-                    self.config_entry.options,
+            return await self._stage(
+                set_dm117_slots(
+                    self._options,
                     addr,
                     slots,
                     name=str(user_input["module_name"]),
-                ),
+                )
             )
 
-        configured = get_dm117_slot_types(self.config_entry.options).get(addr, {})
-        module_name = get_module_name(self.config_entry.options, "dm117", addr, f"DM117 0x{addr:02X}")
+        configured = get_dm117_slot_types(self._options).get(addr, {})
+        module_name = get_module_name(self._options, "dm117", addr, f"DM117 0x{addr:02X}")
         schema: dict[Any, Any] = {vol.Required("module_name", default=module_name): TextSelector(TextSelectorConfig())}
         for index in range(1, 9):
             schema[vol.Required(f"slot_{index}", default=configured.get(index - 1, "none"))] = SelectSelector(
@@ -763,17 +789,16 @@ class OptionsFlowHandler(OptionsFlowWithReload):
             return self.async_abort(reason="integration_not_ready")
 
         if user_input is not None:
-            return self.async_create_entry(
-                title="",
-                data=set_module_name(
-                    self.config_entry.options,
+            return await self._stage(
+                set_module_name(
+                    self._options,
                     "sm117",
                     addr,
                     str(user_input["module_name"]),
-                ),
+                )
             )
 
-        module_name = get_module_name(self.config_entry.options, "sm117", addr, f"SM117 0x{addr:02X}")
+        module_name = get_module_name(self._options, "sm117", addr, f"SM117 0x{addr:02X}")
         return self.async_show_form(
             step_id="sm117_config",
             data_schema=vol.Schema(
@@ -828,7 +853,7 @@ class OptionsFlowHandler(OptionsFlowWithReload):
             self._selected_ow_profile = str(user_input["profile"])
             return await self.async_step_onewire_settings()
 
-        default_val = get_configured_onewire_profiles(self.config_entry.options).get(
+        default_val = get_configured_onewire_profiles(self._options).get(
             dev_id, self._default_profile_for_device(dev_id)
         )
         if default_val in {"ds2413_in", "ds2413_out"}:
@@ -860,19 +885,18 @@ class OptionsFlowHandler(OptionsFlowWithReload):
                     0: str(user_input["channel_1_profile"]),
                     1: str(user_input["channel_2_profile"]),
                 }
-            return self.async_create_entry(
-                title="",
-                data=set_onewire_device(
-                    self.config_entry.options,
+            return await self._stage(
+                set_onewire_device(
+                    self._options,
                     dev_id,
                     stored_profile,
                     led_count=int(user_input["led_count"]) if profile == "ds28e17_led" else None,
                     poll_interval=int(user_input["poll_interval"]),
                     ds2413_channels=channels,
-                ),
+                )
             )
 
-        poll_interval_default = get_configured_onewire_poll_intervals(self.config_entry.options).get(
+        poll_interval_default = get_configured_onewire_poll_intervals(self._options).get(
             dev_id, DEFAULT_OW_POLL_INTERVAL.get(profile, 60)
         )
         schema: dict[Any, Any] = {
@@ -881,12 +905,12 @@ class OptionsFlowHandler(OptionsFlowWithReload):
             )
         }
         if profile == "ds28e17_led":
-            led_count_default = get_configured_led_counts(self.config_entry.options).get(dev_id, DEFAULT_LED_COUNT)
+            led_count_default = get_configured_led_counts(self._options).get(dev_id, DEFAULT_LED_COUNT)
             schema[vol.Required("led_count", default=led_count_default)] = NumberSelector(
                 NumberSelectorConfig(min=1, max=255, step=1, mode=NumberSelectorMode.BOX)
             )
         elif profile == "ds2413":
-            channel_defaults = get_configured_ds2413_channels(self.config_entry.options).get(
+            channel_defaults = get_configured_ds2413_channels(self._options).get(
                 dev_id,
                 {0: DS2413_CHANNEL_INPUT, 1: DS2413_CHANNEL_INPUT},
             )
