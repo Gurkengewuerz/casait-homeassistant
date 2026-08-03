@@ -134,11 +134,11 @@
         "state_attributes": {
           "event_type": {
             "state": {
-              "single_press": "Press",
-              "single_release": "Release",
-              "double_press": "Double press",
-              "long_press": "Long press",
-              "long_release": "Long release"
+              "single_press": "Pressed",
+              "single_release": "Released after short press",
+              "double_press": "Double pressed",
+              "long_press": "Long pressed",
+              "long_release": "Released after long press"
             }
           }
         }
@@ -189,7 +189,7 @@
   "device_automation": {
     "trigger_type": {
       "single_press": "Pressed",
-      "single_release": "Released",
+      "single_release": "Released after short press",
       "double_press": "Double pressed",
       "long_press": "Long pressed",
       "long_release": "Released after long press"
