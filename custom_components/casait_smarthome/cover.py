@@ -26,6 +26,7 @@ from .helpers import (
     build_device_identifier,
     build_i2c_entity_id,
     get_address_range,
+    get_module_name,
     get_om117_pair_configuration,
 )
 
@@ -116,7 +117,7 @@ class CasaITBlindCover(CoverEntity, RestoreEntity):
         self._attr_translation_placeholders = {"pair": str(pair_index + 1)}
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, build_device_identifier(config_entry.entry_id, "om117", address))},
-            name=f"OM117 0x{address:02X}",
+            name=get_module_name(config_entry.options, "om117", address, f"OM117 0x{address:02X}"),
             manufacturer="casaIT",
             model="PCF8574 Output",
         )

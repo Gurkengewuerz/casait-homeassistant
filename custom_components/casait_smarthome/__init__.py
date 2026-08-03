@@ -20,6 +20,8 @@ from .helpers import (
     get_configured_onewire_poll_intervals,
     get_configured_onewire_profiles,
     get_dm117_port_configuration,
+    get_module_name,
+    get_polling_settings,
     migrate_options_to_nested,
     migrated_device_identifiers,
     migrated_entity_identity,
@@ -164,6 +166,7 @@ def _migrate_entity_identities(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> bool:
     """Set up casaIT : Smart Home from a config entry."""
+    polling_settings = get_polling_settings(entry.options)
     try:
         bus = await hass.async_add_executor_job(
             SMBus,
@@ -171,6 +174,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> bo
             entry.data[CONF_HOST],
             entry.data[CONF_PORT],
             entry.data.get(CONF_TIMEOUT),
+            polling_settings.max_send_interval,
         )
     except SMBusProxyError as e:
         raise ConfigEntryNotReady(f"Failed to connect to SMBus proxy: {e}") from e
@@ -187,6 +191,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> bo
         entry.entry_id,
         get_configured_onewire_profiles(entry.options),
         get_configured_onewire_poll_intervals(entry.options),
+        polling_settings.fast_poll_interval,
+        polling_settings.slow_poll_interval,
     )
     entry.runtime_data = api
 
@@ -206,7 +212,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> bo
         device_registry.async_get_or_create(
             config_entry_id=entry.entry_id,
             identifiers={(DOMAIN, build_device_identifier(entry.entry_id, "sm117", f"{address:02x}"))},
-            name=f"SM117 0x{address:02X}",
+            name=get_module_name(entry.options, "sm117", address, f"SM117 0x{address:02X}"),
             manufacturer="CasaIT",
             model="SM117 1-Wire bridge",
         )

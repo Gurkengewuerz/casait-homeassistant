@@ -2,10 +2,30 @@
   "config": {
     "step": {
       "user": {
+        "title": "Connect to a casaIT bridge",
         "data": {
           "host": "Host",
           "port": "Port",
           "timeout": "Timeout"
+        },
+        "data_description": {
+          "host": "Hostname or IP address of the SMBus TCP bridge.",
+          "port": "TCP port exposed by the bridge.",
+          "timeout": "Maximum time in seconds to wait for one bridge response."
+        }
+      },
+      "reconfigure": {
+        "title": "Update bridge connection",
+        "description": "Change the network connection without losing module and OneWire settings.",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "timeout": "Timeout"
+        },
+        "data_description": {
+          "host": "Hostname or IP address of the SMBus TCP bridge.",
+          "port": "TCP port exposed by the bridge.",
+          "timeout": "Maximum time in seconds to wait for one bridge response."
         }
       },
       "zeroconf_confirm": {
@@ -15,15 +35,24 @@
           "host": "Host",
           "port": "Port",
           "timeout": "Timeout"
+        },
+        "data_description": {
+          "host": "Hostname or IP address advertised by the bridge.",
+          "port": "TCP port advertised by the bridge.",
+          "timeout": "Maximum time in seconds to wait for one bridge response."
         }
       }
     },
     "error": {
-      "cannot_connect": "Failed to connect",
+      "cannot_connect": "Failed to connect to a compatible casaIT bridge",
       "unknown": "Unexpected error"
     },
     "abort": {
-      "already_configured": "Device is already configured"
+      "already_configured": "This bridge is already configured",
+      "already_in_progress": "Configuration of this bridge is already in progress",
+      "cannot_connect": "Failed to connect to the discovered bridge",
+      "unknown": "Unexpected error",
+      "reconfigure_successful": "Bridge connection updated successfully"
     }
   },
   "entity": {
@@ -91,10 +120,77 @@
       }
     }
   },
+  "device_automation": {
+    "trigger_type": {
+      "press": "Pressed",
+      "long_press": "Long pressed",
+      "double_press": "Double pressed"
+    },
+    "trigger_subtype": {
+      "button_1": "Button 1",
+      "button_2": "Button 2",
+      "button_3": "Button 3",
+      "button_4": "Button 4",
+      "button_5": "Button 5",
+      "button_6": "Button 6",
+      "button_7": "Button 7",
+      "button_8": "Button 8"
+    }
+  },
   "services": {
     "scan_devices": {
       "name": "Scan devices",
       "description": "Scans the connected I2C bus for compatible devices."
+    }
+  },
+  "selector": {
+    "im117_role": {
+      "options": {
+        "switch": "Switch (persistent state)",
+        "button": "Push button",
+        "contact": "Contact with device class",
+        "unused": "Unused"
+      }
+    },
+    "contact_device_class": {
+      "options": {
+        "none": "None",
+        "door": "Door",
+        "window": "Window",
+        "garage_door": "Garage door",
+        "motion": "Motion",
+        "occupancy": "Occupancy",
+        "smoke": "Smoke",
+        "moisture": "Moisture",
+        "gas": "Gas",
+        "problem": "Problem",
+        "safety": "Safety",
+        "tamper": "Tamper"
+      }
+    },
+    "om117_mode": {
+      "options": {
+        "switch": "Two switch outputs",
+        "blind": "Blind or roller shutter"
+      }
+    },
+    "dm117_slot_type": {
+      "options": {
+        "none": "Unused",
+        "binary_input": "24 V digital input",
+        "switch": "24 V digital output",
+        "dimmer": "0-10 V dimmer output"
+      }
+    },
+    "onewire_profile": {
+      "options": {
+        "ds18b20_temp": "DS18B20 temperature sensor",
+        "ds2438_hih4030_tept5600": "DS2438 with HIH4030 and TEPT5600",
+        "ds2438_hih5030_tept5600": "DS2438 with HIH5030 and TEPT5600",
+        "ds2413_out": "DS2413 with two digital outputs",
+        "ds2413_in": "DS2413 with two digital inputs",
+        "ds28e17_led": "DS28E17 LED controller"
+      }
     }
   },
   "options": {
@@ -105,20 +201,25 @@
           "im117_select": "Configure IM117 modules",
           "om117_select": "Configure OM117 modules",
           "dm117_select": "Configure DM117 modules",
+          "sm117_select": "Configure SM117 modules",
           "onewire_select": "Configure OneWire devices",
-          "input_settings": "Button timings"
+          "global_settings": "Global settings"
         }
       },
       "im117_select": {
         "title": "Select IM117 module",
         "data": {
           "selected_module": "Module"
+        },
+        "data_description": {
+          "selected_module": "Input module to configure."
         }
       },
       "im117_config": {
         "title": "Configure IM117 module: {module_name}",
-        "description": "Choose what each input is wired to. A button reports press events, a switch or contact reports a lasting state.",
+        "description": "Choose what each input is wired to. Push buttons report events; switches and contacts report a persistent state.",
         "data": {
+          "module_name": "Module name",
           "port_1_role": "Input 1",
           "port_1_device_class": "Input 1 device class",
           "port_2_role": "Input 2",
@@ -135,56 +236,115 @@
           "port_7_device_class": "Input 7 device class",
           "port_8_role": "Input 8",
           "port_8_device_class": "Input 8 device class"
-        }
-      },
-      "input_settings": {
-        "title": "Button timings",
-        "description": "Applies to every input configured as a button.",
-        "data": {
-          "long_press_ms": "Long press threshold (ms)",
-          "double_click_ms": "Double click window (ms)"
         },
         "data_description": {
-          "long_press_ms": "Holding a button at least this long reports a long press instead of a press.",
-          "double_click_ms": "Set to 0 to report every press immediately. Any higher value delays a single press by this long while waiting for a second one."
+          "module_name": "Name shown for this module and all of its entities.",
+          "port_1_role": "Function connected to input 1.",
+          "port_1_device_class": "Device class used when input 1 is a contact.",
+          "port_2_role": "Function connected to input 2.",
+          "port_2_device_class": "Device class used when input 2 is a contact.",
+          "port_3_role": "Function connected to input 3.",
+          "port_3_device_class": "Device class used when input 3 is a contact.",
+          "port_4_role": "Function connected to input 4.",
+          "port_4_device_class": "Device class used when input 4 is a contact.",
+          "port_5_role": "Function connected to input 5.",
+          "port_5_device_class": "Device class used when input 5 is a contact.",
+          "port_6_role": "Function connected to input 6.",
+          "port_6_device_class": "Device class used when input 6 is a contact.",
+          "port_7_role": "Function connected to input 7.",
+          "port_7_device_class": "Device class used when input 7 is a contact.",
+          "port_8_role": "Function connected to input 8.",
+          "port_8_device_class": "Device class used when input 8 is a contact."
+        }
+      },
+      "global_settings": {
+        "title": "Global settings",
+        "description": "These values apply to the complete bridge.",
+        "data": {
+          "long_press_ms": "Long press threshold (ms)",
+          "double_click_ms": "Double click window (ms)",
+          "fast_poll_interval_ms": "Fast polling interval (ms)",
+          "slow_poll_interval": "Slow polling interval (s)",
+          "max_send_interval_ms": "Maximum send spacing (ms)"
+        },
+        "data_description": {
+          "long_press_ms": "Holding a button at least this long reports a long press.",
+          "double_click_ms": "Time to wait for a second press. Set to 0 to report single presses immediately.",
+          "fast_poll_interval_ms": "Delay between input polling cycles.",
+          "slow_poll_interval": "Interval for consistency checks of output-only modules.",
+          "max_send_interval_ms": "Largest spacing the adaptive bridge transport may use after communication errors."
         }
       },
       "om117_select": {
         "title": "Select OM117 module",
         "data": {
           "selected_module": "Module"
+        },
+        "data_description": {
+          "selected_module": "Output module to configure."
         }
       },
       "om117_config": {
         "title": "Configure OM117 module: {module_name}",
         "data": {
+          "module_name": "Module name",
           "pair_1_mode": "Pair 1 mode",
-          "pair_1_open_time": "Pair 1 open time (s)",
-          "pair_1_close_time": "Pair 1 close time (s)",
-          "pair_1_overrun_time": "Pair 1 overrun (s)",
           "pair_2_mode": "Pair 2 mode",
-          "pair_2_open_time": "Pair 2 open time (s)",
-          "pair_2_close_time": "Pair 2 close time (s)",
-          "pair_2_overrun_time": "Pair 2 overrun (s)",
           "pair_3_mode": "Pair 3 mode",
-          "pair_3_open_time": "Pair 3 open time (s)",
-          "pair_3_close_time": "Pair 3 close time (s)",
+          "pair_4_mode": "Pair 4 mode"
+        },
+        "data_description": {
+          "module_name": "Name shown for this module and all of its entities.",
+          "pair_1_mode": "Use outputs 1 and 2 separately or as one blind.",
+          "pair_2_mode": "Use outputs 3 and 4 separately or as one blind.",
+          "pair_3_mode": "Use outputs 5 and 6 separately or as one blind.",
+          "pair_4_mode": "Use outputs 7 and 8 separately or as one blind."
+        }
+      },
+      "om117_timing": {
+        "title": "Configure blind timings: {module_name}",
+        "data": {
+          "pair_1_open_time": "Pair 1 opening time (s)",
+          "pair_1_close_time": "Pair 1 closing time (s)",
+          "pair_1_overrun_time": "Pair 1 overrun (s)",
+          "pair_2_open_time": "Pair 2 opening time (s)",
+          "pair_2_close_time": "Pair 2 closing time (s)",
+          "pair_2_overrun_time": "Pair 2 overrun (s)",
+          "pair_3_open_time": "Pair 3 opening time (s)",
+          "pair_3_close_time": "Pair 3 closing time (s)",
           "pair_3_overrun_time": "Pair 3 overrun (s)",
-          "pair_4_mode": "Pair 4 mode",
-          "pair_4_open_time": "Pair 4 open time (s)",
-          "pair_4_close_time": "Pair 4 close time (s)",
+          "pair_4_open_time": "Pair 4 opening time (s)",
+          "pair_4_close_time": "Pair 4 closing time (s)",
           "pair_4_overrun_time": "Pair 4 overrun (s)"
+        },
+        "data_description": {
+          "pair_1_open_time": "Time required for pair 1 to open fully.",
+          "pair_1_close_time": "Time required for pair 1 to close fully.",
+          "pair_1_overrun_time": "Additional motor time at the end position for pair 1.",
+          "pair_2_open_time": "Time required for pair 2 to open fully.",
+          "pair_2_close_time": "Time required for pair 2 to close fully.",
+          "pair_2_overrun_time": "Additional motor time at the end position for pair 2.",
+          "pair_3_open_time": "Time required for pair 3 to open fully.",
+          "pair_3_close_time": "Time required for pair 3 to close fully.",
+          "pair_3_overrun_time": "Additional motor time at the end position for pair 3.",
+          "pair_4_open_time": "Time required for pair 4 to open fully.",
+          "pair_4_close_time": "Time required for pair 4 to close fully.",
+          "pair_4_overrun_time": "Additional motor time at the end position for pair 4."
         }
       },
       "dm117_select": {
         "title": "Select DM117 module",
         "data": {
           "selected_module": "Module"
+        },
+        "data_description": {
+          "selected_module": "Digital module to configure."
         }
       },
       "dm117_config": {
         "title": "Configure DM117 module: {module_name}",
         "data": {
+          "module_name": "Module name",
           "slot_1": "Slot 1",
           "slot_2": "Slot 2",
           "slot_3": "Slot 3",
@@ -193,20 +353,64 @@
           "slot_6": "Slot 6",
           "slot_7": "Slot 7",
           "slot_8": "Slot 8"
+        },
+        "data_description": {
+          "module_name": "Name shown for this module and all of its entities.",
+          "slot_1": "Hardware installed in slot 1.",
+          "slot_2": "Hardware installed in slot 2.",
+          "slot_3": "Hardware installed in slot 3.",
+          "slot_4": "Hardware installed in slot 4.",
+          "slot_5": "Hardware installed in slot 5.",
+          "slot_6": "Hardware installed in slot 6.",
+          "slot_7": "Hardware installed in slot 7.",
+          "slot_8": "Hardware installed in slot 8."
+        }
+      },
+      "sm117_select": {
+        "title": "Select SM117 module",
+        "data": {
+          "selected_module": "Module"
+        },
+        "data_description": {
+          "selected_module": "OneWire bus module to configure."
+        }
+      },
+      "sm117_config": {
+        "title": "Configure SM117 module: {module_name}",
+        "data": {
+          "module_name": "Module name"
+        },
+        "data_description": {
+          "module_name": "Name shown for this module and its connected OneWire devices."
         }
       },
       "onewire_select": {
         "title": "Select OneWire device",
         "data": {
           "selected_device": "Device"
+        },
+        "data_description": {
+          "selected_device": "Detected OneWire device to configure."
         }
       },
       "onewire_config": {
         "title": "Assign OneWire profile: {device_id}",
         "data": {
-          "profile": "Profile",
-          "led_count": "LED count",
-          "poll_interval": "Polling interval (s)"
+          "profile": "Profile"
+        },
+        "data_description": {
+          "profile": "Hardware and function connected to this OneWire address."
+        }
+      },
+      "onewire_settings": {
+        "title": "Configure OneWire device: {device_id}",
+        "data": {
+          "poll_interval": "Polling interval (s)",
+          "led_count": "LED count"
+        },
+        "data_description": {
+          "poll_interval": "Time between reads of this device.",
+          "led_count": "Number of addressable LEDs connected to the controller."
         }
       }
     },
@@ -215,6 +419,7 @@
       "no_dm117_found": "No DM117 modules found",
       "no_im117_found": "No IM117 modules found",
       "no_om117_found": "No OM117 modules found",
+      "no_sm117_found": "No SM117 modules found",
       "no_onewire_found": "No OneWire devices found"
     }
   }

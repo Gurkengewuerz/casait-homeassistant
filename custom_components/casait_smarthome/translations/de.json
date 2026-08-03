@@ -2,28 +2,57 @@
   "config": {
     "step": {
       "user": {
+        "title": "Mit einer casaIT-Bridge verbinden",
         "data": {
           "host": "Host",
           "port": "Port",
-          "timeout": "Zeitüberschreitung"
+          "timeout": "Zeit\u00fcberschreitung"
+        },
+        "data_description": {
+          "host": "Hostname oder IP-Adresse der SMBus-TCP-Bridge.",
+          "port": "TCP-Port, den die Bridge bereitstellt.",
+          "timeout": "Maximale Wartezeit in Sekunden auf eine Antwort der Bridge."
+        }
+      },
+      "reconfigure": {
+        "title": "Bridge-Verbindung \u00e4ndern",
+        "description": "Die Netzwerkverbindung \u00e4ndern, ohne Modul- oder OneWire-Einstellungen zu verlieren.",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "timeout": "Zeit\u00fcberschreitung"
+        },
+        "data_description": {
+          "host": "Hostname oder IP-Adresse der SMBus-TCP-Bridge.",
+          "port": "TCP-Port, den die Bridge bereitstellt.",
+          "timeout": "Maximale Wartezeit in Sekunden auf eine Antwort der Bridge."
         }
       },
       "zeroconf_confirm": {
-        "title": "Gefundene casaIT-Bridge bestätigen",
+        "title": "Gefundene casaIT-Bridge best\u00e4tigen",
         "description": "Die gefundene Bridge unter {host} einrichten.",
         "data": {
           "host": "Host",
           "port": "Port",
-          "timeout": "Zeitüberschreitung"
+          "timeout": "Zeit\u00fcberschreitung"
+        },
+        "data_description": {
+          "host": "Von der Bridge angek\u00fcndigter Hostname oder IP-Adresse.",
+          "port": "Von der Bridge angek\u00fcndigter TCP-Port.",
+          "timeout": "Maximale Wartezeit in Sekunden auf eine Antwort der Bridge."
         }
       }
     },
     "error": {
-      "cannot_connect": "Verbindung fehlgeschlagen",
+      "cannot_connect": "Verbindung zu einer kompatiblen casaIT-Bridge fehlgeschlagen",
       "unknown": "Unerwarteter Fehler"
     },
     "abort": {
-      "already_configured": "Gerät ist bereits konfiguriert"
+      "already_configured": "Diese Bridge ist bereits konfiguriert",
+      "already_in_progress": "Die Konfiguration dieser Bridge l\u00e4uft bereits",
+      "cannot_connect": "Verbindung zur gefundenen Bridge fehlgeschlagen",
+      "unknown": "Unerwarteter Fehler",
+      "reconfigure_successful": "Bridge-Verbindung erfolgreich aktualisiert"
     }
   },
   "entity": {
@@ -32,7 +61,7 @@
         "name": "Eingang {port}"
       },
       "dm117_input": {
-        "name": "Slot {slot} Eingang {channel}"
+        "name": "Steckplatz {slot} Eingang {channel}"
       },
       "ds2413_input": {
         "name": "Eingang {channel}"
@@ -43,7 +72,7 @@
         "name": "Ausgang {port}"
       },
       "dm117_output": {
-        "name": "Slot {slot} Ausgang {channel}"
+        "name": "Steckplatz {slot} Ausgang {channel}"
       },
       "ds2413_output": {
         "name": "Ausgang {channel}"
@@ -51,7 +80,7 @@
     },
     "light": {
       "dm117_dimmer": {
-        "name": "Slot {slot} Dimmer"
+        "name": "Steckplatz {slot} Dimmer"
       },
       "led_controller": {
         "name": "LED-Controller"
@@ -62,20 +91,6 @@
         "name": "Jalousie {pair}"
       }
     },
-    "sensor": {
-      "temperature": {
-        "name": "Temperatur"
-      },
-      "humidity": {
-        "name": "Luftfeuchtigkeit"
-      },
-      "illuminance": {
-        "name": "Beleuchtungsstärke"
-      },
-      "diagnostics": {
-        "name": "Diagnose"
-      }
-    },
     "event": {
       "im117_button": {
         "name": "Taster {port}",
@@ -84,17 +99,98 @@
             "state": {
               "press": "Kurzer Druck",
               "long_press": "Langer Druck",
-              "double_press": "Doppelter Druck"
+              "double_press": "Doppeldruck"
             }
           }
         }
       }
+    },
+    "sensor": {
+      "temperature": {
+        "name": "Temperatur"
+      },
+      "humidity": {
+        "name": "Luftfeuchtigkeit"
+      },
+      "illuminance": {
+        "name": "Beleuchtungsst\u00e4rke"
+      },
+      "diagnostics": {
+        "name": "Diagnose"
+      }
+    }
+  },
+  "device_automation": {
+    "trigger_type": {
+      "press": "Kurz gedr\u00fcckt",
+      "long_press": "Lange gedr\u00fcckt",
+      "double_press": "Doppelt gedr\u00fcckt"
+    },
+    "trigger_subtype": {
+      "button_1": "Taster 1",
+      "button_2": "Taster 2",
+      "button_3": "Taster 3",
+      "button_4": "Taster 4",
+      "button_5": "Taster 5",
+      "button_6": "Taster 6",
+      "button_7": "Taster 7",
+      "button_8": "Taster 8"
     }
   },
   "services": {
     "scan_devices": {
-      "name": "Geräte suchen",
-      "description": "Durchsucht den verbundenen I2C-Bus nach kompatiblen Geräten."
+      "name": "Ger\u00e4te suchen",
+      "description": "Durchsucht den verbundenen I2C-Bus nach kompatiblen Ger\u00e4ten."
+    }
+  },
+  "selector": {
+    "im117_role": {
+      "options": {
+        "switch": "Schalter (Dauerzustand)",
+        "button": "Taster",
+        "contact": "Kontakt mit Ger\u00e4teklasse",
+        "unused": "Nicht belegt"
+      }
+    },
+    "contact_device_class": {
+      "options": {
+        "none": "Keine",
+        "door": "T\u00fcr",
+        "window": "Fenster",
+        "garage_door": "Garagentor",
+        "motion": "Bewegung",
+        "occupancy": "Anwesenheit",
+        "smoke": "Rauch",
+        "moisture": "Feuchtigkeit",
+        "gas": "Gas",
+        "problem": "Problem",
+        "safety": "Sicherheit",
+        "tamper": "Sabotage"
+      }
+    },
+    "om117_mode": {
+      "options": {
+        "switch": "Zwei Schaltausg\u00e4nge",
+        "blind": "Jalousie oder Rollladen"
+      }
+    },
+    "dm117_slot_type": {
+      "options": {
+        "none": "Nicht belegt",
+        "binary_input": "24-V-Digitaleingang",
+        "switch": "24-V-Digitalausgang",
+        "dimmer": "0\u201310-V-Dimmerausgang"
+      }
+    },
+    "onewire_profile": {
+      "options": {
+        "ds18b20_temp": "DS18B20-Temperatursensor",
+        "ds2438_hih4030_tept5600": "DS2438 mit HIH4030 und TEPT5600",
+        "ds2438_hih5030_tept5600": "DS2438 mit HIH5030 und TEPT5600",
+        "ds2413_out": "DS2413 mit zwei Digitalausg\u00e4ngen",
+        "ds2413_in": "DS2413 mit zwei Digitaleing\u00e4ngen",
+        "ds28e17_led": "DS28E17-LED-Controller"
+      }
     }
   },
   "options": {
@@ -105,117 +201,226 @@
           "im117_select": "IM117-Module konfigurieren",
           "om117_select": "OM117-Module konfigurieren",
           "dm117_select": "DM117-Module konfigurieren",
-          "onewire_select": "OneWire-Geräte konfigurieren",
-          "input_settings": "Tastenzeiten"
+          "sm117_select": "SM117-Module konfigurieren",
+          "onewire_select": "OneWire-Ger\u00e4te konfigurieren",
+          "global_settings": "Globale Einstellungen"
+        }
+      },
+      "im117_select": {
+        "title": "IM117-Modul ausw\u00e4hlen",
+        "data": {
+          "selected_module": "Modul"
+        },
+        "data_description": {
+          "selected_module": "Zu konfigurierendes Eingangsmodul."
+        }
+      },
+      "im117_config": {
+        "title": "IM117-Modul konfigurieren: {module_name}",
+        "description": "Lege fest, was an jedem Eingang angeschlossen ist. Taster melden Ereignisse, Schalter und Kontakte einen dauerhaften Zustand.",
+        "data": {
+          "module_name": "Modulname",
+          "port_1_role": "Eingang 1",
+          "port_1_device_class": "Ger\u00e4teklasse Eingang 1",
+          "port_2_role": "Eingang 2",
+          "port_2_device_class": "Ger\u00e4teklasse Eingang 2",
+          "port_3_role": "Eingang 3",
+          "port_3_device_class": "Ger\u00e4teklasse Eingang 3",
+          "port_4_role": "Eingang 4",
+          "port_4_device_class": "Ger\u00e4teklasse Eingang 4",
+          "port_5_role": "Eingang 5",
+          "port_5_device_class": "Ger\u00e4teklasse Eingang 5",
+          "port_6_role": "Eingang 6",
+          "port_6_device_class": "Ger\u00e4teklasse Eingang 6",
+          "port_7_role": "Eingang 7",
+          "port_7_device_class": "Ger\u00e4teklasse Eingang 7",
+          "port_8_role": "Eingang 8",
+          "port_8_device_class": "Ger\u00e4teklasse Eingang 8"
+        },
+        "data_description": {
+          "module_name": "Angezeigter Name f\u00fcr dieses Modul und alle zugeh\u00f6rigen Entit\u00e4ten.",
+          "port_1_role": "Funktion am Eingang 1.",
+          "port_1_device_class": "Ger\u00e4teklasse, wenn Eingang 1 als Kontakt verwendet wird.",
+          "port_2_role": "Funktion am Eingang 2.",
+          "port_2_device_class": "Ger\u00e4teklasse, wenn Eingang 2 als Kontakt verwendet wird.",
+          "port_3_role": "Funktion am Eingang 3.",
+          "port_3_device_class": "Ger\u00e4teklasse, wenn Eingang 3 als Kontakt verwendet wird.",
+          "port_4_role": "Funktion am Eingang 4.",
+          "port_4_device_class": "Ger\u00e4teklasse, wenn Eingang 4 als Kontakt verwendet wird.",
+          "port_5_role": "Funktion am Eingang 5.",
+          "port_5_device_class": "Ger\u00e4teklasse, wenn Eingang 5 als Kontakt verwendet wird.",
+          "port_6_role": "Funktion am Eingang 6.",
+          "port_6_device_class": "Ger\u00e4teklasse, wenn Eingang 6 als Kontakt verwendet wird.",
+          "port_7_role": "Funktion am Eingang 7.",
+          "port_7_device_class": "Ger\u00e4teklasse, wenn Eingang 7 als Kontakt verwendet wird.",
+          "port_8_role": "Funktion am Eingang 8.",
+          "port_8_device_class": "Ger\u00e4teklasse, wenn Eingang 8 als Kontakt verwendet wird."
+        }
+      },
+      "global_settings": {
+        "title": "Globale Einstellungen",
+        "description": "Diese Werte gelten f\u00fcr die gesamte Bridge.",
+        "data": {
+          "long_press_ms": "Schwelle f\u00fcr langen Druck (ms)",
+          "double_click_ms": "Doppelklick-Zeitfenster (ms)",
+          "fast_poll_interval_ms": "Schnelles Abfrageintervall (ms)",
+          "slow_poll_interval": "Langsames Abfrageintervall (s)",
+          "max_send_interval_ms": "Maximaler Sendeabstand (ms)"
+        },
+        "data_description": {
+          "long_press_ms": "Wird ein Taster mindestens so lange gehalten, wird ein langer Druck gemeldet.",
+          "double_click_ms": "Wartezeit auf einen zweiten Druck. Mit 0 werden einzelne Tastendr\u00fccke sofort gemeldet.",
+          "fast_poll_interval_ms": "Pause zwischen den Abfragezyklen der Eing\u00e4nge.",
+          "slow_poll_interval": "Intervall f\u00fcr Konsistenzpr\u00fcfungen reiner Ausgangsmodule.",
+          "max_send_interval_ms": "Gr\u00f6\u00dfter Abstand, den der adaptive Bridge-Transport nach Kommunikationsfehlern verwenden darf."
         }
       },
       "om117_select": {
-        "title": "OM117-Modul auswählen",
+        "title": "OM117-Modul ausw\u00e4hlen",
         "data": {
           "selected_module": "Modul"
+        },
+        "data_description": {
+          "selected_module": "Zu konfigurierendes Ausgangsmodul."
         }
       },
       "om117_config": {
         "title": "OM117-Modul konfigurieren: {module_name}",
         "data": {
-          "pair_1_mode": "Paar 1 Modus",
-          "pair_1_open_time": "Paar 1 Öffnungszeit (s)",
-          "pair_1_close_time": "Paar 1 Schließzeit (s)",
-          "pair_1_overrun_time": "Paar 1 Nachlauf (s)",
-          "pair_2_mode": "Paar 2 Modus",
-          "pair_2_open_time": "Paar 2 Öffnungszeit (s)",
-          "pair_2_close_time": "Paar 2 Schließzeit (s)",
-          "pair_2_overrun_time": "Paar 2 Nachlauf (s)",
-          "pair_3_mode": "Paar 3 Modus",
-          "pair_3_open_time": "Paar 3 Öffnungszeit (s)",
-          "pair_3_close_time": "Paar 3 Schließzeit (s)",
-          "pair_3_overrun_time": "Paar 3 Nachlauf (s)",
-          "pair_4_mode": "Paar 4 Modus",
-          "pair_4_open_time": "Paar 4 Öffnungszeit (s)",
-          "pair_4_close_time": "Paar 4 Schließzeit (s)",
-          "pair_4_overrun_time": "Paar 4 Nachlauf (s)"
+          "module_name": "Modulname",
+          "pair_1_mode": "Modus Paar 1",
+          "pair_2_mode": "Modus Paar 2",
+          "pair_3_mode": "Modus Paar 3",
+          "pair_4_mode": "Modus Paar 4"
+        },
+        "data_description": {
+          "module_name": "Angezeigter Name f\u00fcr dieses Modul und alle zugeh\u00f6rigen Entit\u00e4ten.",
+          "pair_1_mode": "Ausg\u00e4nge 1 und 2 einzeln oder gemeinsam als Jalousie verwenden.",
+          "pair_2_mode": "Ausg\u00e4nge 3 und 4 einzeln oder gemeinsam als Jalousie verwenden.",
+          "pair_3_mode": "Ausg\u00e4nge 5 und 6 einzeln oder gemeinsam als Jalousie verwenden.",
+          "pair_4_mode": "Ausg\u00e4nge 7 und 8 einzeln oder gemeinsam als Jalousie verwenden."
+        }
+      },
+      "om117_timing": {
+        "title": "Jalousie-Laufzeiten konfigurieren: {module_name}",
+        "data": {
+          "pair_1_open_time": "\u00d6ffnungszeit Paar 1 (s)",
+          "pair_1_close_time": "Schlie\u00dfzeit Paar 1 (s)",
+          "pair_1_overrun_time": "Nachlauf Paar 1 (s)",
+          "pair_2_open_time": "\u00d6ffnungszeit Paar 2 (s)",
+          "pair_2_close_time": "Schlie\u00dfzeit Paar 2 (s)",
+          "pair_2_overrun_time": "Nachlauf Paar 2 (s)",
+          "pair_3_open_time": "\u00d6ffnungszeit Paar 3 (s)",
+          "pair_3_close_time": "Schlie\u00dfzeit Paar 3 (s)",
+          "pair_3_overrun_time": "Nachlauf Paar 3 (s)",
+          "pair_4_open_time": "\u00d6ffnungszeit Paar 4 (s)",
+          "pair_4_close_time": "Schlie\u00dfzeit Paar 4 (s)",
+          "pair_4_overrun_time": "Nachlauf Paar 4 (s)"
+        },
+        "data_description": {
+          "pair_1_open_time": "Zeit, die Paar 1 zum vollst\u00e4ndigen \u00d6ffnen ben\u00f6tigt.",
+          "pair_1_close_time": "Zeit, die Paar 1 zum vollst\u00e4ndigen Schlie\u00dfen ben\u00f6tigt.",
+          "pair_1_overrun_time": "Zus\u00e4tzliche Motorlaufzeit in der Endlage f\u00fcr Paar 1.",
+          "pair_2_open_time": "Zeit, die Paar 2 zum vollst\u00e4ndigen \u00d6ffnen ben\u00f6tigt.",
+          "pair_2_close_time": "Zeit, die Paar 2 zum vollst\u00e4ndigen Schlie\u00dfen ben\u00f6tigt.",
+          "pair_2_overrun_time": "Zus\u00e4tzliche Motorlaufzeit in der Endlage f\u00fcr Paar 2.",
+          "pair_3_open_time": "Zeit, die Paar 3 zum vollst\u00e4ndigen \u00d6ffnen ben\u00f6tigt.",
+          "pair_3_close_time": "Zeit, die Paar 3 zum vollst\u00e4ndigen Schlie\u00dfen ben\u00f6tigt.",
+          "pair_3_overrun_time": "Zus\u00e4tzliche Motorlaufzeit in der Endlage f\u00fcr Paar 3.",
+          "pair_4_open_time": "Zeit, die Paar 4 zum vollst\u00e4ndigen \u00d6ffnen ben\u00f6tigt.",
+          "pair_4_close_time": "Zeit, die Paar 4 zum vollst\u00e4ndigen Schlie\u00dfen ben\u00f6tigt.",
+          "pair_4_overrun_time": "Zus\u00e4tzliche Motorlaufzeit in der Endlage f\u00fcr Paar 4."
         }
       },
       "dm117_select": {
-        "title": "DM117-Modul auswählen",
+        "title": "DM117-Modul ausw\u00e4hlen",
         "data": {
           "selected_module": "Modul"
+        },
+        "data_description": {
+          "selected_module": "Zu konfigurierendes Digitalmodul."
         }
       },
       "dm117_config": {
         "title": "DM117-Modul konfigurieren: {module_name}",
         "data": {
-          "slot_1": "Slot 1",
-          "slot_2": "Slot 2",
-          "slot_3": "Slot 3",
-          "slot_4": "Slot 4",
-          "slot_5": "Slot 5",
-          "slot_6": "Slot 6",
-          "slot_7": "Slot 7",
-          "slot_8": "Slot 8"
+          "module_name": "Modulname",
+          "slot_1": "Steckplatz 1",
+          "slot_2": "Steckplatz 2",
+          "slot_3": "Steckplatz 3",
+          "slot_4": "Steckplatz 4",
+          "slot_5": "Steckplatz 5",
+          "slot_6": "Steckplatz 6",
+          "slot_7": "Steckplatz 7",
+          "slot_8": "Steckplatz 8"
+        },
+        "data_description": {
+          "module_name": "Angezeigter Name f\u00fcr dieses Modul und alle zugeh\u00f6rigen Entit\u00e4ten.",
+          "slot_1": "In Steckplatz 1 installierte Hardware.",
+          "slot_2": "In Steckplatz 2 installierte Hardware.",
+          "slot_3": "In Steckplatz 3 installierte Hardware.",
+          "slot_4": "In Steckplatz 4 installierte Hardware.",
+          "slot_5": "In Steckplatz 5 installierte Hardware.",
+          "slot_6": "In Steckplatz 6 installierte Hardware.",
+          "slot_7": "In Steckplatz 7 installierte Hardware.",
+          "slot_8": "In Steckplatz 8 installierte Hardware."
+        }
+      },
+      "sm117_select": {
+        "title": "SM117-Modul ausw\u00e4hlen",
+        "data": {
+          "selected_module": "Modul"
+        },
+        "data_description": {
+          "selected_module": "Zu konfigurierendes OneWire-Busmodul."
+        }
+      },
+      "sm117_config": {
+        "title": "SM117-Modul konfigurieren: {module_name}",
+        "data": {
+          "module_name": "Modulname"
+        },
+        "data_description": {
+          "module_name": "Angezeigter Name f\u00fcr dieses Modul und die verbundenen OneWire-Ger\u00e4te."
         }
       },
       "onewire_select": {
-        "title": "OneWire-Gerät auswählen",
+        "title": "OneWire-Ger\u00e4t ausw\u00e4hlen",
         "data": {
-          "selected_device": "Gerät"
+          "selected_device": "Ger\u00e4t"
+        },
+        "data_description": {
+          "selected_device": "Zu konfigurierendes, erkanntes OneWire-Ger\u00e4t."
         }
       },
       "onewire_config": {
         "title": "OneWire-Profil zuweisen: {device_id}",
         "data": {
-          "profile": "Profil",
-          "led_count": "Anzahl LEDs",
-          "poll_interval": "Abfrageintervall (s)"
-        }
-      },
-      "im117_select": {
-        "title": "IM117-Modul auswählen",
-        "data": {
-          "selected_module": "Modul"
-        }
-      },
-      "im117_config": {
-        "title": "IM117-Modul konfigurieren: {module_name}",
-        "description": "Lege fest, was an jedem Eingang angeschlossen ist. Ein Taster meldet Druckereignisse, ein Schalter oder Kontakt einen Dauerzustand.",
-        "data": {
-          "port_1_role": "Eingang 1",
-          "port_1_device_class": "Eingang 1 Geräteklasse",
-          "port_2_role": "Eingang 2",
-          "port_2_device_class": "Eingang 2 Geräteklasse",
-          "port_3_role": "Eingang 3",
-          "port_3_device_class": "Eingang 3 Geräteklasse",
-          "port_4_role": "Eingang 4",
-          "port_4_device_class": "Eingang 4 Geräteklasse",
-          "port_5_role": "Eingang 5",
-          "port_5_device_class": "Eingang 5 Geräteklasse",
-          "port_6_role": "Eingang 6",
-          "port_6_device_class": "Eingang 6 Geräteklasse",
-          "port_7_role": "Eingang 7",
-          "port_7_device_class": "Eingang 7 Geräteklasse",
-          "port_8_role": "Eingang 8",
-          "port_8_device_class": "Eingang 8 Geräteklasse"
-        }
-      },
-      "input_settings": {
-        "title": "Tastenzeiten",
-        "description": "Gilt für jeden Eingang, der als Taster konfiguriert ist.",
-        "data": {
-          "long_press_ms": "Schwelle für langen Druck (ms)",
-          "double_click_ms": "Zeitfenster für Doppelklick (ms)"
+          "profile": "Profil"
         },
         "data_description": {
-          "long_press_ms": "Wird die Taste mindestens so lange gehalten, meldet sie einen langen statt eines kurzen Drucks.",
-          "double_click_ms": "0 meldet jeden Druck sofort. Jeder höhere Wert verzögert einen einzelnen Druck um diese Zeit, während auf einen zweiten gewartet wird."
+          "profile": "Hardware und Funktion an dieser OneWire-Adresse."
+        }
+      },
+      "onewire_settings": {
+        "title": "OneWire-Ger\u00e4t konfigurieren: {device_id}",
+        "data": {
+          "poll_interval": "Abfrageintervall (s)",
+          "led_count": "Anzahl LEDs"
+        },
+        "data_description": {
+          "poll_interval": "Zeit zwischen den Abfragen dieses Ger\u00e4ts.",
+          "led_count": "Anzahl der am Controller angeschlossenen adressierbaren LEDs."
         }
       }
     },
     "abort": {
-      "integration_not_ready": "Integration ist noch nicht bereit",
+      "integration_not_ready": "Die Integration ist noch nicht bereit",
       "no_dm117_found": "Keine DM117-Module gefunden",
+      "no_im117_found": "Keine IM117-Module gefunden",
       "no_om117_found": "Keine OM117-Module gefunden",
-      "no_onewire_found": "Keine OneWire-Geräte gefunden",
-      "no_im117_found": "Keine IM117-Module gefunden"
+      "no_sm117_found": "Keine SM117-Module gefunden",
+      "no_onewire_found": "Keine OneWire-Ger\u00e4te gefunden"
     }
   }
 }

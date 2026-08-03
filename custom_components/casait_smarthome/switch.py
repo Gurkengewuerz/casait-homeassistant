@@ -26,6 +26,7 @@ from .helpers import (
     get_address_range,
     get_configured_onewire_profiles,
     get_dm117_port_configuration,
+    get_module_name,
     get_om117_pair_configuration,
 )
 from .services.i2cClasses.dm117 import DeviceType, DM117PortConfig, PortConfig
@@ -107,7 +108,7 @@ class CasaITSwitch(SwitchEntity):
         self._attr_translation_placeholders = {"port": str(port + 1)}
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, build_device_identifier(config_entry.entry_id, "om117", address))},
-            name=f"OM117 0x{address:02X}",
+            name=get_module_name(config_entry.options, "om117", address, f"OM117 0x{address:02X}"),
             manufacturer="casaIT",
             model="PCF8574 Output",
         )
@@ -190,7 +191,7 @@ class CasaITDM117Switch(SwitchEntity):
         self._attr_translation_placeholders = {"slot": str(self._slot), "channel": channel_name}
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, build_device_identifier(config_entry.entry_id, "dm117", address))},
-            name=f"DM117 0x{address:02X}",
+            name=get_module_name(config_entry.options, "dm117", address, f"DM117 0x{address:02X}"),
             manufacturer="casaIT",
             model="DM117",
         )

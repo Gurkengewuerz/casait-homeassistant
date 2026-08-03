@@ -17,9 +17,12 @@ from .const import (
     DEFAULT_BLIND_OPEN_TIME,
     DEFAULT_BLIND_OVERRUN_TIME,
     DEFAULT_DOUBLE_CLICK_MS,
+    DEFAULT_FAST_POLL_INTERVAL,
     DEFAULT_IM117_ROLE,
     DEFAULT_LONG_PRESS_MS,
+    DEFAULT_MAX_SEND_INTERVAL,
     DEFAULT_OW_PROFILE,
+    DEFAULT_SLOW_POLL_INTERVAL,
     DOMAIN,
     I2C_ADDR_RANGES,
     IM117_ROLE_BUTTON,
@@ -29,13 +32,17 @@ from .const import (
     OM117_MODE_BLIND,
     OM117_MODE_SWITCH,
     OPT_DOUBLE_CLICK_MS,
+    OPT_FAST_POLL_INTERVAL_MS,
     OPT_LONG_PRESS_MS,
+    OPT_MAX_SEND_INTERVAL_MS,
     OPT_MODULES,
+    OPT_NAME,
     OPT_ONEWIRE,
     OPT_PAIRS,
     OPT_PORTS,
     OPT_SETTINGS,
     OPT_SLOTS,
+    OPT_SLOW_POLL_INTERVAL,
 )
 from .services.i2cClasses.dm117 import DeviceType
 
@@ -364,6 +371,15 @@ class InputSettings:
     double_click_ms: int = DEFAULT_DOUBLE_CLICK_MS
 
 
+@dataclass
+class PollingSettings:
+    """Polling cadence and adaptive transport limit."""
+
+    fast_poll_interval: float = DEFAULT_FAST_POLL_INTERVAL
+    slow_poll_interval: float = DEFAULT_SLOW_POLL_INTERVAL
+    max_send_interval: float = DEFAULT_MAX_SEND_INTERVAL
+
+
 def get_im117_port_configuration(options: Mapping[str, Any]) -> dict[int, dict[int, IM117PortConfig]]:
     """Return the configured role of every IM117 input port, keyed by address.
 
@@ -402,15 +418,32 @@ def get_input_settings(options: Mapping[str, Any]) -> InputSettings:
     )
 
 
+def get_polling_settings(options: Mapping[str, Any]) -> PollingSettings:
+    """Return polling and transport settings, falling back to defaults."""
+
+    settings = _section(options, OPT_SETTINGS)
+    fast_ms = _bounded_float(settings.get(OPT_FAST_POLL_INTERVAL_MS), 5.0, 1000.0)
+    slow_seconds = _bounded_float(settings.get(OPT_SLOW_POLL_INTERVAL), 1.0, 3600.0)
+    max_send_ms = _bounded_float(settings.get(OPT_MAX_SEND_INTERVAL_MS), 1.0, 20.0)
+    return PollingSettings(
+        fast_poll_interval=DEFAULT_FAST_POLL_INTERVAL if fast_ms is None else fast_ms / 1000,
+        slow_poll_interval=DEFAULT_SLOW_POLL_INTERVAL if slow_seconds is None else slow_seconds,
+        max_send_interval=DEFAULT_MAX_SEND_INTERVAL if max_send_ms is None else max_send_ms / 1000,
+    )
+
+
 def set_im117_ports(
     options: Mapping[str, Any],
     address: int,
     ports: Mapping[int, IM117PortConfig],
+    *,
+    name: str | None = None,
 ) -> dict[str, Any]:
     """Return options with one IM117 module's port roles replaced."""
 
     updated = deepcopy(dict(options))
     section = _mutable_section(updated, OPT_MODULES, "im117", str(address))
+    _set_module_name(section, name)
     section[OPT_PORTS] = {
         str(index + 1): (
             {"role": config.role, "device_class": config.device_class}
@@ -429,6 +462,45 @@ def set_input_settings(options: Mapping[str, Any], settings: InputSettings) -> d
     section = _mutable_section(updated, OPT_SETTINGS)
     section[OPT_LONG_PRESS_MS] = settings.long_press_ms
     section[OPT_DOUBLE_CLICK_MS] = settings.double_click_ms
+    return updated
+
+
+def set_polling_settings(options: Mapping[str, Any], settings: PollingSettings) -> dict[str, Any]:
+    """Return options with polling and transport settings replaced."""
+
+    updated = deepcopy(dict(options))
+    section = _mutable_section(updated, OPT_SETTINGS)
+    section[OPT_FAST_POLL_INTERVAL_MS] = round(settings.fast_poll_interval * 1000, 3)
+    section[OPT_SLOW_POLL_INTERVAL] = settings.slow_poll_interval
+    section[OPT_MAX_SEND_INTERVAL_MS] = round(settings.max_send_interval * 1000, 3)
+    return updated
+
+
+def get_module_name(options: Mapping[str, Any], module_kind: str, address: int, default: str) -> str:
+    """Return a configured I2C module name or its supplied default."""
+
+    module = _module_entries(options, module_kind).get(address, {})
+    name = str(module.get(OPT_NAME, "")).strip()
+    return name or default
+
+
+def _set_module_name(section: dict[str, Any], name: str | None) -> None:
+    """Update a module name when one was supplied by a caller."""
+
+    if name is None:
+        return
+    if cleaned := name.strip():
+        section[OPT_NAME] = cleaned
+    else:
+        section.pop(OPT_NAME, None)
+
+
+def set_module_name(options: Mapping[str, Any], module_kind: str, address: int, name: str) -> dict[str, Any]:
+    """Return options with the display name for one I2C module replaced."""
+
+    updated = deepcopy(dict(options))
+    section = _mutable_section(updated, OPT_MODULES, module_kind, str(address))
+    _set_module_name(section, name)
     return updated
 
 
@@ -465,6 +537,16 @@ def _bounded_int(value: Any, low: int, high: int) -> int | None:
 
     try:
         number = int(value)
+    except TypeError, ValueError:
+        return None
+    return number if low <= number <= high else None
+
+
+def _bounded_float(value: Any, low: float, high: float) -> float | None:
+    """Return value as a float when it falls inside the inclusive bounds."""
+
+    try:
+        number = float(value)
     except TypeError, ValueError:
         return None
     return number if low <= number <= high else None
@@ -515,11 +597,14 @@ def set_om117_pairs(
     options: Mapping[str, Any],
     address: int,
     pairs: Mapping[int, OM117PairConfig],
+    *,
+    name: str | None = None,
 ) -> dict[str, Any]:
     """Return options with one OM117 module's pair configuration replaced."""
 
     updated = deepcopy(dict(options))
     section = _mutable_section(updated, OPT_MODULES, "om117", str(address))
+    _set_module_name(section, name)
     section[OPT_PAIRS] = {
         str(index + 1): {
             "mode": config.mode,
@@ -532,11 +617,18 @@ def set_om117_pairs(
     return updated
 
 
-def set_dm117_slots(options: Mapping[str, Any], address: int, slots: Mapping[int, str]) -> dict[str, Any]:
+def set_dm117_slots(
+    options: Mapping[str, Any],
+    address: int,
+    slots: Mapping[int, str],
+    *,
+    name: str | None = None,
+) -> dict[str, Any]:
     """Return options with one DM117 module's slot configuration replaced."""
 
     updated = deepcopy(dict(options))
     section = _mutable_section(updated, OPT_MODULES, "dm117", str(address))
+    _set_module_name(section, name)
     section[OPT_SLOTS] = {str(index + 1): slot_type for index, slot_type in sorted(slots.items())}
     return updated
 

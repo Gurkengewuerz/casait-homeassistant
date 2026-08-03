@@ -6,6 +6,7 @@ CONFIG_ENTRY_VERSION: Final = 3
 DOMAIN: Final = "casait_smarthome"
 
 CONF_TIMEOUT: Final = "timeout"
+CONF_SUBTYPE: Final = "subtype"
 
 # Top-level sections of the config entry options. Everything below them is keyed
 # by module address (decimal, as a string) or by 1-Wire device id. A flat
@@ -66,6 +67,9 @@ BUTTON_EVENT_TYPES: Final = [EVENT_PRESS, EVENT_LONG_PRESS, EVENT_DOUBLE_PRESS]
 # plain wall switches that should react immediately.
 OPT_LONG_PRESS_MS: Final = "long_press_ms"
 OPT_DOUBLE_CLICK_MS: Final = "double_click_ms"
+OPT_FAST_POLL_INTERVAL_MS: Final = "fast_poll_interval_ms"
+OPT_SLOW_POLL_INTERVAL: Final = "slow_poll_interval"
+OPT_MAX_SEND_INTERVAL_MS: Final = "max_send_interval_ms"
 DEFAULT_LONG_PRESS_MS: Final = 500
 DEFAULT_DOUBLE_CLICK_MS: Final = 0
 
@@ -74,6 +78,12 @@ DEFAULT_DOUBLE_CLICK_MS: Final = 0
 # so they are re-read on a slow cadence purely to catch drift.
 DEFAULT_FAST_POLL_INTERVAL: Final = 0.02
 DEFAULT_SLOW_POLL_INTERVAL: Final = 5.0
+DEFAULT_MAX_SEND_INTERVAL: Final = 0.005
+
+# Button events mirrored to the Home Assistant event bus for device triggers.
+EVENT_BUTTON: Final = f"{DOMAIN}_button_event"
+EVENT_DATA_EVENT_TYPE: Final = "event_type"
+EVENT_DATA_SUBTYPE: Final = "subtype"
 
 # Services
 SERVICE_SCAN_DEVICES: Final = "scan_devices"

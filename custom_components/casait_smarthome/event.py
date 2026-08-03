@@ -6,6 +6,7 @@ import time
 from typing import Any
 
 from homeassistant.components.event import EventDeviceClass, EventEntity
+from homeassistant.const import ATTR_DEVICE_ID
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
@@ -17,6 +18,9 @@ from .api import CasaITApi
 from .const import (
     BUTTON_EVENT_TYPES,
     DOMAIN,
+    EVENT_BUTTON,
+    EVENT_DATA_EVENT_TYPE,
+    EVENT_DATA_SUBTYPE,
     EVENT_DOUBLE_PRESS,
     EVENT_LONG_PRESS,
     EVENT_PRESS,
@@ -31,6 +35,7 @@ from .helpers import (
     get_address_range,
     get_im117_port_configuration,
     get_input_settings,
+    get_module_name,
 )
 
 PARALLEL_UPDATES = 0
@@ -102,7 +107,7 @@ class CasaITButtonEvent(EventEntity):
         self._attr_translation_placeholders = {"port": str(port + 1)}
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, build_device_identifier(config_entry.entry_id, "im117", address))},
-            name=f"IM117 0x{address:02X}",
+            name=get_module_name(config_entry.options, "im117", address, f"IM117 0x{address:02X}"),
             manufacturer="casaIT",
             model="PCF8574 Input",
         )
@@ -183,4 +188,13 @@ class CasaITButtonEvent(EventEntity):
         """Publish an event and push the new state."""
 
         self._trigger_event(event_type)
+        if self.device_entry is not None:
+            self.hass.bus.async_fire(
+                EVENT_BUTTON,
+                {
+                    ATTR_DEVICE_ID: self.device_entry.id,
+                    EVENT_DATA_EVENT_TYPE: event_type,
+                    EVENT_DATA_SUBTYPE: f"button_{self._port + 1}",
+                },
+            )
         self.async_write_ha_state()

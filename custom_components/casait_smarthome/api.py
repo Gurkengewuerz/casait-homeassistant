@@ -43,6 +43,8 @@ class CasaITApi:
         entry_id: str,
         onewire_profiles: Mapping[str, str] | None = None,
         onewire_poll_intervals: Mapping[str, int] | None = None,
+        fast_poll_interval: float = DEFAULT_FAST_POLL_INTERVAL,
+        slow_poll_interval: float = DEFAULT_SLOW_POLL_INTERVAL,
     ) -> None:
         """Initialize the API."""
         self.hass = hass
@@ -60,8 +62,8 @@ class CasaITApi:
         self._pcf_states: dict[int, list[int]] = {}
         self._dm117_states: dict[int, dict[int, int]] = {}
         self._read_errors: set[tuple[str, int]] = set()
-        self._poll_interval = DEFAULT_FAST_POLL_INTERVAL
-        self._slow_poll_interval = DEFAULT_SLOW_POLL_INTERVAL
+        self._poll_interval = fast_poll_interval
+        self._slow_poll_interval = slow_poll_interval
         self._dm_config: dict[int, dict[int, DeviceType]] = {}
         # Writes claim priority over the poll loop so a button press is not queued
         # behind a full sweep of the bus.

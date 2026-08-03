@@ -26,6 +26,7 @@ from .helpers import (
     get_configured_led_counts,
     get_configured_onewire_profiles,
     get_dm117_port_configuration,
+    get_module_name,
 )
 from .services.i2cClasses.dm117 import DeviceType, DimmerConfig, DimmerSpeed, DM117PortConfig
 from .services.i2cClasses.led_controller import AnimationMode, Color, LEDConfig
@@ -117,7 +118,7 @@ class CasaITDM117Light(LightEntity):
         self._attr_translation_placeholders = {"slot": str(self._slot)}
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, build_device_identifier(config_entry.entry_id, "dm117", address))},
-            name=f"DM117 0x{address:02X}",
+            name=get_module_name(config_entry.options, "dm117", address, f"DM117 0x{address:02X}"),
             manufacturer="casaIT",
             model="DM117",
         )

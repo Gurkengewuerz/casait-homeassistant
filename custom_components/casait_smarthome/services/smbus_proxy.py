@@ -69,6 +69,7 @@ class SMBus:
         host: str = "192.168.1.100",
         port: int | None = None,
         timeout: float | None = None,
+        max_send_interval: float = MAX_SEND_INTERVAL,
     ) -> None:
         """Initialize SMBus proxy connection.
 
@@ -77,11 +78,13 @@ class SMBus:
             host: Optional host override (default: from I2C_PROXY_HOST env)
             port: Optional port override (default: from I2C_PROXY_PORT env)
             timeout: Optional timeout override (default: from I2C_PROXY_TIMEOUT env)
+            max_send_interval: Maximum adaptive spacing between frames in seconds
         """
         self._bus = bus  # Kept for compatibility
         self.host = host
         self.port = port or DEFAULT_PORT
         self.timeout = timeout or DEFAULT_TIMEOUT
+        self._max_send_interval = max(MIN_SEND_INTERVAL, max_send_interval)
         self._sock: socket.socket | None = None
         self._io_lock = threading.Lock()
         self._last_send: float = 0.0
@@ -205,8 +208,8 @@ class SMBus:
         """
 
         self._consecutive_ok = 0
-        if self._min_send_interval < MAX_SEND_INTERVAL:
-            self._min_send_interval = min(MAX_SEND_INTERVAL, self._min_send_interval + SEND_INTERVAL_STEP)
+        if self._min_send_interval < self._max_send_interval:
+            self._min_send_interval = min(self._max_send_interval, self._min_send_interval + SEND_INTERVAL_STEP)
             _LOGGER.debug("Backing SMBus send spacing off to %.1f ms", self._min_send_interval * 1000)
 
     @property
@@ -215,6 +218,7 @@ class SMBus:
 
         return {
             "send_interval_ms": round(self._min_send_interval * 1000, 3),
+            "max_send_interval_ms": round(self._max_send_interval * 1000, 3),
             "last_roundtrip_ms": round(self._last_rtt * 1000, 3),
             "frames": self._frames,
             "crc_errors": self._crc_errors,

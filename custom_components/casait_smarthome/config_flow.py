@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+import contextlib
 import logging
 from typing import Any
 
@@ -12,14 +14,21 @@ from homeassistant.config_entries import ConfigEntry, ConfigFlowResult, OptionsF
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.selector import (
+    NumberSelector,
+    NumberSelectorConfig,
+    NumberSelectorMode,
+    SelectOptionDict,
+    SelectSelector,
+    SelectSelectorConfig,
+    TextSelector,
+    TextSelectorConfig,
+)
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 
 from .const import (
     CONF_TIMEOUT,
     CONFIG_ENTRY_VERSION,
-    DEFAULT_BLIND_CLOSE_TIME,
-    DEFAULT_BLIND_OPEN_TIME,
-    DEFAULT_BLIND_OVERRUN_TIME,
     DEFAULT_LED_COUNT,
     DEFAULT_OW_POLL_INTERVAL,
     DEFAULT_OW_PROFILE,
@@ -32,12 +41,16 @@ from .const import (
     OM117_MODE_BLIND,
     OM117_MODE_SWITCH,
     OPT_DOUBLE_CLICK_MS,
+    OPT_FAST_POLL_INTERVAL_MS,
     OPT_LONG_PRESS_MS,
+    OPT_MAX_SEND_INTERVAL_MS,
+    OPT_SLOW_POLL_INTERVAL,
 )
 from .helpers import (
     IM117PortConfig,
     InputSettings,
     OM117PairConfig,
+    PollingSettings,
     get_address_range,
     get_configured_led_counts,
     get_configured_onewire_poll_intervals,
@@ -45,69 +58,91 @@ from .helpers import (
     get_dm117_slot_types,
     get_im117_port_configuration,
     get_input_settings,
+    get_module_name,
     get_om117_pair_configuration,
+    get_polling_settings,
     set_dm117_slots,
     set_im117_ports,
     set_input_settings,
+    set_module_name,
     set_om117_pairs,
     set_onewire_device,
+    set_polling_settings,
 )
 from .services.smbus_proxy import DEFAULT_PORT, DEFAULT_TIMEOUT, SMBus, SMBusProxyError
 
 _LOGGER = logging.getLogger(__name__)
 
-STEP_USER_DATA_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_HOST): str,
-        vol.Required(CONF_PORT, default=DEFAULT_PORT): int,
-        vol.Required(CONF_TIMEOUT, default=DEFAULT_TIMEOUT): vol.All(vol.Coerce(float), vol.Range(min=0)),
-    }
-)
-
-OM117_SLOT_TYPES = {
-    OM117_MODE_SWITCH: "Digitaler Ausgang",
-    OM117_MODE_BLIND: "Jalousie / Rollladen",
-}
-
-DM117_SLOT_TYPES = {
-    "none": "Nicht belegt",
-    "binary_input": "Digitaler Eingang (24V)",
-    "switch": "Digitaler Ausgang (24V)",
-    "dimmer": "Analog Ausgang (Dimmer 0-10V)",
-}
-
-IM117_ROLES = {
-    IM117_ROLE_SWITCH: "Schalter (Dauerzustand)",
-    IM117_ROLE_BUTTON: "Taster (Impuls)",
-    IM117_ROLE_CONTACT: "Kontakt (mit Geräteklasse)",
-    IM117_ROLE_UNUSED: "Nicht belegt",
-}
+OM117_SLOT_TYPES = (OM117_MODE_SWITCH, OM117_MODE_BLIND)
+DM117_SLOT_TYPES = ("none", "binary_input", "switch", "dimmer")
+IM117_ROLES = (IM117_ROLE_SWITCH, IM117_ROLE_BUTTON, IM117_ROLE_CONTACT, IM117_ROLE_UNUSED)
 
 # voluptuous cannot express "no selection", so the absence of a device class is
 # carried as an explicit sentinel that is mapped back to None on save.
 NO_DEVICE_CLASS = "none"
-CONTACT_DEVICE_CLASS_OPTIONS = {NO_DEVICE_CLASS: "Keine", **{key: key for key in IM117_CONTACT_DEVICE_CLASSES}}
+CONTACT_DEVICE_CLASS_OPTIONS = (NO_DEVICE_CLASS, *IM117_CONTACT_DEVICE_CLASSES)
 
-ONEWIRE_PROFILES = {
-    "ds18b20_temp": "DS18B20: Temperatursensor",
-    "ds2438_hih4030_tept5600": "DS2438: HIH4030 / TEPT5600",
-    "ds2438_hih5030_tept5600": "DS2438: HIH5030 / TEPT5600",
-    "ds2413_out": "DS2413: 2 digitale Ausgänge",
-    "ds2413_in": "DS2413: 2 digitale Eingänge",
-    "ds28e17_led": "DS28E17: LED Controller",
-}
+ONEWIRE_PROFILES = (
+    "ds18b20_temp",
+    "ds2438_hih4030_tept5600",
+    "ds2438_hih5030_tept5600",
+    "ds2413_out",
+    "ds2413_in",
+    "ds28e17_led",
+)
+
+
+def _bridge_data_schema(defaults: Mapping[str, Any] | None = None) -> vol.Schema:
+    """Return the bridge connection schema with optional current values."""
+
+    current = defaults or {}
+    host_key = vol.Required(CONF_HOST, default=current[CONF_HOST]) if CONF_HOST in current else vol.Required(CONF_HOST)
+    return vol.Schema(
+        {
+            host_key: vol.All(TextSelector(TextSelectorConfig()), vol.Length(min=1)),
+            vol.Required(CONF_PORT, default=current.get(CONF_PORT, DEFAULT_PORT)): NumberSelector(
+                NumberSelectorConfig(min=1, max=65535, step=1, mode=NumberSelectorMode.BOX)
+            ),
+            vol.Required(CONF_TIMEOUT, default=current.get(CONF_TIMEOUT, DEFAULT_TIMEOUT)): NumberSelector(
+                NumberSelectorConfig(min=0.1, max=60, step=0.1, mode=NumberSelectorMode.BOX)
+            ),
+        }
+    )
+
+
+def _normalize_bridge_data(data: Mapping[str, Any]) -> dict[str, Any]:
+    """Normalize selector values before validation and storage."""
+
+    return {
+        CONF_HOST: str(data[CONF_HOST]).strip(),
+        CONF_PORT: int(data[CONF_PORT]),
+        CONF_TIMEOUT: float(data[CONF_TIMEOUT]),
+    }
 
 
 async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
     """Validate the user input allows us to connect.
 
-    Data has the keys from STEP_USER_DATA_SCHEMA with values provided by the user.
+    Data contains the normalized bridge connection values.
     """
+    bus: SMBus | None = None
     try:
-        bus = await hass.async_add_executor_job(SMBus, 1, data[CONF_HOST], data[CONF_PORT], data[CONF_TIMEOUT])
-        await hass.async_add_executor_job(bus.close)
-    except SMBusProxyError as exc:
+        connected_bus = await hass.async_add_executor_job(
+            SMBus,
+            1,
+            data[CONF_HOST],
+            data[CONF_PORT],
+            data[CONF_TIMEOUT],
+        )
+        bus = connected_bus
+        if not await hass.async_add_executor_job(connected_bus.ping):
+            raise CannotConnect
+    except (SMBusProxyError, OSError) as exc:
         raise CannotConnect from exc
+    finally:
+        if bus is not None:
+            with contextlib.suppress(SMBusProxyError, OSError):
+                await hass.async_add_executor_job(bus.close)
 
     return {"title": data[CONF_HOST]}
 
@@ -136,23 +171,51 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Handle the initial step."""
         errors: dict[str, str] = {}
         if user_input is not None:
+            data = _normalize_bridge_data(user_input)
             self._async_abort_entries_match(
                 {
-                    CONF_HOST: user_input[CONF_HOST],
-                    CONF_PORT: user_input[CONF_PORT],
+                    CONF_HOST: data[CONF_HOST],
+                    CONF_PORT: data[CONF_PORT],
                 }
             )
             try:
-                info = await validate_input(self.hass, user_input)
+                info = await validate_input(self.hass, data)
             except CannotConnect:
                 errors["base"] = "cannot_connect"
             except Exception:
                 _LOGGER.exception("Unexpected exception")
                 errors["base"] = "unknown"
             else:
-                return self.async_create_entry(title=info["title"], data=user_input)
+                return self.async_create_entry(title=info["title"], data=data)
 
-        return self.async_show_form(step_id="user", data_schema=STEP_USER_DATA_SCHEMA, errors=errors)
+        return self.async_show_form(step_id="user", data_schema=_bridge_data_schema(), errors=errors)
+
+    async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Allow the bridge connection settings to be changed in place."""
+
+        entry = self._get_reconfigure_entry()
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            data = _normalize_bridge_data(user_input)
+            self._async_abort_entries_match({CONF_HOST: data[CONF_HOST], CONF_PORT: data[CONF_PORT]})
+            try:
+                info = await validate_input(self.hass, data)
+            except CannotConnect:
+                errors["base"] = "cannot_connect"
+            except Exception:
+                _LOGGER.exception("Unexpected exception")
+                errors["base"] = "unknown"
+            else:
+                if entry.unique_id is not None:
+                    await self.async_set_unique_id(entry.unique_id)
+                    self._abort_if_unique_id_mismatch()
+                return self.async_update_reload_and_abort(entry, title=info["title"], data=data)
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=_bridge_data_schema(entry.data),
+            errors=errors,
+        )
 
     @staticmethod
     def _decode_property_value(value: Any) -> str | None:
@@ -211,26 +274,25 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason="unknown")
 
         errors: dict[str, str] = {}
-        data_schema = vol.Schema(
+        data_schema = _bridge_data_schema(
             {
-                vol.Required(CONF_HOST, default=self._discovered_host): str,
-                vol.Required(CONF_PORT, default=self._discovered_port): int,
-                vol.Required(CONF_TIMEOUT, default=self._discovered_timeout): vol.All(
-                    vol.Coerce(float), vol.Range(min=0)
-                ),
+                CONF_HOST: self._discovered_host,
+                CONF_PORT: self._discovered_port,
+                CONF_TIMEOUT: self._discovered_timeout,
             }
         )
 
         if user_input is not None:
+            data = _normalize_bridge_data(user_input)
             try:
-                info = await validate_input(self.hass, user_input)
+                info = await validate_input(self.hass, data)
             except CannotConnect:
                 errors["base"] = "cannot_connect"
             except Exception:
                 _LOGGER.exception("Unexpected exception")
                 errors["base"] = "unknown"
             else:
-                return self.async_create_entry(title=info["title"], data=user_input)
+                return self.async_create_entry(title=info["title"], data=data)
 
         return self.async_show_form(
             step_id="zeroconf_confirm",
@@ -248,7 +310,11 @@ class OptionsFlowHandler(OptionsFlowWithReload):
         self._selected_im117_addr: int | None = None
         self._selected_om117_addr: int | None = None
         self._selected_dm117_addr: int | None = None
+        self._selected_sm117_addr: int | None = None
         self._selected_ow_id: str | None = None
+        self._selected_ow_profile: str | None = None
+        self._pending_om117_modes: dict[int, str] | None = None
+        self._pending_om117_name: str | None = None
 
     @property
     def _runtime_data(self):
@@ -275,8 +341,32 @@ class OptionsFlowHandler(OptionsFlowWithReload):
         """Manage the options menu."""
         return self.async_show_menu(
             step_id="init",
-            menu_options=["im117_select", "om117_select", "dm117_select", "onewire_select", "input_settings"],
+            menu_options=[
+                "im117_select",
+                "om117_select",
+                "dm117_select",
+                "sm117_select",
+                "onewire_select",
+                "global_settings",
+            ],
         )
+
+    def _module_selector_options(self, module_kind: str, addresses: list[int]) -> list[SelectOptionDict]:
+        """Return language-neutral labels for dynamically detected modules."""
+
+        module_code = module_kind.upper()
+        return [
+            {
+                "value": str(address),
+                "label": get_module_name(
+                    self.config_entry.options,
+                    module_kind,
+                    address,
+                    f"{module_code} 0x{address:02X}",
+                ),
+            }
+            for address in sorted(addresses)
+        ]
 
     # ------------------------------------------------------------------
     # IM117 CONFIGURATION
@@ -301,11 +391,15 @@ class OptionsFlowHandler(OptionsFlowWithReload):
             self._selected_im117_addr = int(user_input["selected_module"])
             return await self.async_step_im117_config()
 
-        options = {str(addr): f"IM117 at Address {addr} (0x{int(addr):02x})" for addr in sorted(detected_modules)}
-
         return self.async_show_form(
             step_id="im117_select",
-            data_schema=vol.Schema({vol.Required("selected_module"): vol.In(options)}),
+            data_schema=vol.Schema(
+                {
+                    vol.Required("selected_module"): SelectSelector(
+                        SelectSelectorConfig(options=self._module_selector_options("im117", detected_modules))
+                    )
+                }
+            ),
         )
 
     async def async_step_im117_config(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
@@ -322,21 +416,34 @@ class OptionsFlowHandler(OptionsFlowWithReload):
                 if role != IM117_ROLE_CONTACT or device_class == NO_DEVICE_CLASS:
                     device_class = None
                 ports[index - 1] = IM117PortConfig(role=role, device_class=device_class)
-            return self.async_create_entry(title="", data=set_im117_ports(self.config_entry.options, addr, ports))
+            return self.async_create_entry(
+                title="",
+                data=set_im117_ports(
+                    self.config_entry.options,
+                    addr,
+                    ports,
+                    name=str(user_input["module_name"]),
+                ),
+            )
 
         configured = get_im117_port_configuration(self.config_entry.options).get(addr, {})
-        schema: dict[Any, Any] = {}
+        module_name = get_module_name(self.config_entry.options, "im117", addr, f"IM117 0x{addr:02X}")
+        schema: dict[Any, Any] = {vol.Required("module_name", default=module_name): TextSelector(TextSelectorConfig())}
         for index in range(1, 9):
             config = configured.get(index - 1, IM117PortConfig())
-            schema[vol.Required(f"port_{index}_role", default=config.role)] = vol.In(IM117_ROLES)
-            schema[vol.Optional(f"port_{index}_device_class", default=config.device_class or NO_DEVICE_CLASS)] = vol.In(
-                CONTACT_DEVICE_CLASS_OPTIONS
+            schema[vol.Required(f"port_{index}_role", default=config.role)] = SelectSelector(
+                SelectSelectorConfig(options=IM117_ROLES, translation_key="im117_role")
+            )
+            schema[vol.Optional(f"port_{index}_device_class", default=config.device_class or NO_DEVICE_CLASS)] = (
+                SelectSelector(
+                    SelectSelectorConfig(options=CONTACT_DEVICE_CLASS_OPTIONS, translation_key="contact_device_class")
+                )
             )
 
         return self.async_show_form(
             step_id="im117_config",
             data_schema=vol.Schema(schema),
-            description_placeholders={"module_name": f"Address {addr}"},
+            description_placeholders={"module_name": module_name},
         )
 
     # ------------------------------------------------------------------
@@ -344,27 +451,51 @@ class OptionsFlowHandler(OptionsFlowWithReload):
     # ------------------------------------------------------------------
 
     async def async_step_input_settings(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Configure the button timings shared by every input."""
+        """Forward older in-progress option flows to global settings."""
+
+        return await self.async_step_global_settings(user_input)
+
+    async def async_step_global_settings(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Configure button timing, polling cadence, and transport limits."""
 
         if user_input is not None:
-            settings = InputSettings(
+            input_settings = InputSettings(
                 long_press_ms=int(user_input[OPT_LONG_PRESS_MS]),
                 double_click_ms=int(user_input[OPT_DOUBLE_CLICK_MS]),
             )
-            return self.async_create_entry(title="", data=set_input_settings(self.config_entry.options, settings))
+            polling_settings = PollingSettings(
+                fast_poll_interval=float(user_input[OPT_FAST_POLL_INTERVAL_MS]) / 1000,
+                slow_poll_interval=float(user_input[OPT_SLOW_POLL_INTERVAL]),
+                max_send_interval=float(user_input[OPT_MAX_SEND_INTERVAL_MS]) / 1000,
+            )
+            options = set_input_settings(self.config_entry.options, input_settings)
+            return self.async_create_entry(title="", data=set_polling_settings(options, polling_settings))
 
-        current = get_input_settings(self.config_entry.options)
+        current_input = get_input_settings(self.config_entry.options)
+        current_polling = get_polling_settings(self.config_entry.options)
 
         return self.async_show_form(
-            step_id="input_settings",
+            step_id="global_settings",
             data_schema=vol.Schema(
                 {
-                    vol.Required(OPT_LONG_PRESS_MS, default=current.long_press_ms): vol.All(
-                        vol.Coerce(int), vol.Range(min=100, max=5000)
+                    vol.Required(OPT_LONG_PRESS_MS, default=current_input.long_press_ms): NumberSelector(
+                        NumberSelectorConfig(min=100, max=5000, step=10, mode=NumberSelectorMode.BOX)
                     ),
-                    vol.Required(OPT_DOUBLE_CLICK_MS, default=current.double_click_ms): vol.All(
-                        vol.Coerce(int), vol.Range(min=0, max=2000)
+                    vol.Required(OPT_DOUBLE_CLICK_MS, default=current_input.double_click_ms): NumberSelector(
+                        NumberSelectorConfig(min=0, max=2000, step=10, mode=NumberSelectorMode.BOX)
                     ),
+                    vol.Required(
+                        OPT_FAST_POLL_INTERVAL_MS,
+                        default=round(current_polling.fast_poll_interval * 1000, 3),
+                    ): NumberSelector(NumberSelectorConfig(min=5, max=1000, step=1, mode=NumberSelectorMode.BOX)),
+                    vol.Required(
+                        OPT_SLOW_POLL_INTERVAL,
+                        default=current_polling.slow_poll_interval,
+                    ): NumberSelector(NumberSelectorConfig(min=1, max=3600, step=1, mode=NumberSelectorMode.BOX)),
+                    vol.Required(
+                        OPT_MAX_SEND_INTERVAL_MS,
+                        default=round(current_polling.max_send_interval * 1000, 3),
+                    ): NumberSelector(NumberSelectorConfig(min=1, max=20, step=1, mode=NumberSelectorMode.BOX)),
                 }
             ),
         )
@@ -392,11 +523,15 @@ class OptionsFlowHandler(OptionsFlowWithReload):
             self._selected_om117_addr = int(user_input["selected_module"])
             return await self.async_step_om117_config()
 
-        options = {str(addr): f"OM117 at Address {addr} (0x{int(addr):02x})" for addr in detected_modules}
-
         return self.async_show_form(
             step_id="om117_select",
-            data_schema=vol.Schema({vol.Required("selected_module"): vol.In(options)}),
+            data_schema=vol.Schema(
+                {
+                    vol.Required("selected_module"): SelectSelector(
+                        SelectSelectorConfig(options=self._module_selector_options("om117", detected_modules))
+                    )
+                }
+            ),
         )
 
     async def async_step_om117_config(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
@@ -409,49 +544,94 @@ class OptionsFlowHandler(OptionsFlowWithReload):
         existing = get_om117_pair_configuration(self.config_entry.options).get(addr, {})
 
         if user_input is not None:
-            pairs = {
-                pair_index - 1: OM117PairConfig(
-                    mode=user_input[f"pair_{pair_index}_mode"],
-                    open_time=float(user_input[f"pair_{pair_index}_open_time"]),
-                    close_time=float(user_input[f"pair_{pair_index}_close_time"]),
-                    overrun_time=float(user_input[f"pair_{pair_index}_overrun_time"]),
-                )
-                for pair_index in range(1, 5)
+            self._pending_om117_name = str(user_input["module_name"])
+            self._pending_om117_modes = {
+                pair_index - 1: str(user_input[f"pair_{pair_index}_mode"]) for pair_index in range(1, 5)
             }
-            return self.async_create_entry(title="", data=set_om117_pairs(self.config_entry.options, addr, pairs))
+            if OM117_MODE_BLIND in self._pending_om117_modes.values():
+                return await self.async_step_om117_timing()
+            pairs = {
+                pair_index: OM117PairConfig(
+                    mode=mode,
+                    open_time=existing.get(pair_index, OM117PairConfig()).open_time,
+                    close_time=existing.get(pair_index, OM117PairConfig()).close_time,
+                    overrun_time=existing.get(pair_index, OM117PairConfig()).overrun_time,
+                )
+                for pair_index, mode in self._pending_om117_modes.items()
+            }
+            return self.async_create_entry(
+                title="",
+                data=set_om117_pairs(
+                    self.config_entry.options,
+                    addr,
+                    pairs,
+                    name=self._pending_om117_name,
+                ),
+            )
 
-        schema: dict[Any, Any] = {}
+        module_name = get_module_name(self.config_entry.options, "om117", addr, f"OM117 0x{addr:02X}")
+        schema: dict[Any, Any] = {vol.Required("module_name", default=module_name): TextSelector(TextSelectorConfig())}
         for idx in range(1, 5):
             config: OM117PairConfig = existing.get(idx - 1, OM117PairConfig())
-            schema[vol.Required(f"pair_{idx}_mode", default=config.mode)] = vol.In(OM117_SLOT_TYPES)
-            schema[
-                vol.Optional(
-                    f"pair_{idx}_open_time",
-                    default=config.open_time,
-                )
-            ] = vol.All(vol.Coerce(float), vol.Range(min=1, max=180))
-            schema[
-                vol.Optional(
-                    f"pair_{idx}_close_time",
-                    default=config.close_time,
-                )
-            ] = vol.All(vol.Coerce(float), vol.Range(min=1, max=180))
-            schema[
-                vol.Optional(
-                    f"pair_{idx}_overrun_time",
-                    default=config.overrun_time,
-                )
-            ] = vol.All(vol.Coerce(float), vol.Range(min=0, max=15))
+            schema[vol.Required(f"pair_{idx}_mode", default=config.mode)] = SelectSelector(
+                SelectSelectorConfig(options=OM117_SLOT_TYPES, translation_key="om117_mode")
+            )
 
         return self.async_show_form(
             step_id="om117_config",
             data_schema=vol.Schema(schema),
-            description_placeholders={
-                "module_name": f"Address {addr}",
-                "default_open": str(DEFAULT_BLIND_OPEN_TIME),
-                "default_close": str(DEFAULT_BLIND_CLOSE_TIME),
-                "default_overrun": str(DEFAULT_BLIND_OVERRUN_TIME),
-            },
+            description_placeholders={"module_name": module_name},
+        )
+
+    async def async_step_om117_timing(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Configure timings only for OM117 pairs operating as blinds."""
+
+        if (addr := self._selected_om117_addr) is None or self._pending_om117_modes is None:
+            return self.async_abort(reason="integration_not_ready")
+
+        existing = get_om117_pair_configuration(self.config_entry.options).get(addr, {})
+        if user_input is not None:
+            pairs: dict[int, OM117PairConfig] = {}
+            for pair_index, mode in self._pending_om117_modes.items():
+                current = existing.get(pair_index, OM117PairConfig())
+                field_index = pair_index + 1
+                pairs[pair_index] = OM117PairConfig(
+                    mode=mode,
+                    open_time=float(user_input.get(f"pair_{field_index}_open_time", current.open_time)),
+                    close_time=float(user_input.get(f"pair_{field_index}_close_time", current.close_time)),
+                    overrun_time=float(user_input.get(f"pair_{field_index}_overrun_time", current.overrun_time)),
+                )
+            return self.async_create_entry(
+                title="",
+                data=set_om117_pairs(
+                    self.config_entry.options,
+                    addr,
+                    pairs,
+                    name=self._pending_om117_name,
+                ),
+            )
+
+        schema: dict[Any, Any] = {}
+        for pair_index, mode in self._pending_om117_modes.items():
+            if mode != OM117_MODE_BLIND:
+                continue
+            current = existing.get(pair_index, OM117PairConfig())
+            field_index = pair_index + 1
+            schema[vol.Required(f"pair_{field_index}_open_time", default=current.open_time)] = NumberSelector(
+                NumberSelectorConfig(min=1, max=180, step=0.1, mode=NumberSelectorMode.BOX)
+            )
+            schema[vol.Required(f"pair_{field_index}_close_time", default=current.close_time)] = NumberSelector(
+                NumberSelectorConfig(min=1, max=180, step=0.1, mode=NumberSelectorMode.BOX)
+            )
+            schema[vol.Required(f"pair_{field_index}_overrun_time", default=current.overrun_time)] = NumberSelector(
+                NumberSelectorConfig(min=0, max=15, step=0.1, mode=NumberSelectorMode.BOX)
+            )
+
+        module_name = self._pending_om117_name or f"OM117 0x{addr:02X}"
+        return self.async_show_form(
+            step_id="om117_timing",
+            data_schema=vol.Schema(schema),
+            description_placeholders={"module_name": module_name},
         )
 
     # ------------------------------------------------------------------
@@ -476,12 +656,15 @@ class OptionsFlowHandler(OptionsFlowWithReload):
             self._selected_dm117_addr = int(user_input["selected_module"])
             return await self.async_step_dm117_config()
 
-        # Show form
-        options = {str(addr): f"DM117 at Address {addr} (0x{int(addr):02x})" for addr in detected_modules}
-
         return self.async_show_form(
             step_id="dm117_select",
-            data_schema=vol.Schema({vol.Required("selected_module"): vol.In(options)}),
+            data_schema=vol.Schema(
+                {
+                    vol.Required("selected_module"): SelectSelector(
+                        SelectSelectorConfig(options=self._module_selector_options("dm117", detected_modules))
+                    )
+                }
+            ),
         )
 
     async def async_step_dm117_config(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
@@ -492,18 +675,84 @@ class OptionsFlowHandler(OptionsFlowWithReload):
 
         if user_input is not None:
             slots = {index - 1: user_input[f"slot_{index}"] for index in range(1, 9) if f"slot_{index}" in user_input}
-            return self.async_create_entry(title="", data=set_dm117_slots(self.config_entry.options, addr, slots))
+            return self.async_create_entry(
+                title="",
+                data=set_dm117_slots(
+                    self.config_entry.options,
+                    addr,
+                    slots,
+                    name=str(user_input["module_name"]),
+                ),
+            )
 
         configured = get_dm117_slot_types(self.config_entry.options).get(addr, {})
-        schema = {
-            vol.Required(f"slot_{index}", default=configured.get(index - 1, "none")): vol.In(DM117_SLOT_TYPES)
-            for index in range(1, 9)
-        }
+        module_name = get_module_name(self.config_entry.options, "dm117", addr, f"DM117 0x{addr:02X}")
+        schema: dict[Any, Any] = {vol.Required("module_name", default=module_name): TextSelector(TextSelectorConfig())}
+        for index in range(1, 9):
+            schema[vol.Required(f"slot_{index}", default=configured.get(index - 1, "none"))] = SelectSelector(
+                SelectSelectorConfig(options=DM117_SLOT_TYPES, translation_key="dm117_slot_type")
+            )
 
         return self.async_show_form(
             step_id="dm117_config",
             data_schema=vol.Schema(schema),
-            description_placeholders={"module_name": f"Address {addr}"},
+            description_placeholders={"module_name": module_name},
+        )
+
+    # ------------------------------------------------------------------
+    # SM117 CONFIGURATION
+    # ------------------------------------------------------------------
+
+    async def async_step_sm117_select(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Select a detected SM117 module."""
+
+        api = self._runtime_data
+        if not api:
+            return self.async_abort(reason="integration_not_ready")
+
+        detected_modules = list(api.sm117)
+        if not detected_modules:
+            return self.async_abort(reason="no_sm117_found")
+
+        if user_input is not None:
+            self._selected_sm117_addr = int(user_input["selected_module"])
+            return await self.async_step_sm117_config()
+
+        return self.async_show_form(
+            step_id="sm117_select",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("selected_module"): SelectSelector(
+                        SelectSelectorConfig(options=self._module_selector_options("sm117", detected_modules))
+                    )
+                }
+            ),
+        )
+
+    async def async_step_sm117_config(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Configure the display name of one SM117 module."""
+
+        if (addr := self._selected_sm117_addr) is None:
+            return self.async_abort(reason="integration_not_ready")
+
+        if user_input is not None:
+            return self.async_create_entry(
+                title="",
+                data=set_module_name(
+                    self.config_entry.options,
+                    "sm117",
+                    addr,
+                    str(user_input["module_name"]),
+                ),
+            )
+
+        module_name = get_module_name(self.config_entry.options, "sm117", addr, f"SM117 0x{addr:02X}")
+        return self.async_show_form(
+            step_id="sm117_config",
+            data_schema=vol.Schema(
+                {vol.Required("module_name", default=module_name): TextSelector(TextSelectorConfig())}
+            ),
+            description_placeholders={"module_name": module_name},
         )
 
     # ------------------------------------------------------------------
@@ -529,21 +778,17 @@ class OptionsFlowHandler(OptionsFlowWithReload):
             self._selected_ow_id = user_input["selected_device"]
             return await self.async_step_onewire_config()
 
-        # List the devices with the current profile name (if already configured)
-        configured_profiles = get_configured_onewire_profiles(self.config_entry.options)
-        options = {}
-        for dev_id in detected_devices:
-            current_profile_key = configured_profiles.get(dev_id)
-            profile_name = (
-                ONEWIRE_PROFILES.get(current_profile_key, "Unconfigured") if current_profile_key else "Unconfigured"
-            )
+        options: list[SelectOptionDict] = []
+        for dev_id in sorted(detected_devices):
             meta = api.ow_devices.get(dev_id, {})
-            device_type = meta.get("device_type", "Unknown")
-            options[dev_id] = f"{dev_id} ({device_type} / {profile_name})"
+            device_type = str(meta.get("device_type") or "OneWire")
+            options.append({"value": dev_id, "label": f"{device_type} · {dev_id}"})
 
         return self.async_show_form(
             step_id="onewire_select",
-            data_schema=vol.Schema({vol.Required("selected_device"): vol.In(options)}),
+            data_schema=vol.Schema(
+                {vol.Required("selected_device"): SelectSelector(SelectSelectorConfig(options=options))}
+            ),
         )
 
     async def async_step_onewire_config(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
@@ -553,41 +798,60 @@ class OptionsFlowHandler(OptionsFlowWithReload):
             return self.async_abort(reason="integration_not_ready")
 
         if user_input is not None:
-            profile = user_input["profile"]
-            return self.async_create_entry(
-                title="",
-                data=set_onewire_device(
-                    self.config_entry.options,
-                    dev_id,
-                    profile,
-                    # The LED count only means anything for the strip controller.
-                    led_count=user_input.get("led_count") if profile == "ds28e17_led" else None,
-                    poll_interval=user_input.get("poll_interval"),
-                ),
-            )
+            self._selected_ow_profile = str(user_input["profile"])
+            return await self.async_step_onewire_settings()
 
         default_val = get_configured_onewire_profiles(self.config_entry.options).get(
             dev_id, self._default_profile_for_device(dev_id)
-        )
-
-        led_count_default = get_configured_led_counts(self.config_entry.options).get(dev_id, DEFAULT_LED_COUNT)
-        poll_interval_default = get_configured_onewire_poll_intervals(self.config_entry.options).get(
-            dev_id, DEFAULT_OW_POLL_INTERVAL.get(default_val, 60)
         )
 
         return self.async_show_form(
             step_id="onewire_config",
             data_schema=vol.Schema(
                 {
-                    vol.Required("profile", default=default_val): vol.In(ONEWIRE_PROFILES),
-                    vol.Optional("led_count", default=led_count_default): vol.All(
-                        vol.Coerce(int), vol.Range(min=1, max=255)
-                    ),
-                    vol.Optional("poll_interval", default=poll_interval_default): vol.All(
-                        vol.Coerce(int), vol.Range(min=1, max=3600)
+                    vol.Required("profile", default=default_val): SelectSelector(
+                        SelectSelectorConfig(options=ONEWIRE_PROFILES, translation_key="onewire_profile")
                     ),
                 }
             ),
+            description_placeholders={"device_id": dev_id},
+        )
+
+    async def async_step_onewire_settings(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Configure polling and profile-specific OneWire settings."""
+
+        if (dev_id := self._selected_ow_id) is None or (profile := self._selected_ow_profile) is None:
+            return self.async_abort(reason="integration_not_ready")
+
+        if user_input is not None:
+            return self.async_create_entry(
+                title="",
+                data=set_onewire_device(
+                    self.config_entry.options,
+                    dev_id,
+                    profile,
+                    led_count=int(user_input["led_count"]) if profile == "ds28e17_led" else None,
+                    poll_interval=int(user_input["poll_interval"]),
+                ),
+            )
+
+        poll_interval_default = get_configured_onewire_poll_intervals(self.config_entry.options).get(
+            dev_id, DEFAULT_OW_POLL_INTERVAL.get(profile, 60)
+        )
+        schema: dict[Any, Any] = {
+            vol.Required("poll_interval", default=poll_interval_default): NumberSelector(
+                NumberSelectorConfig(min=1, max=3600, step=1, mode=NumberSelectorMode.BOX)
+            )
+        }
+        if profile == "ds28e17_led":
+            led_count_default = get_configured_led_counts(self.config_entry.options).get(dev_id, DEFAULT_LED_COUNT)
+            schema[vol.Required("led_count", default=led_count_default)] = NumberSelector(
+                NumberSelectorConfig(min=1, max=255, step=1, mode=NumberSelectorMode.BOX)
+            )
+
+        return self.async_show_form(
+            step_id="onewire_settings",
+            data_schema=vol.Schema(schema),
             description_placeholders={"device_id": dev_id},
         )
 
