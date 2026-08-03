@@ -293,7 +293,6 @@
   "issues": {
     "module_missing": {
       "title": "Configured casaIT module is missing",
-      "description": "The configured {module} module at {address} was not found during the latest bus scan.",
       "fix_flow": {
         "step": {
           "confirm": {
@@ -308,7 +307,6 @@
     },
     "dm117_config_mismatch": {
       "title": "DM117 slot configuration differs",
-      "description": "DM117 {address} slot {slot} is configured as {expected}, but reports {actual}.",
       "fix_flow": {
         "step": {
           "confirm": {
@@ -323,7 +321,6 @@
     },
     "bridge_unavailable": {
       "title": "casaIT bridge is unavailable",
-      "description": "The configured SMBus bridge could not be reached repeatedly.",
       "fix_flow": {
         "step": {
           "confirm": {

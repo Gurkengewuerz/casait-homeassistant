@@ -399,13 +399,13 @@ script/check
 
 For focused work, use the targeted scripts:
 
-| Changed files | Fix command | Check command |
-| --- | --- | --- |
-| Python | `script/python` | `script/python-check` + `script/type-check` |
-| YAML | — | `script/yaml-check` |
-| Shell | `script/shell` | `script/shell-check` |
-| Markdown | `script/markdown` | `script/markdown-check` |
-| Spelling | `script/spell` | `script/spell-check` |
+| Changed files | Fix command       | Check command                               |
+| ------------- | ----------------- | ------------------------------------------- |
+| Python        | `script/python`   | `script/python-check` + `script/type-check` |
+| YAML          | —                 | `script/yaml-check`                         |
+| Shell         | `script/shell`    | `script/shell-check`                        |
+| Markdown      | `script/markdown` | `script/markdown-check`                     |
+| Spelling      | `script/spell`    | `script/spell-check`                        |
 
 Use `script/lint` to format and check all supported file types. `script/lint-check` and `script/check` are
 check-only and must not modify files.
@@ -429,7 +429,7 @@ See `.github/instructions/blueprint.python.instructions.md` for linter overrides
 
 - You may use `# noqa: CODE` or `# type: ignore` when genuinely necessary
 - Use sparingly and only with good reason (e.g., false positives, external library issues)
-See `.github/instructions/blueprint.python.instructions.md` for linter overrides and error recovery strategies.
+  See `.github/instructions/blueprint.python.instructions.md` for linter overrides and error recovery strategies.
 
 ### Error Recovery Strategy
 

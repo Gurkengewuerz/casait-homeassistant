@@ -293,7 +293,6 @@
   "issues": {
     "module_missing": {
       "title": "Konfiguriertes casaIT-Modul fehlt",
-      "description": "Das konfigurierte Modul {module} an {address} wurde beim letzten Bus-Scan nicht gefunden.",
       "fix_flow": {
         "step": {
           "confirm": {
@@ -308,7 +307,6 @@
     },
     "dm117_config_mismatch": {
       "title": "DM117-Steckplatzkonfiguration weicht ab",
-      "description": "DM117 {address}, Steckplatz {slot}, ist als {expected} konfiguriert, meldet aber {actual}.",
       "fix_flow": {
         "step": {
           "confirm": {
@@ -323,7 +321,6 @@
     },
     "bridge_unavailable": {
       "title": "casaIT-Bridge ist nicht verf\u00fcgbar",
-      "description": "Die konfigurierte SMBus-Bridge war wiederholt nicht erreichbar.",
       "fix_flow": {
         "step": {
           "confirm": {
