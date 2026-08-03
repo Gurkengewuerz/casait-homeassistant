@@ -16,20 +16,26 @@ from .const import (
     DEFAULT_BLIND_CLOSE_TIME,
     DEFAULT_BLIND_OPEN_TIME,
     DEFAULT_BLIND_OVERRUN_TIME,
+    DEFAULT_BLIND_TILT_TIME,
     DEFAULT_DOUBLE_CLICK_MS,
     DEFAULT_FAST_POLL_INTERVAL,
     DEFAULT_IM117_ROLE,
     DEFAULT_LONG_PRESS_MS,
     DEFAULT_MAX_SEND_INTERVAL,
     DEFAULT_OW_PROFILE,
+    DEFAULT_PULSE_DURATION,
     DEFAULT_SLOW_POLL_INTERVAL,
     DOMAIN,
+    DS2413_CHANNEL_INPUT,
+    DS2413_CHANNEL_OUTPUT,
     I2C_ADDR_RANGES,
     IM117_ROLE_BUTTON,
     IM117_ROLE_CONTACT,
     IM117_ROLE_SWITCH,
     IM117_ROLE_UNUSED,
     OM117_MODE_BLIND,
+    OM117_MODE_PULSE,
+    OM117_MODE_SHUTTER,
     OM117_MODE_SWITCH,
     OPT_DOUBLE_CLICK_MS,
     OPT_FAST_POLL_INTERVAL_MS,
@@ -320,10 +326,16 @@ def get_om117_pair_configuration(options: Mapping[str, Any]) -> dict[int, dict[i
                 continue
             mode = str(raw.get("mode", OM117_MODE_SWITCH))
             pair_map[address][pair_index] = OM117PairConfig(
-                mode=mode if mode in {OM117_MODE_SWITCH, OM117_MODE_BLIND} else OM117_MODE_SWITCH,
+                mode=(
+                    mode
+                    if mode in {OM117_MODE_SWITCH, OM117_MODE_BLIND, OM117_MODE_SHUTTER, OM117_MODE_PULSE}
+                    else OM117_MODE_SWITCH
+                ),
                 open_time=_coerce_time(raw.get("open_time"), DEFAULT_BLIND_OPEN_TIME),
                 close_time=_coerce_time(raw.get("close_time"), DEFAULT_BLIND_CLOSE_TIME),
                 overrun_time=_coerce_time(raw.get("overrun_time"), DEFAULT_BLIND_OVERRUN_TIME),
+                tilt_time=_coerce_time(raw.get("tilt_time"), DEFAULT_BLIND_TILT_TIME),
+                pulse_duration=_coerce_time(raw.get("pulse_duration"), DEFAULT_PULSE_DURATION),
             )
 
     return pair_map
@@ -337,6 +349,8 @@ class OM117PairConfig:
     open_time: float = DEFAULT_BLIND_OPEN_TIME
     close_time: float = DEFAULT_BLIND_CLOSE_TIME
     overrun_time: float = DEFAULT_BLIND_OVERRUN_TIME
+    tilt_time: float = DEFAULT_BLIND_TILT_TIME
+    pulse_duration: float = DEFAULT_PULSE_DURATION
 
 
 def get_dm117_port_configuration(
@@ -562,6 +576,33 @@ def get_configured_onewire_profiles(options: Mapping[str, Any]) -> dict[str, str
     }
 
 
+def get_configured_ds2413_channels(options: Mapping[str, Any]) -> dict[str, dict[int, str]]:
+    """Extract the independently configured role of each DS2413 channel.
+
+    Legacy whole-device profiles are expanded to both channels so existing
+    installations keep the same entities after upgrading.
+    """
+
+    configured: dict[str, dict[int, str]] = {}
+    valid_roles = {DS2413_CHANNEL_INPUT, DS2413_CHANNEL_OUTPUT}
+    for device_id, config in _onewire_entries(options).items():
+        profile = str(config.get("profile") or "")
+        if profile not in {"ds2413", "ds2413_in", "ds2413_out"}:
+            continue
+
+        fallback = DS2413_CHANNEL_OUTPUT if profile == "ds2413_out" else DS2413_CHANNEL_INPUT
+        channels: dict[int, str] = {}
+        raw_channels = config.get("channels")
+        if isinstance(raw_channels, Mapping):
+            for index, raw_role in _index_items(raw_channels, 2):
+                role = str(raw_role)
+                channels[index] = role if role in valid_roles else fallback
+        for index in range(2):
+            channels.setdefault(index, fallback)
+        configured[device_id] = channels
+    return configured
+
+
 def get_configured_led_counts(options: Mapping[str, Any]) -> dict[str, int]:
     """Extract configured LED counts for DS28E17 devices from options."""
 
@@ -611,6 +652,8 @@ def set_om117_pairs(
             "open_time": config.open_time,
             "close_time": config.close_time,
             "overrun_time": config.overrun_time,
+            "tilt_time": config.tilt_time,
+            "pulse_duration": config.pulse_duration,
         }
         for index, config in sorted(pairs.items())
     }
@@ -640,6 +683,7 @@ def set_onewire_device(
     *,
     led_count: int | None = None,
     poll_interval: int | None = None,
+    ds2413_channels: Mapping[int, str] | None = None,
 ) -> dict[str, Any]:
     """Return options with one 1-Wire device's configuration replaced."""
 
@@ -651,6 +695,12 @@ def set_onewire_device(
         device["led_count"] = led_count
     if poll_interval is not None:
         device["poll_interval"] = poll_interval
+    if ds2413_channels is not None:
+        device["channels"] = {
+            str(index + 1): role
+            for index, role in sorted(ds2413_channels.items())
+            if role in {DS2413_CHANNEL_INPUT, DS2413_CHANNEL_OUTPUT}
+        }
     return updated
 
 

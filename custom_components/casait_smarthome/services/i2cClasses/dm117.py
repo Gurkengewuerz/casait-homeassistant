@@ -216,27 +216,24 @@ class DM117:
 class DimmerConfig:
     """Configuration for a dimmer port."""
 
-    value: int  # 0-100 percentage
+    value: int  # Native 12-bit DAC value (0-4095)
     speed: DimmerSpeed = DimmerSpeed.DEFAULT
 
     def __post_init__(self) -> None:
         """Clamp value to valid range."""
-        self.value = max(0, min(100, self.value))  # Clamp to 0-100
+        self.value = max(0, min(4095, self.value))
 
     @property
     def raw_value(self) -> int:
-        """Convert 0-100 to 0-4095 range."""
+        """Return the native 12-bit DAC value."""
 
-        return int((self.value / 100.0) * 4095)
+        return self.value
 
     @classmethod
     def from_raw(cls, value: int, speed: DimmerSpeed = DimmerSpeed.DEFAULT) -> DimmerConfig:
         """Create config from raw 0-4095 value."""
 
-        if value is None or value < 0 or value > 4095:
-            value = 0
-        percentage = (value / 4095.0) * 100
-        return cls(int(percentage), speed)
+        return cls(value if 0 <= value <= 4095 else 0, speed)
 
 
 @dataclass

@@ -8,7 +8,13 @@ import logging
 import time
 from typing import Any
 
-from homeassistant.components.cover import ATTR_POSITION, CoverEntity, CoverEntityFeature
+from homeassistant.components.cover import (
+    ATTR_POSITION,
+    ATTR_TILT_POSITION,
+    CoverDeviceClass,
+    CoverEntity,
+    CoverEntityFeature,
+)
 from homeassistant.const import STATE_CLOSED, STATE_OPEN
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
@@ -19,7 +25,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 
 from . import CasaITConfigEntry
 from .api import CasaITApi
-from .const import DOMAIN, OM117_MODE_BLIND, PCF8574_MAPPED_PORTS
+from .const import DOMAIN, OM117_MODE_BLIND, OM117_MODE_SHUTTER, PCF8574_MAPPED_PORTS
 from .helpers import (
     OM117PairConfig,
     build_bridge_slug,
@@ -27,7 +33,6 @@ from .helpers import (
     build_i2c_entity_id,
     get_address_range,
     get_module_name,
-    get_om117_pair_configuration,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -45,7 +50,7 @@ async def async_setup_entry(
     api: CasaITApi = config_entry.runtime_data
     await api.async_wait_initialized()
 
-    om_config = get_om117_pair_configuration(config_entry.options)
+    om_config = api.om117_pair_configuration
     output_range = get_address_range("OM117")
 
     entities: list[CasaITBlindCover] = []
@@ -58,7 +63,7 @@ async def async_setup_entry(
             continue
 
         for pair_index, pair_config in pair_configs.items():
-            if pair_config.mode != OM117_MODE_BLIND:
+            if pair_config.mode not in {OM117_MODE_BLIND, OM117_MODE_SHUTTER}:
                 continue
             entities.append(
                 CasaITBlindCover(
@@ -79,11 +84,7 @@ class CasaITBlindCover(CoverEntity, RestoreEntity):
 
     _attr_has_entity_name = True
     _attr_should_poll = False
-    _attr_supported_features = (
-        CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE | CoverEntityFeature.STOP | CoverEntityFeature.SET_POSITION
-    )
     _attr_assumed_state = True
-    _attr_translation_key = "om117_blind"
 
     def __init__(
         self,
@@ -107,13 +108,28 @@ class CasaITBlindCover(CoverEntity, RestoreEntity):
         self._hardware_down_port = PCF8574_MAPPED_PORTS[self._down_port]
 
         self._position: float = 0.0
+        self._tilt_position: float = 0.0
         self._target_position: float | None = None
+        self._target_tilt_position: float | None = None
         self._active_direction: str | None = None
         self._movement_task: asyncio.Task | None = None
 
+        is_blind = pair_config.mode == OM117_MODE_BLIND
+        self._attr_device_class = CoverDeviceClass.BLIND if is_blind else CoverDeviceClass.SHUTTER
+        self._attr_translation_key = "om117_blind" if is_blind else "om117_shutter"
+        self._attr_supported_features = (
+            CoverEntityFeature.OPEN
+            | CoverEntityFeature.CLOSE
+            | CoverEntityFeature.STOP
+            | CoverEntityFeature.SET_POSITION
+        )
+        if is_blind:
+            self._attr_supported_features |= CoverEntityFeature.SET_TILT_POSITION
+
         bridge_slug = build_bridge_slug(config_entry.entry_id, config_entry.unique_id)
-        self._attr_unique_id = f"{config_entry.entry_id}_om117_{address}_pair_{pair_index + 1}_blind"
-        self.entity_id = build_i2c_entity_id("cover", bridge_slug, "om117", address, "blind", pair_index + 1)
+        cover_kind = "blind" if is_blind else "shutter"
+        self._attr_unique_id = f"{config_entry.entry_id}_om117_{address}_pair_{pair_index + 1}_{cover_kind}"
+        self.entity_id = build_i2c_entity_id("cover", bridge_slug, "om117", address, cover_kind, pair_index + 1)
         self._attr_translation_placeholders = {"pair": str(pair_index + 1)}
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, build_device_identifier(config_entry.entry_id, "om117", address))},
@@ -136,6 +152,11 @@ class CasaITBlindCover(CoverEntity, RestoreEntity):
                 self._position = 0.0
         elif last_state and last_state.state in (STATE_OPEN, STATE_CLOSED):
             self._position = 100.0 if last_state.state == STATE_OPEN else 0.0
+        if last_state and (tilt := last_state.attributes.get("current_tilt_position")) is not None:
+            try:
+                self._tilt_position = float(tilt)
+            except TypeError, ValueError:
+                self._tilt_position = 0.0
 
         self.async_on_remove(
             async_dispatcher_connect(self.hass, self._api.address_signal(self._address), self._handle_state_update)
@@ -173,6 +194,14 @@ class CasaITBlindCover(CoverEntity, RestoreEntity):
         return self._active_direction == "open"
 
     @property
+    def current_cover_tilt_position(self) -> int | None:
+        """Return the estimated slat tilt position."""
+
+        if self._pair_config.mode != OM117_MODE_BLIND:
+            return None
+        return int(round(self._tilt_position))
+
+    @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Expose calibration and runtime information."""
 
@@ -181,6 +210,8 @@ class CasaITBlindCover(CoverEntity, RestoreEntity):
             "open_time": self._pair_config.open_time,
             "close_time": self._pair_config.close_time,
             "overrun_time": self._pair_config.overrun_time,
+            "tilt_time": self._pair_config.tilt_time,
+            "target_tilt_position": self._target_tilt_position,
             "active_direction": self._active_direction,
         }
 
@@ -205,6 +236,13 @@ class CasaITBlindCover(CoverEntity, RestoreEntity):
         """Stop the cover."""
 
         await self._stop_motion()
+
+    async def async_set_cover_tilt_position(self, **kwargs: Any) -> None:
+        """Move the blind slats to a time-estimated tilt position."""
+
+        if (position := kwargs.get(ATTR_TILT_POSITION)) is None:
+            return
+        await self._start_tilt_motion(float(position))
 
     async def _start_motion(self, target: float) -> None:
         """Begin moving toward the target position."""
@@ -235,6 +273,32 @@ class CasaITBlindCover(CoverEntity, RestoreEntity):
             f"casait_blind_motion_{self._address}_{self._pair_index}",
         )
 
+    async def _start_tilt_motion(self, target: float) -> None:
+        """Begin moving the slats toward a tilt target."""
+
+        if self._pair_config.mode != OM117_MODE_BLIND:
+            raise HomeAssistantError("Tilt is only available for blind mode")
+        if not 0 <= target <= 100:
+            raise HomeAssistantError("Target tilt position must be between 0 and 100")
+        if self._address not in self._api.im117_om117:
+            raise HomeAssistantError("Output module not available")
+
+        await self._stop_motion()
+        current = self._tilt_position
+        if abs(target - current) < 0.5:
+            self._tilt_position = target
+            self.async_write_ha_state()
+            return
+
+        direction = "tilt_open" if target > current else "tilt_close"
+        await self._async_set_outputs(direction == "tilt_open", direction == "tilt_close")
+        self._target_tilt_position = target
+        self._active_direction = direction
+        self._movement_task = self.hass.async_create_task(
+            self._run_tilt_motion(current, target),
+            f"casait_blind_tilt_{self._address}_{self._pair_index}",
+        )
+
     async def _stop_motion(self) -> None:
         """Cancel current motion and stop outputs."""
 
@@ -247,6 +311,7 @@ class CasaITBlindCover(CoverEntity, RestoreEntity):
         await self._async_set_outputs(False, False)
         self._active_direction = None
         self._target_position = None
+        self._target_tilt_position = None
         self.async_write_ha_state()
 
     async def _run_motion(self, start: float, target: float, direction: str) -> None:
@@ -273,7 +338,6 @@ class CasaITBlindCover(CoverEntity, RestoreEntity):
 
             self._position = target
             self.async_write_ha_state()
-
             if target in (0.0, 100.0) and self._pair_config.overrun_time > 0:
                 await asyncio.sleep(self._pair_config.overrun_time)
         except asyncio.CancelledError:
@@ -284,6 +348,27 @@ class CasaITBlindCover(CoverEntity, RestoreEntity):
             await self._async_set_outputs(False, False)
             self._movement_task = None
             self._target_position = None
+            self._active_direction = None
+            self.async_write_ha_state()
+
+    async def _run_tilt_motion(self, start: float, target: float) -> None:
+        """Drive the relays briefly and estimate the resulting slat angle."""
+
+        started = time.monotonic()
+        duration = max(0.01, self._pair_config.tilt_time * abs(target - start) / 100)
+        try:
+            while True:
+                progress = min(1.0, (time.monotonic() - started) / duration)
+                self._tilt_position = start + (target - start) * progress
+                self.async_write_ha_state()
+                if progress >= 1.0:
+                    break
+                await asyncio.sleep(0.1)
+            self._tilt_position = target
+        finally:
+            await self._async_set_outputs(False, False)
+            self._movement_task = None
+            self._target_tilt_position = None
             self._active_direction = None
             self.async_write_ha_state()
 

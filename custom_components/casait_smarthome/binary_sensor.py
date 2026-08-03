@@ -14,7 +14,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import CasaITConfigEntry
 from .api import CasaITApi
-from .const import DOMAIN, IM117_ROLE_CONTACT, IM117_ROLE_SWITCH, PCF8574_MAPPED_PORTS
+from .const import DOMAIN, DS2413_CHANNEL_INPUT, IM117_ROLE_CONTACT, IM117_ROLE_SWITCH, PCF8574_MAPPED_PORTS
 from .helpers import (
     IM117PortConfig,
     build_bridge_slug,
@@ -24,6 +24,7 @@ from .helpers import (
     build_onewire_entity_id,
     default_onewire_profile,
     get_address_range,
+    get_configured_ds2413_channels,
     get_configured_onewire_profiles,
     get_dm117_port_configuration,
     get_im117_port_configuration,
@@ -75,13 +76,18 @@ async def async_setup_entry(
 
     ds2413_entities: list[BinarySensorEntity] = []
     configured_profiles = get_configured_onewire_profiles(config_entry.options)
+    configured_channels = get_configured_ds2413_channels(config_entry.options)
 
     for device_id, meta in api.ow_devices.items():
         profile = configured_profiles.get(device_id) or default_onewire_profile(meta)
-        if profile != "ds2413_in":
+        if profile not in {"ds2413", "ds2413_in", "ds2413_out"}:
             continue
+        fallback = DS2413_CHANNEL_INPUT if profile != "ds2413_out" else "output"
+        channel_roles = configured_channels.get(device_id, {0: fallback, 1: fallback})
         ds2413_entities.extend(
-            CasaITDS2413BinarySensor(api, config_entry, device_id, channel, meta) for channel in (0, 1)
+            CasaITDS2413BinarySensor(api, config_entry, device_id, channel, meta)
+            for channel, role in channel_roles.items()
+            if role == DS2413_CHANNEL_INPUT
         )
 
     async_add_entities([*pcf_entities, *dm_entities, *ds2413_entities])

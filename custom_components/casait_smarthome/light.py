@@ -154,15 +154,15 @@ class CasaITDM117Light(LightEntity):
         brightness = kwargs.get(ATTR_BRIGHTNESS)
         if brightness is None:
             brightness = 255
-        percentage = max(0, min(100, round(brightness * 100 / 255)))
-        await self._async_write(percentage, self._transition_speed(kwargs.get(ATTR_TRANSITION)))
+        raw_value = max(0, min(4095, round(brightness * 4095 / 255)))
+        await self._async_write(raw_value, self._transition_speed(kwargs.get(ATTR_TRANSITION)))
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off the light."""
         await self._async_write(0, self._transition_speed(kwargs.get(ATTR_TRANSITION)))
 
-    async def _async_write(self, percentage: int, speed: DimmerSpeed) -> None:
-        dimmer = DimmerConfig(value=percentage, speed=speed)
+    async def _async_write(self, raw_value: int, speed: DimmerSpeed) -> None:
+        dimmer = DimmerConfig(value=raw_value, speed=speed)
         config = DM117PortConfig(
             port=self._port,
             device_type=DeviceType.DIMMER,

@@ -9,23 +9,25 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv, device_registry as dr, entity_registry as er
 from homeassistant.helpers.typing import ConfigType
 
 from .api import CasaITApi
-from .const import CONF_TIMEOUT, CONFIG_ENTRY_VERSION, DOMAIN, PLATFORMS, SERVICE_SCAN_DEVICES
+from .const import CONF_TIMEOUT, CONFIG_ENTRY_VERSION, DOMAIN, PLATFORMS, SERVICE_SCAN_DEVICES, SERVICE_SET_LED_PALETTE
 from .helpers import (
     build_device_identifier,
     get_configured_onewire_poll_intervals,
     get_configured_onewire_profiles,
     get_dm117_port_configuration,
     get_module_name,
+    get_om117_pair_configuration,
     get_polling_settings,
     migrate_options_to_nested,
     migrated_device_identifiers,
     migrated_entity_identity,
 )
+from .services.i2cClasses.led_controller import Color, LEDConfig
 from .services.smbus_proxy import SMBus, SMBusProxyError
 
 _LOGGER = logging.getLogger(__name__)
@@ -34,6 +36,22 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
 type CasaITConfigEntry = ConfigEntry[CasaITApi]
+
+RGB_COLOR_SCHEMA = vol.All(
+    cv.ensure_list,
+    [vol.All(vol.Coerce(int), vol.Range(min=0, max=255))],
+    vol.Length(min=3, max=3),
+)
+SET_LED_PALETTE_SCHEMA = vol.Schema(
+    {
+        vol.Required("device_id"): cv.string,
+        vol.Required("color_1"): RGB_COLOR_SCHEMA,
+        vol.Optional("color_2"): RGB_COLOR_SCHEMA,
+        vol.Optional("color_3"): RGB_COLOR_SCHEMA,
+        vol.Optional("color_4"): RGB_COLOR_SCHEMA,
+        vol.Optional("color_5"): RGB_COLOR_SCHEMA,
+    }
+)
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -47,7 +65,40 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             # scan_devices() already performs the 1-Wire enumeration.
             await entry.runtime_data.scan_devices()
 
-    hass.services.async_register(DOMAIN, SERVICE_SCAN_DEVICES, async_scan_devices_service, schema=vol.Schema({}))
+    async def async_set_led_palette_service(call: ServiceCall) -> None:
+        """Write up to five colors to one DS28E17 LED controller."""
+
+        device_id = call.data["device_id"]
+        api = next(
+            (
+                entry.runtime_data
+                for entry in hass.config_entries.async_entries(DOMAIN)
+                if entry.state is ConfigEntryState.LOADED and device_id in entry.runtime_data.ow_devices
+            ),
+            None,
+        )
+        if api is None:
+            raise ServiceValidationError(f"LED controller {device_id} is not available")
+
+        config = await api.read_led_config(device_id, use_cache=False) or LEDConfig.create_default()
+        colors = [Color(*call.data[f"color_{index}"]) for index in range(1, 6) if f"color_{index}" in call.data]
+        while len(colors) < 5:
+            colors.append(Color(0, 0, 0))
+        config.colors = colors
+        if not config.validate():
+            raise ServiceValidationError("Invalid LED palette")
+        if not await api.write_led_config(device_id, config):
+            raise HomeAssistantError("Unable to update LED controller palette")
+
+    if not hass.services.has_service(DOMAIN, SERVICE_SCAN_DEVICES):
+        hass.services.async_register(DOMAIN, SERVICE_SCAN_DEVICES, async_scan_devices_service, schema=vol.Schema({}))
+    if not hass.services.has_service(DOMAIN, SERVICE_SET_LED_PALETTE):
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_SET_LED_PALETTE,
+            async_set_led_palette_service,
+            schema=SET_LED_PALETTE_SCHEMA,
+        )
 
     return True
 
@@ -191,6 +242,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> bo
         entry.entry_id,
         get_configured_onewire_profiles(entry.options),
         get_configured_onewire_poll_intervals(entry.options),
+        get_om117_pair_configuration(entry.options),
         polling_settings.fast_poll_interval,
         polling_settings.slow_poll_interval,
     )

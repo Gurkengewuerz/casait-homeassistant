@@ -33,12 +33,16 @@ from .const import (
     DEFAULT_OW_POLL_INTERVAL,
     DEFAULT_OW_PROFILE,
     DOMAIN,
+    DS2413_CHANNEL_INPUT,
+    DS2413_CHANNEL_OUTPUT,
     IM117_CONTACT_DEVICE_CLASSES,
     IM117_ROLE_BUTTON,
     IM117_ROLE_CONTACT,
     IM117_ROLE_SWITCH,
     IM117_ROLE_UNUSED,
     OM117_MODE_BLIND,
+    OM117_MODE_PULSE,
+    OM117_MODE_SHUTTER,
     OM117_MODE_SWITCH,
     OPT_DOUBLE_CLICK_MS,
     OPT_FAST_POLL_INTERVAL_MS,
@@ -52,6 +56,7 @@ from .helpers import (
     OM117PairConfig,
     PollingSettings,
     get_address_range,
+    get_configured_ds2413_channels,
     get_configured_led_counts,
     get_configured_onewire_poll_intervals,
     get_configured_onewire_profiles,
@@ -73,7 +78,7 @@ from .services.smbus_proxy import DEFAULT_PORT, DEFAULT_TIMEOUT, SMBus, SMBusPro
 
 _LOGGER = logging.getLogger(__name__)
 
-OM117_SLOT_TYPES = (OM117_MODE_SWITCH, OM117_MODE_BLIND)
+OM117_SLOT_TYPES = (OM117_MODE_SWITCH, OM117_MODE_SHUTTER, OM117_MODE_BLIND, OM117_MODE_PULSE)
 DM117_SLOT_TYPES = ("none", "binary_input", "switch", "dimmer")
 IM117_ROLES = (IM117_ROLE_SWITCH, IM117_ROLE_BUTTON, IM117_ROLE_CONTACT, IM117_ROLE_UNUSED)
 
@@ -86,8 +91,7 @@ ONEWIRE_PROFILES = (
     "ds18b20_temp",
     "ds2438_hih4030_tept5600",
     "ds2438_hih5030_tept5600",
-    "ds2413_out",
-    "ds2413_in",
+    "ds2413",
     "ds28e17_led",
 )
 
@@ -335,7 +339,8 @@ class OptionsFlowHandler(OptionsFlowWithReload):
         if family_code is None:
             return list(ONEWIRE_PROFILES)[0]
 
-        return DEFAULT_OW_PROFILE.get(family_code, list(ONEWIRE_PROFILES)[0])
+        profile = DEFAULT_OW_PROFILE.get(family_code, list(ONEWIRE_PROFILES)[0])
+        return "ds2413" if profile in {"ds2413_in", "ds2413_out"} else profile
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Manage the options menu."""
@@ -548,7 +553,10 @@ class OptionsFlowHandler(OptionsFlowWithReload):
             self._pending_om117_modes = {
                 pair_index - 1: str(user_input[f"pair_{pair_index}_mode"]) for pair_index in range(1, 5)
             }
-            if OM117_MODE_BLIND in self._pending_om117_modes.values():
+            if any(
+                mode in {OM117_MODE_BLIND, OM117_MODE_SHUTTER, OM117_MODE_PULSE}
+                for mode in self._pending_om117_modes.values()
+            ):
                 return await self.async_step_om117_timing()
             pairs = {
                 pair_index: OM117PairConfig(
@@ -556,6 +564,8 @@ class OptionsFlowHandler(OptionsFlowWithReload):
                     open_time=existing.get(pair_index, OM117PairConfig()).open_time,
                     close_time=existing.get(pair_index, OM117PairConfig()).close_time,
                     overrun_time=existing.get(pair_index, OM117PairConfig()).overrun_time,
+                    tilt_time=existing.get(pair_index, OM117PairConfig()).tilt_time,
+                    pulse_duration=existing.get(pair_index, OM117PairConfig()).pulse_duration,
                 )
                 for pair_index, mode in self._pending_om117_modes.items()
             }
@@ -600,6 +610,8 @@ class OptionsFlowHandler(OptionsFlowWithReload):
                     open_time=float(user_input.get(f"pair_{field_index}_open_time", current.open_time)),
                     close_time=float(user_input.get(f"pair_{field_index}_close_time", current.close_time)),
                     overrun_time=float(user_input.get(f"pair_{field_index}_overrun_time", current.overrun_time)),
+                    tilt_time=float(user_input.get(f"pair_{field_index}_tilt_time", current.tilt_time)),
+                    pulse_duration=float(user_input.get(f"pair_{field_index}_pulse_duration", current.pulse_duration)),
                 )
             return self.async_create_entry(
                 title="",
@@ -613,10 +625,15 @@ class OptionsFlowHandler(OptionsFlowWithReload):
 
         schema: dict[Any, Any] = {}
         for pair_index, mode in self._pending_om117_modes.items():
-            if mode != OM117_MODE_BLIND:
+            if mode == OM117_MODE_SWITCH:
                 continue
             current = existing.get(pair_index, OM117PairConfig())
             field_index = pair_index + 1
+            if mode == OM117_MODE_PULSE:
+                schema[vol.Required(f"pair_{field_index}_pulse_duration", default=current.pulse_duration)] = (
+                    NumberSelector(NumberSelectorConfig(min=0.1, max=30, step=0.1, mode=NumberSelectorMode.BOX))
+                )
+                continue
             schema[vol.Required(f"pair_{field_index}_open_time", default=current.open_time)] = NumberSelector(
                 NumberSelectorConfig(min=1, max=180, step=0.1, mode=NumberSelectorMode.BOX)
             )
@@ -626,6 +643,10 @@ class OptionsFlowHandler(OptionsFlowWithReload):
             schema[vol.Required(f"pair_{field_index}_overrun_time", default=current.overrun_time)] = NumberSelector(
                 NumberSelectorConfig(min=0, max=15, step=0.1, mode=NumberSelectorMode.BOX)
             )
+            if mode == OM117_MODE_BLIND:
+                schema[vol.Required(f"pair_{field_index}_tilt_time", default=current.tilt_time)] = NumberSelector(
+                    NumberSelectorConfig(min=0.1, max=15, step=0.1, mode=NumberSelectorMode.BOX)
+                )
 
         module_name = self._pending_om117_name or f"OM117 0x{addr:02X}"
         return self.async_show_form(
@@ -804,6 +825,8 @@ class OptionsFlowHandler(OptionsFlowWithReload):
         default_val = get_configured_onewire_profiles(self.config_entry.options).get(
             dev_id, self._default_profile_for_device(dev_id)
         )
+        if default_val in {"ds2413_in", "ds2413_out"}:
+            default_val = "ds2413"
 
         return self.async_show_form(
             step_id="onewire_config",
@@ -824,14 +847,22 @@ class OptionsFlowHandler(OptionsFlowWithReload):
             return self.async_abort(reason="integration_not_ready")
 
         if user_input is not None:
+            channels = None
+            stored_profile = profile
+            if profile == "ds2413":
+                channels = {
+                    0: str(user_input["channel_1_profile"]),
+                    1: str(user_input["channel_2_profile"]),
+                }
             return self.async_create_entry(
                 title="",
                 data=set_onewire_device(
                     self.config_entry.options,
                     dev_id,
-                    profile,
+                    stored_profile,
                     led_count=int(user_input["led_count"]) if profile == "ds28e17_led" else None,
                     poll_interval=int(user_input["poll_interval"]),
+                    ds2413_channels=channels,
                 ),
             )
 
@@ -848,6 +879,16 @@ class OptionsFlowHandler(OptionsFlowWithReload):
             schema[vol.Required("led_count", default=led_count_default)] = NumberSelector(
                 NumberSelectorConfig(min=1, max=255, step=1, mode=NumberSelectorMode.BOX)
             )
+        elif profile == "ds2413":
+            channel_defaults = get_configured_ds2413_channels(self.config_entry.options).get(
+                dev_id,
+                {0: DS2413_CHANNEL_INPUT, 1: DS2413_CHANNEL_INPUT},
+            )
+            channel_options = (DS2413_CHANNEL_INPUT, DS2413_CHANNEL_OUTPUT)
+            for index in range(2):
+                schema[vol.Required(f"channel_{index + 1}_profile", default=channel_defaults[index])] = SelectSelector(
+                    SelectSelectorConfig(options=channel_options, translation_key="ds2413_channel_profile")
+                )
 
         return self.async_show_form(
             step_id="onewire_settings",

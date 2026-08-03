@@ -15,7 +15,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import CasaITConfigEntry
 from .api import CasaITApi
-from .const import DOMAIN, OM117_MODE_BLIND, PCF8574_MAPPED_PORTS
+from .const import DOMAIN, DS2413_CHANNEL_OUTPUT, OM117_MODE_SWITCH, PCF8574_MAPPED_PORTS
 from .helpers import (
     build_bridge_slug,
     build_device_identifier,
@@ -24,6 +24,7 @@ from .helpers import (
     build_onewire_entity_id,
     default_onewire_profile,
     get_address_range,
+    get_configured_ds2413_channels,
     get_configured_onewire_profiles,
     get_dm117_port_configuration,
     get_module_name,
@@ -58,7 +59,7 @@ async def async_setup_entry(
         pair_configs = om_config.get(addr, {})
         for pair_index in range(4):
             config = pair_configs.get(pair_index)
-            if config and config.mode == OM117_MODE_BLIND:
+            if config and config.mode != OM117_MODE_SWITCH:
                 continue
 
             base_port = pair_index * 2
@@ -79,12 +80,19 @@ async def async_setup_entry(
 
     ds2413_entities: list[SwitchEntity] = []
     configured_profiles = get_configured_onewire_profiles(config_entry.options)
+    configured_channels = get_configured_ds2413_channels(config_entry.options)
 
     for device_id, meta in api.ow_devices.items():
         profile = configured_profiles.get(device_id) or default_onewire_profile(meta)
-        if profile != "ds2413_out":
+        if profile not in {"ds2413", "ds2413_in", "ds2413_out"}:
             continue
-        ds2413_entities.extend(CasaITDS2413Switch(api, config_entry, device_id, channel, meta) for channel in (0, 1))
+        fallback = DS2413_CHANNEL_OUTPUT if profile == "ds2413_out" else "input"
+        channel_roles = configured_channels.get(device_id, {0: fallback, 1: fallback})
+        ds2413_entities.extend(
+            CasaITDS2413Switch(api, config_entry, device_id, channel, meta)
+            for channel, role in channel_roles.items()
+            if role == DS2413_CHANNEL_OUTPUT
+        )
 
     async_add_entities([*pcf_entities, *dm_entities, *ds2413_entities])
 

@@ -22,7 +22,7 @@ from .const import (
     I2C_ADDR_RANGES,
     SIGNAL_STATE_UPDATED,
 )
-from .helpers import get_address_range
+from .helpers import OM117PairConfig, get_address_range
 from .services.i2cClasses.dm117 import DM117, DeviceType, DM117PortConfig
 from .services.i2cClasses.ds2438 import DS2438Reading
 from .services.i2cClasses.led_controller import LEDConfig
@@ -43,6 +43,7 @@ class CasaITApi:
         entry_id: str,
         onewire_profiles: Mapping[str, str] | None = None,
         onewire_poll_intervals: Mapping[str, int] | None = None,
+        om117_pair_configuration: Mapping[int, Mapping[int, OM117PairConfig]] | None = None,
         fast_poll_interval: float = DEFAULT_FAST_POLL_INTERVAL,
         slow_poll_interval: float = DEFAULT_SLOW_POLL_INTERVAL,
     ) -> None:
@@ -57,6 +58,9 @@ class CasaITApi:
         self.ow_devices: dict[str, dict[str, Any]] = {}
         self._onewire_profiles = dict(onewire_profiles or {})
         self._onewire_poll_intervals = dict(onewire_poll_intervals or {})
+        self.om117_pair_configuration = {
+            address: dict(pairs) for address, pairs in (om117_pair_configuration or {}).items()
+        }
         self.found_i2c_devices: dict[str, list[int]] = {}
         self._lock = asyncio.Lock()
         self._pcf_states: dict[int, list[int]] = {}

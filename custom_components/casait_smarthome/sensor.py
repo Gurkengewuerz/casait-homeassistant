@@ -10,7 +10,7 @@ import logging
 from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorEntityDescription, SensorStateClass
-from homeassistant.const import LIGHT_LUX, PERCENTAGE, EntityCategory, UnitOfTemperature
+from homeassistant.const import LIGHT_LUX, PERCENTAGE, EntityCategory, UnitOfElectricPotential, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -290,6 +290,39 @@ async def async_setup_entry(
                     state_class=SensorStateClass.MEASUREMENT,
                     profile=profile,
                     value_fn=_illuminance_from_reading,
+                ),
+                OneWireSensorDescription(
+                    key="vdd",
+                    translation_key="ds2438_vdd",
+                    device_class=SensorDeviceClass.VOLTAGE,
+                    native_unit_of_measurement=UnitOfElectricPotential.VOLT,
+                    state_class=SensorStateClass.MEASUREMENT,
+                    entity_category=EntityCategory.DIAGNOSTIC,
+                    entity_registry_enabled_default=False,
+                    profile=profile,
+                    value_fn=lambda reading: reading.vdd,
+                ),
+                OneWireSensorDescription(
+                    key="vad",
+                    translation_key="ds2438_vad",
+                    device_class=SensorDeviceClass.VOLTAGE,
+                    native_unit_of_measurement=UnitOfElectricPotential.VOLT,
+                    state_class=SensorStateClass.MEASUREMENT,
+                    entity_category=EntityCategory.DIAGNOSTIC,
+                    entity_registry_enabled_default=False,
+                    profile=profile,
+                    value_fn=lambda reading: reading.vad,
+                ),
+                OneWireSensorDescription(
+                    key="vse",
+                    translation_key="ds2438_vse",
+                    device_class=SensorDeviceClass.VOLTAGE,
+                    native_unit_of_measurement=UnitOfElectricPotential.VOLT,
+                    state_class=SensorStateClass.MEASUREMENT,
+                    entity_category=EntityCategory.DIAGNOSTIC,
+                    entity_registry_enabled_default=False,
+                    profile=profile,
+                    value_fn=lambda reading: reading.vse,
                 ),
             ]
 

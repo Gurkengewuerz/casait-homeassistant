@@ -89,6 +89,40 @@
     "cover": {
       "om117_blind": {
         "name": "Blind {pair}"
+      },
+      "om117_shutter": {
+        "name": "Roller shutter {pair}"
+      }
+    },
+    "button": {
+      "rescan_bus": {
+        "name": "Rescan bus"
+      },
+      "om117_pulse": {
+        "name": "Pulse output {port}"
+      }
+    },
+    "number": {
+      "om117_open_time": {
+        "name": "Pair {pair} opening time"
+      },
+      "om117_close_time": {
+        "name": "Pair {pair} closing time"
+      },
+      "om117_overrun_time": {
+        "name": "Pair {pair} overrun time"
+      },
+      "om117_tilt_time": {
+        "name": "Pair {pair} tilt time"
+      },
+      "om117_pulse_duration": {
+        "name": "Pair {pair} pulse duration"
+      },
+      "led_animation_speed": {
+        "name": "Animation speed"
+      },
+      "led_count": {
+        "name": "LED count"
       }
     },
     "event": {
@@ -114,6 +148,15 @@
       },
       "illuminance": {
         "name": "Illuminance"
+      },
+      "ds2438_vdd": {
+        "name": "Supply voltage (VDD)"
+      },
+      "ds2438_vad": {
+        "name": "Analog input voltage (VAD)"
+      },
+      "ds2438_vse": {
+        "name": "Current-sense voltage (VSE)"
       },
       "diagnostics": {
         "name": "Diagnostics"
@@ -141,6 +184,36 @@
     "scan_devices": {
       "name": "Scan devices",
       "description": "Scans the connected I2C bus for compatible devices."
+    },
+    "set_led_palette": {
+      "name": "Set LED palette",
+      "description": "Writes one to five colors used by the LED controller animations.",
+      "fields": {
+        "device_id": {
+          "name": "1-Wire device ID",
+          "description": "ROM ID of the DS28E17 LED controller."
+        },
+        "color_1": {
+          "name": "Color 1",
+          "description": "Primary color used by every animation."
+        },
+        "color_2": {
+          "name": "Color 2",
+          "description": "Secondary color used by alternate and chase animations."
+        },
+        "color_3": {
+          "name": "Color 3",
+          "description": "Third chase color."
+        },
+        "color_4": {
+          "name": "Color 4",
+          "description": "Fourth chase color."
+        },
+        "color_5": {
+          "name": "Color 5",
+          "description": "Fifth chase color."
+        }
+      }
     }
   },
   "selector": {
@@ -171,7 +244,9 @@
     "om117_mode": {
       "options": {
         "switch": "Two switch outputs",
-        "blind": "Blind or roller shutter"
+        "shutter": "Roller shutter",
+        "blind": "Blind with slat tilt",
+        "pulse": "Two pulse outputs"
       }
     },
     "dm117_slot_type": {
@@ -187,9 +262,14 @@
         "ds18b20_temp": "DS18B20 temperature sensor",
         "ds2438_hih4030_tept5600": "DS2438 with HIH4030 and TEPT5600",
         "ds2438_hih5030_tept5600": "DS2438 with HIH5030 and TEPT5600",
-        "ds2413_out": "DS2413 with two digital outputs",
-        "ds2413_in": "DS2413 with two digital inputs",
+        "ds2413": "DS2413 with per-channel roles",
         "ds28e17_led": "DS28E17 LED controller"
+      }
+    },
+    "ds2413_channel_profile": {
+      "options": {
+        "input": "Digital input",
+        "output": "Digital output"
       }
     }
   },
@@ -302,34 +382,50 @@
         }
       },
       "om117_timing": {
-        "title": "Configure blind timings: {module_name}",
+        "title": "Configure output timings: {module_name}",
         "data": {
           "pair_1_open_time": "Pair 1 opening time (s)",
           "pair_1_close_time": "Pair 1 closing time (s)",
           "pair_1_overrun_time": "Pair 1 overrun (s)",
+          "pair_1_tilt_time": "Pair 1 full tilt time (s)",
+          "pair_1_pulse_duration": "Pair 1 pulse duration (s)",
           "pair_2_open_time": "Pair 2 opening time (s)",
           "pair_2_close_time": "Pair 2 closing time (s)",
           "pair_2_overrun_time": "Pair 2 overrun (s)",
+          "pair_2_tilt_time": "Pair 2 full tilt time (s)",
+          "pair_2_pulse_duration": "Pair 2 pulse duration (s)",
           "pair_3_open_time": "Pair 3 opening time (s)",
           "pair_3_close_time": "Pair 3 closing time (s)",
           "pair_3_overrun_time": "Pair 3 overrun (s)",
+          "pair_3_tilt_time": "Pair 3 full tilt time (s)",
+          "pair_3_pulse_duration": "Pair 3 pulse duration (s)",
           "pair_4_open_time": "Pair 4 opening time (s)",
           "pair_4_close_time": "Pair 4 closing time (s)",
-          "pair_4_overrun_time": "Pair 4 overrun (s)"
+          "pair_4_overrun_time": "Pair 4 overrun (s)",
+          "pair_4_tilt_time": "Pair 4 full tilt time (s)",
+          "pair_4_pulse_duration": "Pair 4 pulse duration (s)"
         },
         "data_description": {
           "pair_1_open_time": "Time required for pair 1 to open fully.",
           "pair_1_close_time": "Time required for pair 1 to close fully.",
           "pair_1_overrun_time": "Additional motor time at the end position for pair 1.",
+          "pair_1_tilt_time": "Time needed to move pair 1 through its complete slat tilt range.",
+          "pair_1_pulse_duration": "How long either pulse output in pair 1 remains active.",
           "pair_2_open_time": "Time required for pair 2 to open fully.",
           "pair_2_close_time": "Time required for pair 2 to close fully.",
           "pair_2_overrun_time": "Additional motor time at the end position for pair 2.",
+          "pair_2_tilt_time": "Time needed to move pair 2 through its complete slat tilt range.",
+          "pair_2_pulse_duration": "How long either pulse output in pair 2 remains active.",
           "pair_3_open_time": "Time required for pair 3 to open fully.",
           "pair_3_close_time": "Time required for pair 3 to close fully.",
           "pair_3_overrun_time": "Additional motor time at the end position for pair 3.",
+          "pair_3_tilt_time": "Time needed to move pair 3 through its complete slat tilt range.",
+          "pair_3_pulse_duration": "How long either pulse output in pair 3 remains active.",
           "pair_4_open_time": "Time required for pair 4 to open fully.",
           "pair_4_close_time": "Time required for pair 4 to close fully.",
-          "pair_4_overrun_time": "Additional motor time at the end position for pair 4."
+          "pair_4_overrun_time": "Additional motor time at the end position for pair 4.",
+          "pair_4_tilt_time": "Time needed to move pair 4 through its complete slat tilt range.",
+          "pair_4_pulse_duration": "How long either pulse output in pair 4 remains active."
         }
       },
       "dm117_select": {
@@ -406,11 +502,15 @@
         "title": "Configure OneWire device: {device_id}",
         "data": {
           "poll_interval": "Polling interval (s)",
-          "led_count": "LED count"
+          "led_count": "LED count",
+          "channel_1_profile": "Channel A role",
+          "channel_2_profile": "Channel B role"
         },
         "data_description": {
           "poll_interval": "Time between reads of this device.",
-          "led_count": "Number of addressable LEDs connected to the controller."
+          "led_count": "Number of addressable LEDs connected to the controller.",
+          "channel_1_profile": "Choose whether channel A is exposed as an input or output.",
+          "channel_2_profile": "Choose whether channel B is exposed as an input or output."
         }
       }
     },

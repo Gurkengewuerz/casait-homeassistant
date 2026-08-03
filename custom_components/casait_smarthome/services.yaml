@@ -1,1 +1,41 @@
-scan_devices: {}
+scan_devices:
+  name: Scan devices
+  description: Scans the I2C and 1-Wire buses for supported casaIT devices.
+
+set_led_palette:
+  name: Set LED palette
+  description: Writes one to five colors used by the LED controller animations.
+  fields:
+    device_id:
+      name: 1-Wire device ID
+      description: ROM ID of the DS28E17 LED controller.
+      required: true
+      example: "1900000000000001"
+      selector:
+        text:
+    color_1:
+      name: Color 1
+      description: Primary color used by every animation.
+      required: true
+      selector:
+        color_rgb:
+    color_2:
+      name: Color 2
+      description: Secondary color used by alternate and chase animations.
+      selector:
+        color_rgb:
+    color_3:
+      name: Color 3
+      description: Third chase color.
+      selector:
+        color_rgb:
+    color_4:
+      name: Color 4
+      description: Fourth chase color.
+      selector:
+        color_rgb:
+    color_5:
+      name: Color 5
+      description: Fifth chase color.
+      selector:
+        color_rgb:

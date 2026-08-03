@@ -89,6 +89,40 @@
     "cover": {
       "om117_blind": {
         "name": "Jalousie {pair}"
+      },
+      "om117_shutter": {
+        "name": "Rollladen {pair}"
+      }
+    },
+    "button": {
+      "rescan_bus": {
+        "name": "Bus neu scannen"
+      },
+      "om117_pulse": {
+        "name": "Impulsausgang {port}"
+      }
+    },
+    "number": {
+      "om117_open_time": {
+        "name": "Paar {pair} Laufzeit Auf"
+      },
+      "om117_close_time": {
+        "name": "Paar {pair} Laufzeit Zu"
+      },
+      "om117_overrun_time": {
+        "name": "Paar {pair} Nachlaufzeit"
+      },
+      "om117_tilt_time": {
+        "name": "Paar {pair} Lamellenlaufzeit"
+      },
+      "om117_pulse_duration": {
+        "name": "Paar {pair} Impulsdauer"
+      },
+      "led_animation_speed": {
+        "name": "Animationsgeschwindigkeit"
+      },
+      "led_count": {
+        "name": "Anzahl LEDs"
       }
     },
     "event": {
@@ -114,6 +148,15 @@
       },
       "illuminance": {
         "name": "Beleuchtungsst\u00e4rke"
+      },
+      "ds2438_vdd": {
+        "name": "Versorgungsspannung (VDD)"
+      },
+      "ds2438_vad": {
+        "name": "Analogeingangsspannung (VAD)"
+      },
+      "ds2438_vse": {
+        "name": "Strommessspannung (VSE)"
       },
       "diagnostics": {
         "name": "Diagnose"
@@ -141,6 +184,36 @@
     "scan_devices": {
       "name": "Ger\u00e4te suchen",
       "description": "Durchsucht den verbundenen I2C-Bus nach kompatiblen Ger\u00e4ten."
+    },
+    "set_led_palette": {
+      "name": "LED-Palette setzen",
+      "description": "Schreibt eine bis f\u00fcnf Farben f\u00fcr die Animationen des LED-Controllers.",
+      "fields": {
+        "device_id": {
+          "name": "1-Wire-Ger\u00e4te-ID",
+          "description": "ROM-ID des DS28E17-LED-Controllers."
+        },
+        "color_1": {
+          "name": "Farbe 1",
+          "description": "Prim\u00e4rfarbe f\u00fcr alle Animationen."
+        },
+        "color_2": {
+          "name": "Farbe 2",
+          "description": "Sekund\u00e4rfarbe f\u00fcr Wechsel- und Lauflichtanimationen."
+        },
+        "color_3": {
+          "name": "Farbe 3",
+          "description": "Dritte Lauflichtfarbe."
+        },
+        "color_4": {
+          "name": "Farbe 4",
+          "description": "Vierte Lauflichtfarbe."
+        },
+        "color_5": {
+          "name": "Farbe 5",
+          "description": "F\u00fcnfte Lauflichtfarbe."
+        }
+      }
     }
   },
   "selector": {
@@ -171,7 +244,9 @@
     "om117_mode": {
       "options": {
         "switch": "Zwei Schaltausg\u00e4nge",
-        "blind": "Jalousie oder Rollladen"
+        "shutter": "Rollladen",
+        "blind": "Jalousie mit Lamellenverstellung",
+        "pulse": "Zwei Impulsausg\u00e4nge"
       }
     },
     "dm117_slot_type": {
@@ -187,9 +262,14 @@
         "ds18b20_temp": "DS18B20-Temperatursensor",
         "ds2438_hih4030_tept5600": "DS2438 mit HIH4030 und TEPT5600",
         "ds2438_hih5030_tept5600": "DS2438 mit HIH5030 und TEPT5600",
-        "ds2413_out": "DS2413 mit zwei Digitalausg\u00e4ngen",
-        "ds2413_in": "DS2413 mit zwei Digitaleing\u00e4ngen",
+        "ds2413": "DS2413 mit Rollen je Kanal",
         "ds28e17_led": "DS28E17-LED-Controller"
+      }
+    },
+    "ds2413_channel_profile": {
+      "options": {
+        "input": "Digitaleingang",
+        "output": "Digitalausgang"
       }
     }
   },
@@ -302,34 +382,50 @@
         }
       },
       "om117_timing": {
-        "title": "Jalousie-Laufzeiten konfigurieren: {module_name}",
+        "title": "Ausgangszeiten konfigurieren: {module_name}",
         "data": {
           "pair_1_open_time": "\u00d6ffnungszeit Paar 1 (s)",
           "pair_1_close_time": "Schlie\u00dfzeit Paar 1 (s)",
           "pair_1_overrun_time": "Nachlauf Paar 1 (s)",
+          "pair_1_tilt_time": "Volle Lamellenlaufzeit Paar 1 (s)",
+          "pair_1_pulse_duration": "Impulsdauer Paar 1 (s)",
           "pair_2_open_time": "\u00d6ffnungszeit Paar 2 (s)",
           "pair_2_close_time": "Schlie\u00dfzeit Paar 2 (s)",
           "pair_2_overrun_time": "Nachlauf Paar 2 (s)",
+          "pair_2_tilt_time": "Volle Lamellenlaufzeit Paar 2 (s)",
+          "pair_2_pulse_duration": "Impulsdauer Paar 2 (s)",
           "pair_3_open_time": "\u00d6ffnungszeit Paar 3 (s)",
           "pair_3_close_time": "Schlie\u00dfzeit Paar 3 (s)",
           "pair_3_overrun_time": "Nachlauf Paar 3 (s)",
+          "pair_3_tilt_time": "Volle Lamellenlaufzeit Paar 3 (s)",
+          "pair_3_pulse_duration": "Impulsdauer Paar 3 (s)",
           "pair_4_open_time": "\u00d6ffnungszeit Paar 4 (s)",
           "pair_4_close_time": "Schlie\u00dfzeit Paar 4 (s)",
-          "pair_4_overrun_time": "Nachlauf Paar 4 (s)"
+          "pair_4_overrun_time": "Nachlauf Paar 4 (s)",
+          "pair_4_tilt_time": "Volle Lamellenlaufzeit Paar 4 (s)",
+          "pair_4_pulse_duration": "Impulsdauer Paar 4 (s)"
         },
         "data_description": {
           "pair_1_open_time": "Zeit, die Paar 1 zum vollst\u00e4ndigen \u00d6ffnen ben\u00f6tigt.",
           "pair_1_close_time": "Zeit, die Paar 1 zum vollst\u00e4ndigen Schlie\u00dfen ben\u00f6tigt.",
           "pair_1_overrun_time": "Zus\u00e4tzliche Motorlaufzeit in der Endlage f\u00fcr Paar 1.",
+          "pair_1_tilt_time": "Zeit f\u00fcr den vollst\u00e4ndigen Lamellenweg von Paar 1.",
+          "pair_1_pulse_duration": "Dauer, f\u00fcr die ein Impulsausgang von Paar 1 aktiv bleibt.",
           "pair_2_open_time": "Zeit, die Paar 2 zum vollst\u00e4ndigen \u00d6ffnen ben\u00f6tigt.",
           "pair_2_close_time": "Zeit, die Paar 2 zum vollst\u00e4ndigen Schlie\u00dfen ben\u00f6tigt.",
           "pair_2_overrun_time": "Zus\u00e4tzliche Motorlaufzeit in der Endlage f\u00fcr Paar 2.",
+          "pair_2_tilt_time": "Zeit f\u00fcr den vollst\u00e4ndigen Lamellenweg von Paar 2.",
+          "pair_2_pulse_duration": "Dauer, f\u00fcr die ein Impulsausgang von Paar 2 aktiv bleibt.",
           "pair_3_open_time": "Zeit, die Paar 3 zum vollst\u00e4ndigen \u00d6ffnen ben\u00f6tigt.",
           "pair_3_close_time": "Zeit, die Paar 3 zum vollst\u00e4ndigen Schlie\u00dfen ben\u00f6tigt.",
           "pair_3_overrun_time": "Zus\u00e4tzliche Motorlaufzeit in der Endlage f\u00fcr Paar 3.",
+          "pair_3_tilt_time": "Zeit f\u00fcr den vollst\u00e4ndigen Lamellenweg von Paar 3.",
+          "pair_3_pulse_duration": "Dauer, f\u00fcr die ein Impulsausgang von Paar 3 aktiv bleibt.",
           "pair_4_open_time": "Zeit, die Paar 4 zum vollst\u00e4ndigen \u00d6ffnen ben\u00f6tigt.",
           "pair_4_close_time": "Zeit, die Paar 4 zum vollst\u00e4ndigen Schlie\u00dfen ben\u00f6tigt.",
-          "pair_4_overrun_time": "Zus\u00e4tzliche Motorlaufzeit in der Endlage f\u00fcr Paar 4."
+          "pair_4_overrun_time": "Zus\u00e4tzliche Motorlaufzeit in der Endlage f\u00fcr Paar 4.",
+          "pair_4_tilt_time": "Zeit f\u00fcr den vollst\u00e4ndigen Lamellenweg von Paar 4.",
+          "pair_4_pulse_duration": "Dauer, f\u00fcr die ein Impulsausgang von Paar 4 aktiv bleibt."
         }
       },
       "dm117_select": {
@@ -406,11 +502,15 @@
         "title": "OneWire-Ger\u00e4t konfigurieren: {device_id}",
         "data": {
           "poll_interval": "Abfrageintervall (s)",
-          "led_count": "Anzahl LEDs"
+          "led_count": "Anzahl LEDs",
+          "channel_1_profile": "Rolle Kanal A",
+          "channel_2_profile": "Rolle Kanal B"
         },
         "data_description": {
           "poll_interval": "Zeit zwischen den Abfragen dieses Ger\u00e4ts.",
-          "led_count": "Anzahl der am Controller angeschlossenen adressierbaren LEDs."
+          "led_count": "Anzahl der am Controller angeschlossenen adressierbaren LEDs.",
+          "channel_1_profile": "W\u00e4hle, ob Kanal A als Ein- oder Ausgang bereitgestellt wird.",
+          "channel_2_profile": "W\u00e4hle, ob Kanal B als Ein- oder Ausgang bereitgestellt wird."
         }
       }
     },

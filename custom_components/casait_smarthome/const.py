@@ -30,7 +30,7 @@ I2C_ADDR_RANGES: Final = [
 ]
 
 # Platforms
-PLATFORMS: Final = ["binary_sensor", "cover", "event", "light", "sensor", "switch"]
+PLATFORMS: Final = ["binary_sensor", "button", "cover", "event", "light", "number", "sensor", "switch"]
 
 # What an IM117 input port is wired to. The default keeps every discovered port
 # a plain binary sensor, which is how the integration behaved before roles
@@ -87,13 +87,22 @@ EVENT_DATA_SUBTYPE: Final = "subtype"
 
 # Services
 SERVICE_SCAN_DEVICES: Final = "scan_devices"
+SERVICE_SET_LED_PALETTE: Final = "set_led_palette"
 
 # Output module defaults
 OM117_MODE_SWITCH: Final = "switch"
 OM117_MODE_BLIND: Final = "blind"
+OM117_MODE_SHUTTER: Final = "shutter"
+OM117_MODE_PULSE: Final = "pulse"
 DEFAULT_BLIND_OPEN_TIME: Final = 25.0
 DEFAULT_BLIND_CLOSE_TIME: Final = 25.0
 DEFAULT_BLIND_OVERRUN_TIME: Final = 2.0
+DEFAULT_BLIND_TILT_TIME: Final = 1.5
+DEFAULT_PULSE_DURATION: Final = 0.5
+
+# Per-channel roles for the independently configurable DS2413 pins.
+DS2413_CHANNEL_INPUT: Final = "input"
+DS2413_CHANNEL_OUTPUT: Final = "output"
 
 # Default profiles for 1-Wire devices by family code
 DEFAULT_OW_PROFILE: Final = {
@@ -108,6 +117,7 @@ DEFAULT_LED_COUNT: Final = 30
 DEFAULT_OW_POLL_INTERVAL: Final = {
     "ds2413_in": 1,
     "ds2413_out": 1,
+    "ds2413": 1,
     "ds28e17_led": 10,
     "ds2438_hih4030_tept5600": 15,
     "ds2438_hih5030_tept5600": 15,
