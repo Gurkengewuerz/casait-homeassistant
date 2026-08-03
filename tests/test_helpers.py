@@ -7,6 +7,8 @@ from custom_components.casait_smarthome.const import (
     DEFAULT_DOUBLE_CLICK_MS,
     DEFAULT_IM117_ROLE,
     DEFAULT_LONG_PRESS_MS,
+    DS2413_CHANNEL_INPUT,
+    DS2413_CHANNEL_OUTPUT,
     IM117_ROLE_BUTTON,
     IM117_ROLE_CONTACT,
     IM117_ROLE_SWITCH,
@@ -19,6 +21,7 @@ from custom_components.casait_smarthome.helpers import (
     InputSettings,
     OM117PairConfig,
     build_bridge_slug,
+    get_configured_ds2413_channels,
     get_configured_led_counts,
     get_configured_onewire_poll_intervals,
     get_configured_onewire_profiles,
@@ -111,6 +114,25 @@ def test_get_configured_onewire_profiles_contract() -> None:
     assert get_configured_onewire_profiles(options) == {
         "2800000000000001": "ds18b20_temp",
         "3a00000000000001": "ds2413_in",
+    }
+
+
+def test_get_configured_ds2413_channels_supports_mixed_and_legacy_profiles() -> None:
+    options = {
+        "onewire": {
+            "mixed": {
+                "profile": "ds2413",
+                "channels": {"1": DS2413_CHANNEL_INPUT, "2": DS2413_CHANNEL_OUTPUT},
+            },
+            "legacy_in": {"profile": "ds2413_in"},
+            "legacy_out": {"profile": "ds2413_out"},
+        }
+    }
+
+    assert get_configured_ds2413_channels(options) == {
+        "mixed": {0: DS2413_CHANNEL_INPUT, 1: DS2413_CHANNEL_OUTPUT},
+        "legacy_in": {0: DS2413_CHANNEL_INPUT, 1: DS2413_CHANNEL_INPUT},
+        "legacy_out": {0: DS2413_CHANNEL_OUTPUT, 1: DS2413_CHANNEL_OUTPUT},
     }
 
 

@@ -12,6 +12,7 @@ import time
 from typing import Any
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr, issue_registry as ir
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .const import (
@@ -19,10 +20,11 @@ from .const import (
     DEFAULT_OW_POLL_INTERVAL,
     DEFAULT_OW_PROFILE,
     DEFAULT_SLOW_POLL_INTERVAL,
+    DOMAIN,
     I2C_ADDR_RANGES,
     SIGNAL_STATE_UPDATED,
 )
-from .helpers import OM117PairConfig, get_address_range
+from .helpers import OM117PairConfig, build_device_identifier, get_address_range
 from .services.i2cClasses.dm117 import DM117, DeviceType, DM117PortConfig
 from .services.i2cClasses.ds2438 import DS2438Reading
 from .services.i2cClasses.led_controller import LEDConfig
@@ -46,10 +48,12 @@ class CasaITApi:
         om117_pair_configuration: Mapping[int, Mapping[int, OM117PairConfig]] | None = None,
         fast_poll_interval: float = DEFAULT_FAST_POLL_INTERVAL,
         slow_poll_interval: float = DEFAULT_SLOW_POLL_INTERVAL,
+        configured_module_addresses: Mapping[str, set[int]] | None = None,
     ) -> None:
         """Initialize the API."""
         self.hass = hass
         self.bus = bus
+        self.entry_id = entry_id
         self.state_update_signal = f"{SIGNAL_STATE_UPDATED}_{entry_id}"
         self.im117_om117: dict[int, PCF8574] = {}
         self.dm117: dict[int, DM117] = {}
@@ -61,11 +65,15 @@ class CasaITApi:
         self.om117_pair_configuration = {
             address: dict(pairs) for address, pairs in (om117_pair_configuration or {}).items()
         }
+        self._configured_module_addresses = {
+            module_kind: set(addresses) for module_kind, addresses in (configured_module_addresses or {}).items()
+        }
         self.found_i2c_devices: dict[str, list[int]] = {}
         self._lock = asyncio.Lock()
         self._pcf_states: dict[int, list[int]] = {}
         self._dm117_states: dict[int, dict[int, int]] = {}
         self._read_errors: set[tuple[str, int]] = set()
+        self._connection_failure_cycles = 0
         self._poll_interval = fast_poll_interval
         self._slow_poll_interval = slow_poll_interval
         self._dm_config: dict[int, dict[int, DeviceType]] = {}
@@ -200,6 +208,10 @@ class CasaITApi:
 
         _LOGGER.info("Scanning for I2C devices")
         found_by_code: dict[str, set[int]] = defaultdict(set)
+        if target_codes is not None:
+            for code, addresses in self.found_i2c_devices.items():
+                if code not in target_codes:
+                    found_by_code[code].update(addresses)
 
         for start, end, _, code in I2C_ADDR_RANGES:
             if target_codes and code not in target_codes:
@@ -223,6 +235,14 @@ class CasaITApi:
         await self._refresh_sm117(found_by_code)
 
         await self.scan_onewire()
+        self._sync_missing_module_issues(found_by_code)
+        self._remove_stale_registry_devices()
+
+    async def async_rescan_devices(self) -> None:
+        """Scan for topology changes and reload platforms to expose them."""
+
+        await self.scan_devices()
+        await self.hass.config_entries.async_reload(self.entry_id)
 
     async def start_polling(self) -> None:
         """Start background polling of I2C devices."""
@@ -299,6 +319,30 @@ class CasaITApi:
             self._last_full_cycle = duration
         else:
             self._last_fast_cycle = duration
+        self._sync_bridge_connection_issue()
+
+    def _sync_bridge_connection_issue(self) -> None:
+        """Raise a repair issue when the live bridge remains disconnected."""
+
+        issue_id = f"bridge_unavailable_{self.entry_id}"
+        if bool(self.bus.stats["connected"]):
+            self._connection_failure_cycles = 0
+            ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+            return
+
+        self._connection_failure_cycles += 1
+        if self._connection_failure_cycles < 3:
+            return
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            issue_id,
+            data={"entry_id": self.entry_id},
+            is_fixable=True,
+            is_persistent=True,
+            severity=ir.IssueSeverity.ERROR,
+            translation_key="bridge_unavailable",
+        )
 
     async def _poll_pcf8574(self, address: int, *, is_input: bool) -> None:
         """Read one PCF8574 and publish state changes plus any input edges."""
@@ -359,6 +403,86 @@ class CasaITApi:
 
         if previous != port_states:
             async_dispatcher_send(self.hass, self.address_signal(address))
+        self._sync_dm117_configuration_issues(address, device)
+
+    def _sync_missing_module_issues(self, found_by_code: Mapping[str, set[int]]) -> None:
+        """Create or clear repair issues for explicitly configured modules."""
+
+        code_by_kind = {"im117": "IM117", "om117": "OM117", "dm117": "DM117", "sm117": "SM117"}
+        for module_kind, addresses in self._configured_module_addresses.items():
+            found = found_by_code.get(code_by_kind[module_kind], set())
+            for address in addresses:
+                issue_id = f"module_missing_{self.entry_id}_{module_kind}_{address}"
+                if address in found:
+                    ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+                    continue
+                ir.async_create_issue(
+                    self.hass,
+                    DOMAIN,
+                    issue_id,
+                    data={"entry_id": self.entry_id, "module": module_kind, "address": address},
+                    is_fixable=True,
+                    is_persistent=False,
+                    severity=ir.IssueSeverity.ERROR,
+                    translation_key="module_missing",
+                    translation_placeholders={"module": module_kind.upper(), "address": f"0x{address:02X}"},
+                )
+
+    def _sync_dm117_configuration_issues(self, address: int, device: DM117) -> None:
+        """Compare configured DM117 slot roles with the module response."""
+
+        for slot, expected in self._dm_config.get(address, {}).items():
+            actual = device.last_port_types.get(slot)
+            issue_id = f"dm117_config_mismatch_{self.entry_id}_{address}_{slot}"
+            if actual is expected:
+                ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+                continue
+            ir.async_create_issue(
+                self.hass,
+                DOMAIN,
+                issue_id,
+                data={
+                    "entry_id": self.entry_id,
+                    "address": address,
+                    "slot": slot,
+                    "expected": expected.value,
+                },
+                is_fixable=True,
+                is_persistent=False,
+                severity=ir.IssueSeverity.ERROR,
+                translation_key="dm117_config_mismatch",
+                translation_placeholders={
+                    "address": f"0x{address:02X}",
+                    "slot": str(slot + 1),
+                    "expected": expected.value,
+                    "actual": actual.value if actual is not None else "missing",
+                },
+            )
+
+    @property
+    def current_device_identifiers(self) -> set[tuple[str, str]]:
+        """Return identifiers for every device currently present on the bridge."""
+
+        identifiers = {(DOMAIN, build_device_identifier(self.entry_id, "bridge", "controller"))}
+        for code, addresses in self.found_i2c_devices.items():
+            module_kind = code.lower()
+            for address in addresses:
+                identifier_address: str | int = f"{address:02x}" if module_kind == "sm117" else address
+                identifiers.add((DOMAIN, build_device_identifier(self.entry_id, module_kind, identifier_address)))
+        identifiers.update(
+            (DOMAIN, build_device_identifier(self.entry_id, "onewire", device_id)) for device_id in self.ow_ids
+        )
+        return identifiers
+
+    def _remove_stale_registry_devices(self) -> None:
+        """Remove registry devices that disappeared from a complete scan."""
+
+        device_registry = dr.async_get(self.hass)
+        current = self.current_device_identifiers
+        for device in dr.async_entries_for_config_entry(device_registry, self.entry_id):
+            integration_identifiers = {identifier for identifier in device.identifiers if identifier[0] == DOMAIN}
+            if integration_identifiers and integration_identifiers.isdisjoint(current):
+                device_registry.async_remove_device(device.id)
 
     def _drop_state(self, states: dict[int, Any], address: int) -> None:
         """Forget a module's cached state and tell its entities it went away."""

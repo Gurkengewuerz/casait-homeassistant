@@ -67,7 +67,7 @@ class CasaITRescanButton(ButtonEntity):
     async def async_press(self) -> None:
         """Scan all supported buses."""
 
-        await self._api.scan_devices()
+        await self._api.async_rescan_devices()
 
 
 class CasaITPulseButton(ButtonEntity):
@@ -101,6 +101,7 @@ class CasaITPulseButton(ButtonEntity):
             name=get_module_name(entry.options, "om117", address, f"OM117 0x{address:02X}"),
             manufacturer="casaIT",
             model="PCF8574 Output",
+            via_device=(DOMAIN, build_device_identifier(entry.entry_id, "bridge", "controller")),
         )
 
     @property
@@ -114,10 +115,10 @@ class CasaITPulseButton(ButtonEntity):
 
         async with self._pulse_lock:
             if not await self._api.async_write_pcf_port(self._address, self._hardware_port, 0):
-                raise HomeAssistantError("Unable to activate pulse output")
+                raise HomeAssistantError(translation_domain=DOMAIN, translation_key="pulse_activate_failed")
             try:
                 duration = self._api.om117_pair_configuration[self._address][self._pair_index].pulse_duration
                 await asyncio.sleep(duration)
             finally:
                 if not await self._api.async_write_pcf_port(self._address, self._hardware_port, 1):
-                    raise HomeAssistantError("Unable to release pulse output")
+                    raise HomeAssistantError(translation_domain=DOMAIN, translation_key="pulse_release_failed")

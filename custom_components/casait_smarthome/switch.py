@@ -119,6 +119,7 @@ class CasaITSwitch(SwitchEntity):
             name=get_module_name(config_entry.options, "om117", address, f"OM117 0x{address:02X}"),
             manufacturer="casaIT",
             model="PCF8574 Output",
+            via_device=(DOMAIN, build_device_identifier(config_entry.entry_id, "bridge", "controller")),
         )
         self._update_state()
 
@@ -161,7 +162,7 @@ class CasaITSwitch(SwitchEntity):
         # A successful write publishes the verified state, which updates this entity
         # through the dispatcher. A failed one leaves the old state in place.
         if not await self._api.async_write_pcf_port(self._address, self._hardware_port, state):
-            raise HomeAssistantError("Unable to write PCF8574 output state")
+            raise HomeAssistantError(translation_domain=DOMAIN, translation_key="pcf_output_write_failed")
 
     @property
     def available(self) -> bool:
@@ -202,6 +203,7 @@ class CasaITDM117Switch(SwitchEntity):
             name=get_module_name(config_entry.options, "dm117", address, f"DM117 0x{address:02X}"),
             manufacturer="casaIT",
             model="DM117",
+            via_device=(DOMAIN, build_device_identifier(config_entry.entry_id, "bridge", "controller")),
         )
         self._update_state()
 
@@ -248,7 +250,7 @@ class CasaITDM117Switch(SwitchEntity):
         )
 
         if not await self._api.async_write_dm117_port(self._address, config):
-            raise HomeAssistantError("Unable to write DM117 output state")
+            raise HomeAssistantError(translation_domain=DOMAIN, translation_key="dm117_output_write_failed")
 
     @property
     def available(self) -> bool:
@@ -306,6 +308,6 @@ class CasaITDS2413Switch(SwitchEntity):
 
     async def _async_set_state(self, state: bool) -> None:
         if not await self._api.write_ds2413_state(self._device_id, self._channel, state):
-            raise HomeAssistantError("Unable to set DS2413 output state")
+            raise HomeAssistantError(translation_domain=DOMAIN, translation_key="ds2413_output_write_failed")
         self._attr_is_on = state
         self.async_write_ha_state()

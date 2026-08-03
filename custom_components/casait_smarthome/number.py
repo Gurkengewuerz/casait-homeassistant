@@ -153,6 +153,7 @@ class CasaITOM117RuntimeNumber(NumberEntity, RestoreEntity):
             name=get_module_name(entry.options, "om117", address, f"OM117 0x{address:02X}"),
             manufacturer="casaIT",
             model="PCF8574 Output",
+            via_device=(DOMAIN, build_device_identifier(entry.entry_id, "bridge", "controller")),
         )
 
     async def async_added_to_hass(self) -> None:
@@ -234,9 +235,9 @@ class CasaITLEDControllerNumber(NumberEntity):
         config = await self._api.read_led_config(self._device_id, use_cache=False) or LEDConfig.create_default()
         setattr(config, self._field, round(value))
         if not config.validate():
-            raise HomeAssistantError("Invalid LED controller value")
+            raise HomeAssistantError(translation_domain=DOMAIN, translation_key="invalid_led_configuration")
         if not await self._api.write_led_config(self._device_id, config):
-            raise HomeAssistantError("Unable to update LED controller")
+            raise HomeAssistantError(translation_domain=DOMAIN, translation_key="led_update_failed")
         self._attr_native_value = int(getattr(config, self._field))
         self._attr_available = True
         self.async_write_ha_state()

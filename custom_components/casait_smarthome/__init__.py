@@ -10,13 +10,19 @@ from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError, ServiceValidationError
-from homeassistant.helpers import config_validation as cv, device_registry as dr, entity_registry as er
+from homeassistant.helpers import (
+    config_validation as cv,
+    device_registry as dr,
+    entity_registry as er,
+    issue_registry as ir,
+)
 from homeassistant.helpers.typing import ConfigType
 
 from .api import CasaITApi
 from .const import CONF_TIMEOUT, CONFIG_ENTRY_VERSION, DOMAIN, PLATFORMS, SERVICE_SCAN_DEVICES, SERVICE_SET_LED_PALETTE
 from .helpers import (
     build_device_identifier,
+    get_configured_module_addresses,
     get_configured_onewire_poll_intervals,
     get_configured_onewire_profiles,
     get_dm117_port_configuration,
@@ -33,6 +39,8 @@ from .services.smbus_proxy import SMBus, SMBusProxyError
 _LOGGER = logging.getLogger(__name__)
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+SETUP_FAILURES_KEY = "setup_failures"
+BRIDGE_REPAIR_THRESHOLD = 3
 
 
 type CasaITConfigEntry = ConfigEntry[CasaITApi]
@@ -57,13 +65,16 @@ SET_LED_PALETTE_SCHEMA = vol.Schema(
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the casaIT : Smart Home component."""
 
+    hass.data.setdefault(DOMAIN, {}).setdefault(SETUP_FAILURES_KEY, {})
+
     async def async_scan_devices_service(call: ServiceCall) -> None:
         """Scan for devices."""
         for entry in hass.config_entries.async_entries(DOMAIN):
             if entry.state is not ConfigEntryState.LOADED:
                 continue
-            # scan_devices() already performs the 1-Wire enumeration.
-            await entry.runtime_data.scan_devices()
+            # Reload after enumeration so newly discovered or removed hardware
+            # is reflected by every entity platform immediately.
+            await entry.runtime_data.async_rescan_devices()
 
     async def async_set_led_palette_service(call: ServiceCall) -> None:
         """Write up to five colors to one DS28E17 LED controller."""
@@ -78,7 +89,11 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             None,
         )
         if api is None:
-            raise ServiceValidationError(f"LED controller {device_id} is not available")
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="led_controller_unavailable",
+                translation_placeholders={"device_id": device_id},
+            )
 
         config = await api.read_led_config(device_id, use_cache=False) or LEDConfig.create_default()
         colors = [Color(*call.data[f"color_{index}"]) for index in range(1, 6) if f"color_{index}" in call.data]
@@ -86,9 +101,9 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             colors.append(Color(0, 0, 0))
         config.colors = colors
         if not config.validate():
-            raise ServiceValidationError("Invalid LED palette")
+            raise ServiceValidationError(translation_domain=DOMAIN, translation_key="invalid_led_palette")
         if not await api.write_led_config(device_id, config):
-            raise HomeAssistantError("Unable to update LED controller palette")
+            raise HomeAssistantError(translation_domain=DOMAIN, translation_key="led_palette_update_failed")
 
     if not hass.services.has_service(DOMAIN, SERVICE_SCAN_DEVICES):
         hass.services.async_register(DOMAIN, SERVICE_SCAN_DEVICES, async_scan_devices_service, schema=vol.Schema({}))
@@ -101,6 +116,33 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         )
 
     return True
+
+
+def _record_bridge_setup_failure(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Count setup failures and create a repair issue after repeated outages."""
+
+    failures: dict[str, int] = hass.data.setdefault(DOMAIN, {}).setdefault(SETUP_FAILURES_KEY, {})
+    failures[entry.entry_id] = failures.get(entry.entry_id, 0) + 1
+    if failures[entry.entry_id] < BRIDGE_REPAIR_THRESHOLD:
+        return
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        f"bridge_unavailable_{entry.entry_id}",
+        data={"entry_id": entry.entry_id},
+        is_fixable=True,
+        is_persistent=True,
+        severity=ir.IssueSeverity.ERROR,
+        translation_key="bridge_unavailable",
+    )
+
+
+def _clear_bridge_setup_failure(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Clear setup failure state after the bridge recovers."""
+
+    failures: dict[str, int] = hass.data.setdefault(DOMAIN, {}).setdefault(SETUP_FAILURES_KEY, {})
+    failures.pop(entry.entry_id, None)
+    ir.async_delete_issue(hass, DOMAIN, f"bridge_unavailable_{entry.entry_id}")
 
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -227,12 +269,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> bo
             entry.data.get(CONF_TIMEOUT),
             polling_settings.max_send_interval,
         )
-    except SMBusProxyError as e:
-        raise ConfigEntryNotReady(f"Failed to connect to SMBus proxy: {e}") from e
+    except (SMBusProxyError, OSError) as err:
+        _record_bridge_setup_failure(hass, entry)
+        raise ConfigEntryNotReady(f"Failed to connect to SMBus proxy: {err}") from err
 
-    if not await hass.async_add_executor_job(bus.ping):
+    try:
+        responded = await hass.async_add_executor_job(bus.ping)
+    except (SMBusProxyError, OSError) as err:
         await hass.async_add_executor_job(bus.close)
+        _record_bridge_setup_failure(hass, entry)
+        raise ConfigEntryNotReady(f"Failed to ping SMBus proxy: {err}") from err
+    if not responded:
+        await hass.async_add_executor_job(bus.close)
+        _record_bridge_setup_failure(hass, entry)
         raise ConfigEntryNotReady("SMBus proxy did not respond to ping")
+
+    _clear_bridge_setup_failure(hass, entry)
 
     _LOGGER.debug("Successfully connected to SMBus proxy, initializing API")
 
@@ -245,6 +297,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> bo
         get_om117_pair_configuration(entry.options),
         polling_settings.fast_poll_interval,
         polling_settings.slow_poll_interval,
+        get_configured_module_addresses(entry.options),
     )
     entry.runtime_data = api
 
@@ -260,6 +313,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> bo
         raise ConfigEntryNotReady(message) from api.initialization_error
 
     device_registry = dr.async_get(hass)
+    bridge_identifier = (DOMAIN, build_device_identifier(entry.entry_id, "bridge", "controller"))
+    device_registry.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={bridge_identifier},
+        name="casaIT bridge",
+        manufacturer="casaIT",
+        model="SMBus proxy",
+    )
     for address in api.sm117:
         device_registry.async_get_or_create(
             config_entry_id=entry.entry_id,
@@ -267,6 +328,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> bo
             name=get_module_name(entry.options, "sm117", address, f"SM117 0x{address:02X}"),
             manufacturer="CasaIT",
             model="SM117 1-Wire bridge",
+            via_device=bridge_identifier,
         )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -290,3 +352,15 @@ async def async_unload_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> b
         await hass.async_add_executor_job(api.bus.close)
 
     return unload_ok
+
+
+async def async_remove_config_entry_device(
+    hass: HomeAssistant,
+    config_entry: CasaITConfigEntry,
+    device_entry: dr.DeviceEntry,
+) -> bool:
+    """Allow removing a device only when it is absent from the latest scan."""
+
+    return not any(
+        identifier in config_entry.runtime_data.current_device_identifiers for identifier in device_entry.identifiers
+    )

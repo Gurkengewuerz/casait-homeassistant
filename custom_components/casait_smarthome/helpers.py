@@ -81,8 +81,10 @@ def build_entity_id(entity_domain: str, *parts: str | int) -> str:
 def build_bridge_slug(config_entry_id: str, config_entry_unique_id: str | None) -> str:
     """Return a stable, entity-ID-safe bridge identifier."""
 
-    source = config_entry_unique_id or config_entry_id[:12]
+    source = config_entry_unique_id or config_entry_id
     identifier = "".join(character for character in source.casefold() if character.isalnum())
+    if config_entry_unique_id is None:
+        identifier = identifier[:12]
     if not identifier:
         identifier = "".join(character for character in config_entry_id.casefold() if character.isalnum())[:12]
     return f"bridge_{identifier}"
@@ -496,6 +498,14 @@ def get_module_name(options: Mapping[str, Any], module_kind: str, address: int, 
     module = _module_entries(options, module_kind).get(address, {})
     name = str(module.get(OPT_NAME, "")).strip()
     return name or default
+
+
+def get_configured_module_addresses(options: Mapping[str, Any]) -> dict[str, set[int]]:
+    """Return module addresses which have an explicit options entry."""
+
+    return {
+        module_kind: set(_module_entries(options, module_kind)) for module_kind in ("im117", "om117", "dm117", "sm117")
+    }
 
 
 def _set_module_name(section: dict[str, Any], name: str | None) -> None:

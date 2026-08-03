@@ -1,66 +1,101 @@
-# Getting Started with casaIT : Smart Home
+# Getting started with casaIT : Smart Home
 
-This guide will help you install and set up the casaIT : Smart Home custom integration for Home Assistant.
+This guide covers installation, bridge setup, hardware configuration, and the first checks after setup.
 
 ## Prerequisites
 
 - Home Assistant 2026.7.4 or newer
-- HACS (Home Assistant Community Store) installed
-- Network connectivity to [external service/device]
+- A running casaIT SMBus TCP bridge
+- Network access from Home Assistant to the bridge, normally on TCP port `8555`
+- At least one supported casaIT I2C module or 1-Wire device
 
-## Installation
+No cloud account, API key, or YAML integration configuration is required.
 
-### Via HACS (Recommended)
+## Install with HACS
 
-1. Open HACS in your Home Assistant instance
-2. Go to "Integrations"
-3. Click the three dots in the top right corner
-4. Select "Custom repositories"
-5. Add this repository URL: `https://github.com/Gurkengewuerz/casait-homeassistant`
-6. Set category to "Integration"
-7. Click "Add"
-8. Find "casaIT : Smart Home" in the integration list
-9. Click "Download"
-10. Restart Home Assistant
+1. Open HACS and select **Integrations**.
+2. Open the menu and select **Custom repositories**.
+3. Add `https://github.com/Gurkengewuerz/casait-homeassistant` as an **Integration** repository.
+4. Install **casaIT : Smart Home**.
+5. Restart Home Assistant.
 
-### Manual Installation
+## Manual installation
 
-1. Download the latest release from the [releases page](https://github.com/Gurkengewuerz/casait-homeassistant/releases)
-2. Extract the `casait_smarthome` folder from the archive
-3. Copy it to `custom_components/casait_smarthome/` in your Home Assistant configuration directory
-4. Restart Home Assistant
+1. Download the latest repository release.
+2. Copy `custom_components/casait_smarthome/` to the Home Assistant configuration directory.
+3. Restart Home Assistant.
 
-## Initial Setup
+## Connect the bridge
 
-After installation, add the integration:
+1. Open **Settings > Devices & services**.
+2. Select **Add integration** and search for **casaIT : Smart Home**.
+3. Enter the bridge hostname or IP address.
+4. Enter the TCP port and response timeout.
+5. Submit the form.
 
-1. Go to **Settings** → **Devices & Services**
-2. Click **+ Add Integration**
-3. Search for "casaIT : Smart Home"
+The integration sends a protocol ping during setup. A successful TCP connection alone is not accepted as a compatible bridge.
+
+If the bridge is discovered through Zeroconf, confirm the discovered host and connection values instead.
+
+## Configure modules
+
+Open the integration and select **Configure**. Each options branch lists only hardware found during the latest scan.
+
+### IM117
+
+Give the module a meaningful name and assign each input one role:
+
+- **Push button** creates an event entity and automation device triggers.
+- **Switch** creates a binary sensor without a device class.
+- **Contact** creates a binary sensor with a selected door, window, motion, smoke, or similar device class.
+- **Unused** creates no entity.
+
+### OM117
+
+Configure each pair of outputs as independent switches, a roller shutter, a blind with slat tilt, or two pulse buttons. Cover timings and pulse duration can also be adjusted later through number entities.
+
+### DM117
+
+Assign each installed slot as unused, digital input, digital output, or 0-10 V dimmer. Home Assistant warns in Repairs if the module reports a different EEPROM slot type.
+
+### SM117 and 1-Wire
+
+Name each SM117 bus, then select a profile for every detected 1-Wire ROM ID. DS2413 channel A and B can be configured independently as inputs or outputs. DS28E17 LED controllers expose LED count and animation speed controls.
+
+## Verify the installation
+
+After configuration:
+
+1. Open the **casaIT bridge** device.
+2. Confirm that **Connection** is connected.
+3. Check that **Fast poll cycle** is below roughly 30 ms for a typical input-only fast cycle.
+4. Press a configured IM117 push button and confirm that its event entity records the press.
+5. Toggle an output and confirm that its state changes without a full bus refresh.
+
+## Scan changed hardware
+
+Press **Rescan bus** on the bridge device or call `casait_smarthome.scan_devices` after connecting or removing hardware. The integration updates the device registry and reloads its entity platforms automatically.
+
+## Change the bridge address
+
+Use **Reconfigure** from the integration menu. Reconfiguration preserves every module name, role, timing, and 1-Wire profile.
 
 ## Troubleshooting
 
-### Connection Failed
+### Bridge unavailable
 
-If setup fails with connection errors:
+- Verify the host and port.
+- Check the bridge process and its network route.
+- Check firewall rules.
+- Review **Settings > System > Repairs** after repeated setup failures.
 
-1. Verify the host/IP address is correct and reachable
-2. Check that the API key/token is valid
-3. Ensure no firewall is blocking the connection
-4. Check Home Assistant logs for detailed error messages
+### Module missing
 
-### Entities Not Updating
+- Check module power and I2C wiring.
+- Rescan the bus.
+- Open the repair issue and submit it after correcting the hardware connection.
 
-If entities show "Unavailable" or don't update:
-
-1. Check that the device/service is online
-2. Verify API credentials haven't expired
-3. Review logs: **Settings** → **System** → **Logs**
-4. Try reloading the integration
-
-### Debug Logging
-
-Enable debug logging to troubleshoot issues:
+### Debug logging
 
 ```yaml
 logger:
@@ -69,17 +104,9 @@ logger:
     custom_components.casait_smarthome: debug
 ```
 
-Add this to `configuration.yaml`, restart, and reproduce the issue. Check logs for detailed information.
-
-## Next Steps
-
-- See [CONFIGURATION.md](./CONFIGURATION.md) for detailed configuration options
-- See [EXAMPLES.md](./EXAMPLES.md) for more automation examples
-- Report issues at [GitHub Issues](https://github.com/Gurkengewuerz/casait-homeassistant/issues)
+Restart Home Assistant, reproduce the problem, and inspect **Settings > System > Logs**.
 
 ## Support
 
-For help and discussion:
-
-- [GitHub Discussions](https://github.com/Gurkengewuerz/casait-homeassistant/discussions)
-- [Home Assistant Community Forum](https://community.home-assistant.io/)
+- [GitHub issues](https://github.com/Gurkengewuerz/casait-homeassistant/issues)
+- [GitHub discussions](https://github.com/Gurkengewuerz/casait-homeassistant/discussions)

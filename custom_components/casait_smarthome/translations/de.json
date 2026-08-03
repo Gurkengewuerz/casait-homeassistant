@@ -57,6 +57,9 @@
   },
   "entity": {
     "binary_sensor": {
+      "bridge_connection": {
+        "name": "Verbindung"
+      },
       "im117_input": {
         "name": "Eingang {port}"
       },
@@ -158,6 +161,24 @@
       "ds2438_vse": {
         "name": "Strommessspannung (VSE)"
       },
+      "bridge_roundtrip_latency": {
+        "name": "Roundtrip-Latenz"
+      },
+      "bridge_crc_errors": {
+        "name": "CRC-Fehler"
+      },
+      "bridge_timeouts": {
+        "name": "Zeit\u00fcberschreitungen"
+      },
+      "bridge_send_spacing": {
+        "name": "Sendeabstand"
+      },
+      "bridge_fast_poll_cycle": {
+        "name": "Schneller Abfragezyklus"
+      },
+      "bridge_full_poll_cycle": {
+        "name": "Vollst\u00e4ndiger Abfragezyklus"
+      },
       "diagnostics": {
         "name": "Diagnose"
       }
@@ -212,6 +233,106 @@
         "color_5": {
           "name": "Farbe 5",
           "description": "F\u00fcnfte Lauflichtfarbe."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "position_out_of_range": {
+      "message": "Die Zielposition muss zwischen 0 und 100 liegen."
+    },
+    "tilt_position_out_of_range": {
+      "message": "Die Zielposition der Lamellen muss zwischen 0 und 100 liegen."
+    },
+    "output_module_unavailable": {
+      "message": "Das Ausgangsmodul ist nicht verf\u00fcgbar."
+    },
+    "tilt_unsupported": {
+      "message": "Die Lamellenverstellung ist nur im Jalousiemodus verf\u00fcgbar."
+    },
+    "opposing_outputs": {
+      "message": "Die beiden Motorrichtungen d\u00fcrfen nicht gleichzeitig aktiv sein."
+    },
+    "cover_write_failed": {
+      "message": "Der Ausgangszustand der Jalousie konnte nicht geschrieben werden."
+    },
+    "pulse_activate_failed": {
+      "message": "Der Impulsausgang konnte nicht aktiviert werden."
+    },
+    "pulse_release_failed": {
+      "message": "Der Impulsausgang konnte nicht freigegeben werden."
+    },
+    "dimmer_write_failed": {
+      "message": "Der DM117-Dimmerwert konnte nicht geschrieben werden."
+    },
+    "invalid_led_configuration": {
+      "message": "Die Konfiguration des LED-Controllers ist ung\u00fcltig."
+    },
+    "led_update_failed": {
+      "message": "Der LED-Controller konnte nicht aktualisiert werden."
+    },
+    "pcf_output_write_failed": {
+      "message": "Der OM117-Ausgangszustand konnte nicht geschrieben werden."
+    },
+    "dm117_output_write_failed": {
+      "message": "Der DM117-Ausgangszustand konnte nicht geschrieben werden."
+    },
+    "ds2413_output_write_failed": {
+      "message": "Der DS2413-Ausgangszustand konnte nicht geschrieben werden."
+    },
+    "led_controller_unavailable": {
+      "message": "Der LED-Controller {device_id} ist nicht verf\u00fcgbar."
+    },
+    "invalid_led_palette": {
+      "message": "Die LED-Palette ist ung\u00fcltig."
+    },
+    "led_palette_update_failed": {
+      "message": "Die Palette des LED-Controllers konnte nicht aktualisiert werden."
+    }
+  },
+  "issues": {
+    "module_missing": {
+      "title": "Konfiguriertes casaIT-Modul fehlt",
+      "description": "Das konfigurierte Modul {module} an {address} wurde beim letzten Bus-Scan nicht gefunden.",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Fehlendes Modul pr\u00fcfen",
+            "description": "Pr\u00fcfe Stromversorgung und Busverbindung und best\u00e4tige danach, um erneut zu scannen."
+          }
+        },
+        "error": {
+          "still_unresolved": "Das Modul fehlt weiterhin."
+        }
+      }
+    },
+    "dm117_config_mismatch": {
+      "title": "DM117-Steckplatzkonfiguration weicht ab",
+      "description": "DM117 {address}, Steckplatz {slot}, ist als {expected} konfiguriert, meldet aber {actual}.",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "DM117-Konfiguration pr\u00fcfen",
+            "description": "Pr\u00fcfe die Hardware im Steckplatz und best\u00e4tige danach, um das Modul erneut zu lesen."
+          }
+        },
+        "error": {
+          "still_unresolved": "Die DM117-Antwort weicht weiterhin von der konfigurierten Rolle ab."
+        }
+      }
+    },
+    "bridge_unavailable": {
+      "title": "casaIT-Bridge ist nicht verf\u00fcgbar",
+      "description": "Die konfigurierte SMBus-Bridge war wiederholt nicht erreichbar.",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Bridge-Verbindung erneut pr\u00fcfen",
+            "description": "Pr\u00fcfe die Netzwerkverbindung der Bridge und best\u00e4tige danach f\u00fcr einen neuen Test."
+          }
+        },
+        "error": {
+          "still_unresolved": "Die Bridge ist weiterhin nicht verf\u00fcgbar."
         }
       }
     }

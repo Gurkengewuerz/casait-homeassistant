@@ -1,7 +1,92 @@
 {
   "services": {
     "scan_devices": {
-      "service": "mdi:magnify"
+      "service": "mdi:magnify-scan"
+    },
+    "set_led_palette": {
+      "service": "mdi:palette"
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "bridge_connection": {
+        "default": "mdi:lan-connect"
+      },
+      "im117_input": {
+        "default": "mdi:electric-switch"
+      }
+    },
+    "button": {
+      "rescan_bus": {
+        "default": "mdi:magnify-scan"
+      },
+      "om117_pulse": {
+        "default": "mdi:gesture-tap-button"
+      }
+    },
+    "cover": {
+      "om117_blind": {
+        "default": "mdi:blinds-horizontal"
+      },
+      "om117_shutter": {
+        "default": "mdi:window-shutter"
+      }
+    },
+    "event": {
+      "im117_button": {
+        "default": "mdi:gesture-tap-button"
+      }
+    },
+    "light": {
+      "dm117_dimmer": {
+        "default": "mdi:lightbulb-on-outline"
+      },
+      "led_controller": {
+        "default": "mdi:led-strip-variant"
+      }
+    },
+    "number": {
+      "led_animation_speed": {
+        "default": "mdi:speedometer"
+      },
+      "led_count": {
+        "default": "mdi:counter"
+      },
+      "om117_pulse_duration": {
+        "default": "mdi:timer-outline"
+      },
+      "om117_tilt_time": {
+        "default": "mdi:blinds-horizontal"
+      }
+    },
+    "sensor": {
+      "bridge_roundtrip_latency": {
+        "default": "mdi:timer-outline"
+      },
+      "bridge_crc_errors": {
+        "default": "mdi:alert-circle-outline"
+      },
+      "bridge_timeouts": {
+        "default": "mdi:timer-alert-outline"
+      },
+      "bridge_send_spacing": {
+        "default": "mdi:swap-horizontal"
+      },
+      "bridge_fast_poll_cycle": {
+        "default": "mdi:speedometer"
+      },
+      "bridge_full_poll_cycle": {
+        "default": "mdi:sync"
+      },
+      "ds2438_vdd": {
+        "default": "mdi:flash-triangle-outline"
+      },
+      "ds2438_vad": {
+        "default": "mdi:sine-wave"
+      },
+      "ds2438_vse": {
+        "default": "mdi:current-dc"
+      }
     }
   }
 }

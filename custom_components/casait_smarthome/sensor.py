@@ -10,7 +10,14 @@ import logging
 from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorEntityDescription, SensorStateClass
-from homeassistant.const import LIGHT_LUX, PERCENTAGE, EntityCategory, UnitOfElectricPotential, UnitOfTemperature
+from homeassistant.const import (
+    LIGHT_LUX,
+    PERCENTAGE,
+    EntityCategory,
+    UnitOfElectricPotential,
+    UnitOfTemperature,
+    UnitOfTime,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -175,6 +182,105 @@ class CasaITDebugSensor(SensorEntity):
         self._attr_available = True
 
 
+@dataclass(kw_only=True, frozen=True)
+class BridgeDiagnosticDescription(SensorEntityDescription):
+    """Describe one transport or poll-loop diagnostic value."""
+
+    section: str
+    source_key: str
+
+
+BRIDGE_DIAGNOSTIC_DESCRIPTIONS = (
+    BridgeDiagnosticDescription(
+        key="roundtrip_latency",
+        translation_key="bridge_roundtrip_latency",
+        device_class=SensorDeviceClass.DURATION,
+        native_unit_of_measurement=UnitOfTime.MILLISECONDS,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        section="transport",
+        source_key="last_roundtrip_ms",
+    ),
+    BridgeDiagnosticDescription(
+        key="crc_errors",
+        translation_key="bridge_crc_errors",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        section="transport",
+        source_key="crc_errors",
+    ),
+    BridgeDiagnosticDescription(
+        key="timeouts",
+        translation_key="bridge_timeouts",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        section="transport",
+        source_key="timeouts",
+    ),
+    BridgeDiagnosticDescription(
+        key="send_spacing",
+        translation_key="bridge_send_spacing",
+        device_class=SensorDeviceClass.DURATION,
+        native_unit_of_measurement=UnitOfTime.MILLISECONDS,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        section="transport",
+        source_key="send_interval_ms",
+    ),
+    BridgeDiagnosticDescription(
+        key="fast_poll_cycle",
+        translation_key="bridge_fast_poll_cycle",
+        device_class=SensorDeviceClass.DURATION,
+        native_unit_of_measurement=UnitOfTime.MILLISECONDS,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        section="poll",
+        source_key="fast_cycle_ms",
+    ),
+    BridgeDiagnosticDescription(
+        key="full_poll_cycle",
+        translation_key="bridge_full_poll_cycle",
+        device_class=SensorDeviceClass.DURATION,
+        native_unit_of_measurement=UnitOfTime.MILLISECONDS,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        section="poll",
+        source_key="full_cycle_ms",
+    ),
+)
+
+
+class CasaITBridgeDiagnosticSensor(SensorEntity):
+    """Expose one bridge diagnostic metric."""
+
+    _attr_has_entity_name = True
+    _attr_should_poll = True
+
+    entity_description: BridgeDiagnosticDescription
+
+    def __init__(self, api: CasaITApi, entry: CasaITConfigEntry, description: BridgeDiagnosticDescription) -> None:
+        """Initialize a bridge diagnostic sensor."""
+
+        self._api = api
+        self.entity_description = description
+        bridge_slug = build_bridge_slug(entry.entry_id, entry.unique_id)
+        self._attr_unique_id = f"{entry.entry_id}_bridge_{description.key}"
+        self.entity_id = build_entity_id("sensor", bridge_slug, description.key)
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, build_device_identifier(entry.entry_id, "bridge", "controller"))},
+            name="casaIT bridge",
+            manufacturer="casaIT",
+            model="SMBus proxy",
+        )
+
+    async def async_update(self) -> None:
+        """Read the current metric from the API diagnostics snapshot."""
+
+        section = self._api.diagnostic_data[self.entity_description.section]
+        self._attr_native_value = section[self.entity_description.source_key]
+        self._attr_available = True
+
+
 def _humidity_hih4030(reading: DS2438Reading) -> float | None:
     """Calculate humidity using HIH4030 formula."""
     if reading.vdd in (None, 0) or reading.vad is None:
@@ -232,6 +338,9 @@ async def async_setup_entry(
     entities: list[SensorEntity] = []
 
     entities.append(CasaITDebugSensor(api, entry))
+    entities.extend(
+        CasaITBridgeDiagnosticSensor(api, entry, description) for description in BRIDGE_DIAGNOSTIC_DESCRIPTIONS
+    )
 
     configured_profiles = get_configured_onewire_profiles(entry.options)
 

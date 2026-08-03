@@ -57,6 +57,9 @@
   },
   "entity": {
     "binary_sensor": {
+      "bridge_connection": {
+        "name": "Connection"
+      },
       "im117_input": {
         "name": "Input {port}"
       },
@@ -158,6 +161,24 @@
       "ds2438_vse": {
         "name": "Current-sense voltage (VSE)"
       },
+      "bridge_roundtrip_latency": {
+        "name": "Roundtrip latency"
+      },
+      "bridge_crc_errors": {
+        "name": "CRC errors"
+      },
+      "bridge_timeouts": {
+        "name": "Timeouts"
+      },
+      "bridge_send_spacing": {
+        "name": "Send spacing"
+      },
+      "bridge_fast_poll_cycle": {
+        "name": "Fast poll cycle"
+      },
+      "bridge_full_poll_cycle": {
+        "name": "Full poll cycle"
+      },
       "diagnostics": {
         "name": "Diagnostics"
       }
@@ -212,6 +233,106 @@
         "color_5": {
           "name": "Color 5",
           "description": "Fifth chase color."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "position_out_of_range": {
+      "message": "The target position must be between 0 and 100."
+    },
+    "tilt_position_out_of_range": {
+      "message": "The target tilt position must be between 0 and 100."
+    },
+    "output_module_unavailable": {
+      "message": "The output module is unavailable."
+    },
+    "tilt_unsupported": {
+      "message": "Slat tilt is only available in blind mode."
+    },
+    "opposing_outputs": {
+      "message": "The two motor directions cannot be active at the same time."
+    },
+    "cover_write_failed": {
+      "message": "The blind output state could not be written."
+    },
+    "pulse_activate_failed": {
+      "message": "The pulse output could not be activated."
+    },
+    "pulse_release_failed": {
+      "message": "The pulse output could not be released."
+    },
+    "dimmer_write_failed": {
+      "message": "The DM117 dimmer value could not be written."
+    },
+    "invalid_led_configuration": {
+      "message": "The LED controller configuration is invalid."
+    },
+    "led_update_failed": {
+      "message": "The LED controller could not be updated."
+    },
+    "pcf_output_write_failed": {
+      "message": "The OM117 output state could not be written."
+    },
+    "dm117_output_write_failed": {
+      "message": "The DM117 output state could not be written."
+    },
+    "ds2413_output_write_failed": {
+      "message": "The DS2413 output state could not be written."
+    },
+    "led_controller_unavailable": {
+      "message": "The LED controller {device_id} is unavailable."
+    },
+    "invalid_led_palette": {
+      "message": "The LED palette is invalid."
+    },
+    "led_palette_update_failed": {
+      "message": "The LED controller palette could not be updated."
+    }
+  },
+  "issues": {
+    "module_missing": {
+      "title": "Configured casaIT module is missing",
+      "description": "The configured {module} module at {address} was not found during the latest bus scan.",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Check the missing module",
+            "description": "Check its power and bus connection, then submit to scan again."
+          }
+        },
+        "error": {
+          "still_unresolved": "The module is still missing."
+        }
+      }
+    },
+    "dm117_config_mismatch": {
+      "title": "DM117 slot configuration differs",
+      "description": "DM117 {address} slot {slot} is configured as {expected}, but reports {actual}.",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Verify the DM117 configuration",
+            "description": "Check the installed slot hardware and submit to read the module again."
+          }
+        },
+        "error": {
+          "still_unresolved": "The DM117 response still differs from the configured slot role."
+        }
+      }
+    },
+    "bridge_unavailable": {
+      "title": "casaIT bridge is unavailable",
+      "description": "The configured SMBus bridge could not be reached repeatedly.",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Retry the bridge connection",
+            "description": "Check the bridge network connection, then submit to test it again."
+          }
+        },
+        "error": {
+          "still_unresolved": "The bridge is still unavailable."
         }
       }
     }

@@ -136,6 +136,7 @@ class CasaITBlindCover(CoverEntity, RestoreEntity):
             name=get_module_name(config_entry.options, "om117", address, f"OM117 0x{address:02X}"),
             manufacturer="casaIT",
             model="PCF8574 Output",
+            via_device=(DOMAIN, build_device_identifier(config_entry.entry_id, "bridge", "controller")),
         )
         self._attr_available = True
 
@@ -248,10 +249,10 @@ class CasaITBlindCover(CoverEntity, RestoreEntity):
         """Begin moving toward the target position."""
 
         if not 0 <= target <= 100:
-            raise HomeAssistantError("Target position must be between 0 and 100")
+            raise HomeAssistantError(translation_domain=DOMAIN, translation_key="position_out_of_range")
 
         if self._address not in self._api.im117_om117:
-            raise HomeAssistantError("Output module not available")
+            raise HomeAssistantError(translation_domain=DOMAIN, translation_key="output_module_unavailable")
 
         await self._stop_motion()
 
@@ -277,11 +278,11 @@ class CasaITBlindCover(CoverEntity, RestoreEntity):
         """Begin moving the slats toward a tilt target."""
 
         if self._pair_config.mode != OM117_MODE_BLIND:
-            raise HomeAssistantError("Tilt is only available for blind mode")
+            raise HomeAssistantError(translation_domain=DOMAIN, translation_key="tilt_unsupported")
         if not 0 <= target <= 100:
-            raise HomeAssistantError("Target tilt position must be between 0 and 100")
+            raise HomeAssistantError(translation_domain=DOMAIN, translation_key="tilt_position_out_of_range")
         if self._address not in self._api.im117_om117:
-            raise HomeAssistantError("Output module not available")
+            raise HomeAssistantError(translation_domain=DOMAIN, translation_key="output_module_unavailable")
 
         await self._stop_motion()
         current = self._tilt_position
@@ -376,7 +377,7 @@ class CasaITBlindCover(CoverEntity, RestoreEntity):
         """Update the output ports for movement."""
 
         if up and down:
-            raise HomeAssistantError("Cannot drive blind up and down simultaneously")
+            raise HomeAssistantError(translation_domain=DOMAIN, translation_key="opposing_outputs")
 
         up_ok = await self._api.async_write_pcf_port(self._address, self._hardware_up_port, 0 if up else 1)
         down_ok = await self._api.async_write_pcf_port(self._address, self._hardware_down_port, 0 if down else 1)
@@ -387,7 +388,7 @@ class CasaITBlindCover(CoverEntity, RestoreEntity):
             if not (up or down):
                 _LOGGER.error("Failed to release blind outputs on 0x%02x pair %s", self._address, self._pair_index + 1)
             else:
-                raise HomeAssistantError("Unable to write blind output state")
+                raise HomeAssistantError(translation_domain=DOMAIN, translation_key="cover_write_failed")
 
     @callback
     def _handle_state_update(self) -> None:

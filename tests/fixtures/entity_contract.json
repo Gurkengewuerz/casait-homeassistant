@@ -1,11 +1,20 @@
 [
   {
+    "case": "bridge_connection",
+    "entity_id": "binary_sensor.bridge_aabbccddeeff_connection",
+    "unique_id": "entry-test_bridge_connection",
+    "name": "Connection",
+    "device_identifiers": [["casait_smarthome", "entry-test_bridge_controller"]],
+    "device_name": "casaIT bridge"
+  },
+  {
     "case": "im117_binary_sensor",
     "entity_id": "binary_sensor.bridge_aabbccddeeff_im117_0x38_input_1",
     "unique_id": "entry-test_im117_56_0",
     "name": "Input 1",
     "device_identifiers": [["casait_smarthome", "entry-test_im117_56"]],
-    "device_name": "IM117 0x38"
+    "device_name": "IM117 0x38",
+    "via_device": ["casait_smarthome", "entry-test_bridge_controller"]
   },
   {
     "case": "dm117_binary_sensor",
@@ -13,7 +22,8 @@
     "unique_id": "entry-test_dm117_16_0_input_0",
     "name": "Slot 1 input A",
     "device_identifiers": [["casait_smarthome", "entry-test_dm117_16"]],
-    "device_name": "DM117 0x10"
+    "device_name": "DM117 0x10",
+    "via_device": ["casait_smarthome", "entry-test_bridge_controller"]
   },
   {
     "case": "ds2413_binary_sensor",
@@ -30,7 +40,8 @@
     "unique_id": "entry-test_om117_32_0",
     "name": "Output 1",
     "device_identifiers": [["casait_smarthome", "entry-test_om117_32"]],
-    "device_name": "OM117 0x20"
+    "device_name": "OM117 0x20",
+    "via_device": ["casait_smarthome", "entry-test_bridge_controller"]
   },
   {
     "case": "dm117_switch",
@@ -38,7 +49,8 @@
     "unique_id": "entry-test_dm117_16_0_output_0",
     "name": "Slot 1 output A",
     "device_identifiers": [["casait_smarthome", "entry-test_dm117_16"]],
-    "device_name": "DM117 0x10"
+    "device_name": "DM117 0x10",
+    "via_device": ["casait_smarthome", "entry-test_bridge_controller"]
   },
   {
     "case": "ds2413_switch",
@@ -55,7 +67,8 @@
     "unique_id": "entry-test_dm117_16_0_dimmer",
     "name": "Slot 1 dimmer",
     "device_identifiers": [["casait_smarthome", "entry-test_dm117_16"]],
-    "device_name": "DM117 0x10"
+    "device_name": "DM117 0x10",
+    "via_device": ["casait_smarthome", "entry-test_bridge_controller"]
   },
   {
     "case": "led_controller_light",
@@ -72,7 +85,52 @@
     "unique_id": "entry-test_om117_32_pair_1_blind",
     "name": "Blind 1",
     "device_identifiers": [["casait_smarthome", "entry-test_om117_32"]],
-    "device_name": "OM117 0x20"
+    "device_name": "OM117 0x20",
+    "via_device": ["casait_smarthome", "entry-test_bridge_controller"]
+  },
+  {
+    "case": "im117_event",
+    "entity_id": "event.bridge_aabbccddeeff_im117_0x38_button_1",
+    "unique_id": "entry-test_im117_56_0_button",
+    "name": "Button 1",
+    "device_identifiers": [["casait_smarthome", "entry-test_im117_56"]],
+    "device_name": "IM117 0x38",
+    "via_device": ["casait_smarthome", "entry-test_bridge_controller"]
+  },
+  {
+    "case": "rescan_button",
+    "entity_id": "button.bridge_aabbccddeeff_rescan_bus",
+    "unique_id": "entry-test_rescan_bus",
+    "name": "Rescan bus",
+    "device_identifiers": [["casait_smarthome", "entry-test_bridge_controller"]],
+    "device_name": "casaIT bridge"
+  },
+  {
+    "case": "om117_pulse_button",
+    "entity_id": "button.bridge_aabbccddeeff_om117_0x20_pulse_1",
+    "unique_id": "entry-test_om117_32_0_pulse",
+    "name": "Pulse output 1",
+    "device_identifiers": [["casait_smarthome", "entry-test_om117_32"]],
+    "device_name": "OM117 0x20",
+    "via_device": ["casait_smarthome", "entry-test_bridge_controller"]
+  },
+  {
+    "case": "om117_open_time",
+    "entity_id": "number.bridge_aabbccddeeff_om117_0x20_pair_1_open_time",
+    "unique_id": "entry-test_om117_32_pair_1_open_time",
+    "name": "Pair 1 opening time",
+    "device_identifiers": [["casait_smarthome", "entry-test_om117_32"]],
+    "device_name": "OM117 0x20",
+    "via_device": ["casait_smarthome", "entry-test_bridge_controller"]
+  },
+  {
+    "case": "led_count_number",
+    "entity_id": "number.bridge_aabbccddeeff_ds28e17_1900000000000001_led_led_count",
+    "unique_id": "entry-test_1900000000000001_led_count",
+    "name": "LED count",
+    "device_identifiers": [["casait_smarthome", "entry-test_onewire_1900000000000001"]],
+    "device_name": "DS28E17 1900000000000001",
+    "via_device": ["casait_smarthome", "entry-test_sm117_18"]
   },
   {
     "case": "ds18b20_temperature",
@@ -97,6 +155,14 @@
     "entity_id": "sensor.bridge_aabbccddeeff_diagnostics",
     "unique_id": "entry-test_debug",
     "name": "Diagnostics",
+    "device_identifiers": [["casait_smarthome", "entry-test_bridge_controller"]],
+    "device_name": "casaIT bridge"
+  },
+  {
+    "case": "bridge_roundtrip",
+    "entity_id": "sensor.bridge_aabbccddeeff_roundtrip_latency",
+    "unique_id": "entry-test_bridge_roundtrip_latency",
+    "name": "Roundtrip latency",
     "device_identifiers": [["casait_smarthome", "entry-test_bridge_controller"]],
     "device_name": "casaIT bridge"
   }

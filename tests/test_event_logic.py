@@ -14,7 +14,7 @@ from custom_components.casait_smarthome.const import (
 from custom_components.casait_smarthome.event import CasaITButtonEvent
 from custom_components.casait_smarthome.helpers import InputSettings
 
-ENTRY = SimpleNamespace(entry_id="entry-test", unique_id="AA:BB:CC:DD:EE:FF")
+ENTRY = SimpleNamespace(entry_id="entry-test", unique_id="AA:BB:CC:DD:EE:FF", options={})
 PORT = 0
 HARDWARE_PORT = PCF8574_MAPPED_PORTS[PORT]
 

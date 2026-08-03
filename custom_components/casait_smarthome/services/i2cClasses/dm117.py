@@ -51,6 +51,7 @@ class DM117:
         self.port_config = {}  # Stores port type configuration
         self.port_states = [0] * 8  # Current port states
         self.last_values = {}  # Cache for dimmer values
+        self.last_port_types: dict[int, DeviceType] = {}
         self._last_read_time = 0
         self._read_interval = 0.01  # 10ms minimum between reads
 
@@ -180,11 +181,16 @@ class DM117:
                 raise ValueError(f"Invalid number of modules: {num_modules}")  # noqa: TRY301
 
             values: dict[int, int] = {}
+            port_types: dict[int, DeviceType] = {}
             data = [num_modules]  # Start with num_modules for CRC calculation
 
             for i in range(num_modules):
                 module_type = self.bus.read_byte(self.address)
                 data.append(module_type)
+
+                type_map = {0: DeviceType.INPUT, 1: DeviceType.DIMMER, 2: DeviceType.OUTPUT}
+                if (device_type := type_map.get(module_type)) is not None:
+                    port_types[i] = device_type
 
                 if module_type == 1:  # DAC/Dimmer
                     high = self.bus.read_byte(self.address)
@@ -205,6 +211,7 @@ class DM117:
                 return None
 
             self.last_values = values
+            self.last_port_types = port_types
             self._last_read_time = current_time
 
         except OSError, ValueError:

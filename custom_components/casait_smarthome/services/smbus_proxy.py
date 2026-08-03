@@ -165,6 +165,7 @@ class SMBus:
             try:
                 chunk = self._sock.recv(size - len(chunks))
             except TimeoutError as err:
+                self._timeouts += 1
                 raise SMBusProxyError("Communication timeout") from err
             if not chunk:
                 raise SMBusProxyError("Communication error: empty response")

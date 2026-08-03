@@ -110,6 +110,7 @@ class CasaITButtonEvent(EventEntity):
             name=get_module_name(config_entry.options, "im117", address, f"IM117 0x{address:02X}"),
             manufacturer="casaIT",
             model="PCF8574 Input",
+            via_device=(DOMAIN, build_device_identifier(config_entry.entry_id, "bridge", "controller")),
         )
 
     async def async_added_to_hass(self) -> None:

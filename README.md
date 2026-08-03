@@ -1,260 +1,151 @@
-# casaIT : Smart Home Home Assistant Integration
+# casaIT : Smart Home for Home Assistant
 
-[![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
+[![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
 
-## Overview
+`casaIT : Smart Home` is a custom Home Assistant integration for casaIT I2C and 1-Wire modules connected through the casaIT SMBus TCP bridge.
 
-**casaIT : Smart Home** is a custom [Home Assistant](https://www.home-assistant.io/) integration that provides connectivity to casaIT smart home devices via I2C/SMBus protocol. It enables control and monitoring of modular smart home components including input/output modules, digital controllers, and various 1-Wire sensor devices.
+- Domain: `casait_smarthome`
+- Minimum Home Assistant version: 2026.7.4
+- Connection: local TCP bridge, no cloud account or YAML configuration
+- Repository: `Gurkengewuerz/casait-homeassistant`
 
-- **Domain:** `casait_smarthome`
-- **Minimum Home Assistant version:** `2026.7.4`
-- **Quality Scale:** Bronze
-- **Connection:** I2C/SMBus (via remote proxy)
-- **Main code:** `custom_components/casait_smarthome/`
+## Supported hardware
 
-## Features
+- IM117 PCF8574 input modules
+- OM117 PCF8574 output modules
+- DM117 digital input, digital output, and 12-bit dimmer slots
+- SM117 DS2482 1-Wire bridges
+- DS18B20 temperature sensors
+- DS2438 environmental sensors, including optional voltage diagnostics
+- DS2413 dual-channel I/O with an independent role per channel
+- DS28E17 LED controllers
 
-### Device Support
-- **Input Modules (IM117):** PCF8574-based I2C input expanders
-- **Output Modules (OM117):** PCF8574-based controllable outputs (switches & blinds)
-- **Digital Modules (DM117):** ATMega8-based digital I/O and PWM dimming
-- **Sensor Modules (SM117):** DS2482 1-Wire controllers for temperature, humidity, and digital sensors
-- **1-Wire Devices:** DS18B20, DS2438, DS2413, DS28E17 profiles
+## Home Assistant features
 
-### Integration Features
-- Async, type-checked, fully linted codebase
-- SMBus proxy communication for reliable remote I2C access
-- Background polling for device state synchronization
-- Zeroconf (mDNS) discovery
-- Config flow with device configuration options (blind timings, LED settings, etc.)
-- Native Home Assistant entities: sensors, binary sensors, switches, covers, lights
-- Service for manual device scanning and 1-Wire re-enumeration
+- Fast input polling with latched push-button edges
+- IM117 inputs exposed as events, switches, contacts, or unused channels
+- Press, long-press, and double-press device triggers
+- OM117 switches, pulse outputs, roller shutters, and blinds with time-based slat tilt
+- Runtime controls for cover calibration, pulse duration, LED count, and animation speed
+- Five-color LED palettes for chase and alternate animations
+- Bridge connection, latency, error-counter, send-spacing, and poll-cycle diagnostics
+- Zeroconf discovery, reconfiguration, device rescanning, stale-device cleanup, and repair issues
 
 ## Installation
 
-### HACS (Recommended)
-1. Go to HACS → Integrations → Custom Repositories
-2. Add this repo: `Gurkengewuerz/casait-homeassistant`
-3. Search for `casaIT : Smart Home` and install
-4. Restart Home Assistant
+### HACS
 
-### Manual
-1. Download/copy the `custom_components/casait_smarthome/` folder into your Home Assistant `custom_components/` directory
-2. Restart Home Assistant
+1. Open HACS and select **Integrations**.
+2. Add `Gurkengewuerz/casait-homeassistant` as a custom integration repository.
+3. Install **casaIT : Smart Home**.
+4. Restart Home Assistant.
 
-## Configuration
+### Manual installation
 
-Configuration is done via the Home Assistant UI (Integrations page). No YAML setup is required or supported.
+1. Download the latest release.
+2. Copy `custom_components/casait_smarthome/` into the Home Assistant configuration directory.
+3. Restart Home Assistant.
 
-### Initial Setup
+## Setup
 
-1. Go to **Settings → Devices & Services → Add Integration**
-2. Search for `casaIT : Smart Home`
-3. Enter the SMBus proxy details:
-   - **Host:** IP address of the SMBus proxy server
-   - **Port:** Communication port (default: 8555)
-   - **Timeout:** Connection timeout in seconds (default: 2.0)
-4. Click Submit
+1. Open **Settings > Devices & services > Add integration**.
+2. Search for **casaIT : Smart Home**.
+3. Enter the SMBus bridge host, TCP port, and response timeout.
 
-### Configuration Options
+The default port is `8555` and the default timeout is `2.0` seconds. The setup flow verifies the bridge protocol with a ping before creating the config entry.
 
-After setup, configure device-specific settings:
+If the bridge advertises an `_http._tcp.local.` service with a name beginning with `casaithome`, Home Assistant can discover it automatically.
 
-1. Go to **Settings → Devices & Services**
-2. Find **casaIT : Smart Home**
-3. Click **Configure** to adjust:
-   - **Blind open/close times:** Times for OM117 blind modules
-   - **Blind overrun time:** Extra movement time for blind calibration
-   - **LED count:** Number of LEDs for DS28E17 LED controllers
-   - **1-Wire profiles:** Configure which 1-Wire sensors are connected
-   - **1-Wire polling interval:** Override the profile default between 1 and 3600 seconds
+## Configuration options
 
-### Automatic Discovery
+Open **Settings > Devices & services > casaIT : Smart Home > Configure** to change:
 
-If your SMBus proxy supports Zeroconf (mDNS), the integration can auto-discover it:
-- Look for `casaithome._http._tcp.local.` service announcements
-- Simplifies setup without manual host entry
+- IM117 module names and the role of every input
+- OM117 module names and output-pair modes
+- Blind, shutter, tilt, and pulse timings
+- DM117 module names and slot types
+- SM117 module names
+- 1-Wire profiles, DS2413 channel roles, polling intervals, and initial LED count
+- Fast and slow polling intervals, button timing, and adaptive send-spacing limit
+
+Use **Reconfigure** from the integration menu to change the bridge host, port, or timeout without losing module options.
+
+## Service actions
+
+### Scan devices
+
+`casait_smarthome.scan_devices` scans the I2C and 1-Wire buses, removes stale registry devices, and reloads the integration so newly connected hardware appears immediately.
+
+```yaml
+action: casait_smarthome.scan_devices
+```
+
+The bridge device also provides a **Rescan bus** button.
+
+### Set LED palette
+
+`casait_smarthome.set_led_palette` writes up to five RGB colors to a DS28E17 LED controller. Color 1 is required; omitted colors are written as black.
+
+```yaml
+action: casait_smarthome.set_led_palette
+data:
+  device_id: "1900000000000001"
+  color_1: [255, 0, 0]
+  color_2: [0, 0, 255]
+```
+
+## Diagnostics and repairs
+
+The bridge device includes diagnostic entities for:
+
+- TCP connection state
+- Last roundtrip latency
+- CRC and timeout counters
+- Current adaptive send spacing
+- Fast and full poll-cycle duration
+
+Home Assistant raises repair issues when a configured module is missing, a DM117 slot reports a different type than configured, or the bridge repeatedly fails to connect.
+
+## Troubleshooting
+
+### Setup cannot connect
+
+- Verify the bridge host and port.
+- Confirm that Home Assistant can reach the bridge over the local network.
+- Check that no firewall blocks the TCP port.
+- Confirm that the endpoint is the casaIT SMBus bridge, not merely another open TCP service.
+
+### A module or entity is unavailable
+
+- Check module power and I2C wiring.
+- Press **Rescan bus** on the bridge device.
+- Open **Settings > System > Repairs** for a hardware-specific issue.
+- Inspect the bridge diagnostic entities and Home Assistant logs.
+
+### Debug logging
+
+```yaml
+logger:
+  default: warning
+  logs:
+    custom_components.casait_smarthome: debug
+```
+
+Restart Home Assistant after changing logging configuration.
 
 ## Development
 
-- **Validate code:** `./script/check` (type, lint, spell)
-- **Run Home Assistant:** `./script/develop` (dev instance on port 8123)
-- **Force restart:** `pkill -f "hass --config" || true && pkill -f "debugpy.*5678" || true && ./script/develop`
-- **Logs:** See `config/home-assistant.log`
-
-### Getting Started
-
-#### Quick Start (GitHub Codespaces - Recommended)
-
-Develop in your browser with all tools pre-configured:
-
-[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/Gurkengewuerz/casait-homeassistant?quickstart=1)
-
-- Zero setup required
-- Home Assistant included
-- All dependencies pre-installed
-
-#### Local Development
-
-Requirements:
-- Docker Desktop
-- VS Code with [Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
-
-Steps:
-1. Clone this repository
-2. Open in VS Code
-3. Click "Reopen in Container" when prompted
-
-### Development Commands
+Always use the repository scripts because they activate the expected environment and perform cleanup:
 
 ```bash
-# Start Home Assistant (port 8123)
-./script/develop
-
-# Run all validations
-./script/check
-
-# Format code
-./script/lint
-
-# Run tests
-./script/test
-
-# With coverage report
-./script/test --cov-html
+script/develop
+script/check
+script/test
+script/hassfest
 ```
 
-### Logs and Debugging
+The integration follows the flat architecture documented in `AGENTS.md`: entity platforms call `CasaITApi`, the API serializes hardware access, and synchronous drivers never access Home Assistant directly.
 
-- **Live:** Terminal where `./script/develop` runs
-- **File logs:** `config/home-assistant.log` (current), `.log.1` (previous)
-- **Debug logging:** Add to `config/configuration.yaml`:
-  ```yaml
-  logger:
-    logs:
-      custom_components.casait_smarthome: debug
-  ```
+## License
 
-### Project Structure
-
-```
-custom_components/casait_smarthome/
-├── api.py                 # Core API client for I2C device communication
-├── config_flow.py         # Configuration flow and options flow
-├── const.py               # Constants (device codes, platforms, defaults)
-├── manifest.json          # Integration metadata
-├── services.yaml          # Service definitions
-├── strings.json           # UI text (English, Zeroconf)
-├── [platform]/            # Entity platforms
-│   ├── __init__.py
-│   └── ...
-├── services/
-│   ├── smbus_proxy.py     # SMBus proxy communication
-│   └── i2cClasses/        # I2C device classes (DM117, PCF8574, etc.)
-├── translations/
-│   └── en.json            # English translations
-```
-
-### Key Modules
-
-- **`api.py`** - CasaITApi class: Scans I2C bus, manages polling, coordinates device communication
-- **`config_flow.py`** - Setup wizard for host/port/timeout, device-specific options
-- **`services/smbus_proxy.py`** - SMBusProxy client for remote I2C access
-- **`services/i2cClasses/`** - Device-specific classes (PCF8574, DM117, OneWireBus, LEDConfig)
-
-## Services
-
-### `casait_smarthome.scan_devices`
-
-Manually scan the I2C bus for connected devices and re-enumerate all devices.
-
-Used after connecting new hardware to force immediate discovery without waiting for the next polling cycle.
-
-**Usage:**
-
-```yaml
-service: casait_smarthome.scan_devices
-```
-
-This service is useful after:
-- Connecting new I2C modules
-- Adding 1-Wire sensors to the bus
-- Recovering from temporary I2C communication issues
-
-## Coding Standards
-
-- **Python:** 4 spaces, 120 char lines, double quotes, full type hints, async/await for all I/O
-- **YAML:** 2 spaces, modern Home Assistant syntax
-- **JSON:** 2 spaces, no trailing commas
-- **Validation:** Always run `./script/check` before committing
-
-See `AGENTS.md` for comprehensive developer guidelines, architecture patterns, and contribution rules.
-
-## Supported Entity Types
-
-Entities are dynamically created based on discovered devices. Common entity types include:
-
-### Sensors
-- **Temperature (1-Wire):** DS18B20 and DS2438 temperature readings
-- **Humidity (1-Wire):** DS2438 humidity/environmental sensors
-- **Input State:** DM117 digital input values
-- **Analog Input:** DM117 analog/dimmer input readings
-
-### Binary Sensors
-- **Digital Inputs:** IM117/DM117 binary input states
-- **Connection Status:** SMBus proxy connectivity status
-
-### Switches
-- **Output Control:** OM117 switch outputs, DM117 digital outputs
-- **Relay Control:** Control individual relay outputs
-
-### Covers (Blinds/Shutters)
-- **Automated Blinds:** OM117 paired outputs for roller blinds
-- **Position Tracking:** Open/close/stop commands with position memory
-
-### Lights
-- **LED Control:** DS28E17 RGB/addressable LED controllers
-- **Dimmable Output:** DM117 PWM dimmer controls
-
-### Buttons
-- **Manual Triggers:** One-shot outputs for door bells, garage openers, etc.
-
-## What is SMBus Proxy?
-
-This integration communicates with casaIT devices via SMBus (System Management Bus), a simplified variant of I2C. Since direct I2C access from Home Assistant isn't practical, you need an **SMBus proxy service** running on a separate device (e.g., Raspberry Pi, embedded Linux device with SMBus capabilities).
-
-The proxy forwards Home Assistant's I2C commands to the physical I2C bus and returns device state.
-
-See your casaIT hardware documentation for proxy setup instructions.
-
-## Contributing
-
-Contributions welcome! Please follow:
-- Code must pass `./script/check` without errors
-- Use async/await for all I/O operations
-- Include full type hints on all functions
-- Use [Conventional Commits](https://www.conventionalcommits.org/) format
-- No breaking changes without explicit approval
-- Follow architecture patterns in `AGENTS.md`
-
-## Testing
-
-```bash
-# Run all tests
-./script/test -v
-
-# Specific test file
-./script/test tests/test_config_flow.py
-
-# Update snapshots
-./script/test --snapshot-update
-
-# Coverage report
-./script/test --cov-html
-```
-
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
-
----
-
-**Made with ❤️ by [@Gurkengewuerz][user_profile]**
+This project is licensed under the MIT License. See [LICENSE](LICENSE).

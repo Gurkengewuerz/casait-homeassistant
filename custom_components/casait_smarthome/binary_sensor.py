@@ -7,6 +7,7 @@ import logging
 from typing import Any
 
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass, BinarySensorEntity
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
@@ -19,6 +20,7 @@ from .helpers import (
     IM117PortConfig,
     build_bridge_slug,
     build_device_identifier,
+    build_entity_id,
     build_i2c_entity_id,
     build_onewire_device_info,
     build_onewire_entity_id,
@@ -90,7 +92,37 @@ async def async_setup_entry(
             if role == DS2413_CHANNEL_INPUT
         )
 
-    async_add_entities([*pcf_entities, *dm_entities, *ds2413_entities])
+    async_add_entities([CasaITBridgeConnectionSensor(api, config_entry), *pcf_entities, *dm_entities, *ds2413_entities])
+
+
+class CasaITBridgeConnectionSensor(BinarySensorEntity):
+    """Report the current TCP bridge connection state."""
+
+    _attr_has_entity_name = True
+    _attr_should_poll = True
+    _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_translation_key = "bridge_connection"
+
+    def __init__(self, api: CasaITApi, entry: CasaITConfigEntry) -> None:
+        """Initialize the bridge connection sensor."""
+
+        self._api = api
+        bridge_slug = build_bridge_slug(entry.entry_id, entry.unique_id)
+        self._attr_unique_id = f"{entry.entry_id}_bridge_connection"
+        self.entity_id = build_entity_id("binary_sensor", bridge_slug, "connection")
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, build_device_identifier(entry.entry_id, "bridge", "controller"))},
+            name="casaIT bridge",
+            manufacturer="casaIT",
+            model="SMBus proxy",
+        )
+
+    async def async_update(self) -> None:
+        """Read the transport connection flag without performing I/O."""
+
+        self._attr_is_on = bool(self._api.bus.stats["connected"])
+        self._attr_available = True
 
 
 class CasaITBinarySensor(BinarySensorEntity):
@@ -124,6 +156,7 @@ class CasaITBinarySensor(BinarySensorEntity):
             name=get_module_name(config_entry.options, "im117", address, f"IM117 0x{address:02X}"),
             manufacturer="casaIT",
             model="PCF8574 Input",
+            via_device=(DOMAIN, build_device_identifier(config_entry.entry_id, "bridge", "controller")),
         )
         self._update_state()
 
@@ -191,6 +224,7 @@ class CasaITDM117BinarySensor(BinarySensorEntity):
             name=get_module_name(config_entry.options, "dm117", address, f"DM117 0x{address:02X}"),
             manufacturer="casaIT",
             model="DM117",
+            via_device=(DOMAIN, build_device_identifier(config_entry.entry_id, "bridge", "controller")),
         )
         self._update_state()
 

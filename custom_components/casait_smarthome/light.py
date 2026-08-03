@@ -7,11 +7,13 @@ from typing import Any
 
 from homeassistant.components.light import ATTR_BRIGHTNESS, ATTR_EFFECT, ATTR_RGB_COLOR, ATTR_TRANSITION, LightEntity
 from homeassistant.components.light.const import ColorMode, LightEntityFeature
+from homeassistant.const import STATE_ON
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.helpers.restore_state import RestoreEntity
 
 from . import CasaITConfigEntry
 from .api import CasaITApi
@@ -121,6 +123,7 @@ class CasaITDM117Light(LightEntity):
             name=get_module_name(config_entry.options, "dm117", address, f"DM117 0x{address:02X}"),
             manufacturer="casaIT",
             model="DM117",
+            via_device=(DOMAIN, build_device_identifier(config_entry.entry_id, "bridge", "controller")),
         )
         self._update_state()
 
@@ -170,7 +173,7 @@ class CasaITDM117Light(LightEntity):
         )
 
         if not await self._api.async_write_dm117_port(self._address, config):
-            raise HomeAssistantError("Unable to write DM117 dimmer value")
+            raise HomeAssistantError(translation_domain=DOMAIN, translation_key="dimmer_write_failed")
 
     @staticmethod
     def _transition_speed(transition: Any) -> DimmerSpeed:
@@ -196,7 +199,7 @@ class CasaITDM117Light(LightEntity):
         return self._address in self._api.dm117_states
 
 
-class CasaITLEDControllerLight(LightEntity):
+class CasaITLEDControllerLight(LightEntity, RestoreEntity):
     """Representation of a DS28E17-based LED controller."""
 
     _attr_has_entity_name = True
@@ -227,6 +230,23 @@ class CasaITLEDControllerLight(LightEntity):
         self.entity_id = build_onewire_entity_id("light", bridge_slug, device_id, meta, "led", "controller")
         self._attr_device_info = build_onewire_device_info(config_entry.entry_id, device_id, meta)
         self._attr_assumed_state = True
+
+    async def async_added_to_hass(self) -> None:
+        """Restore the last UI state until the controller responds."""
+
+        await super().async_added_to_hass()
+        if (last_state := await self.async_get_last_state()) is None:
+            return
+
+        config = LEDConfig.create_default()
+        config.state = last_state.state == STATE_ON
+        if (brightness := last_state.attributes.get(ATTR_BRIGHTNESS)) is not None:
+            config.brightness = max(0, min(255, int(brightness)))
+        if (rgb := last_state.attributes.get(ATTR_RGB_COLOR)) is not None and len(rgb) == 3:
+            self._set_primary_color(config, *rgb)
+        if (effect := last_state.attributes.get(ATTR_EFFECT)) in EFFECT_TO_ANIMATION:
+            config.animation = EFFECT_TO_ANIMATION[effect]
+        self._apply_config(config, from_read=False)
 
     @property
     def is_on(self) -> bool | None:
@@ -350,11 +370,11 @@ class CasaITLEDControllerLight(LightEntity):
         self._ensure_colors(config)
 
         if not config.validate():
-            raise HomeAssistantError("Invalid LED configuration")
+            raise HomeAssistantError(translation_domain=DOMAIN, translation_key="invalid_led_configuration")
 
         success = await self._api.write_led_config(self._device_id, config)
         if not success:
-            raise HomeAssistantError("Unable to update LED controller")
+            raise HomeAssistantError(translation_domain=DOMAIN, translation_key="led_update_failed")
 
         self._led_count = config.led_count or self._led_count
         self._apply_config(config, from_read=False)
