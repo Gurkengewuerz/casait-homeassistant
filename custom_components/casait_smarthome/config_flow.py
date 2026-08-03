@@ -78,22 +78,24 @@ from .services.smbus_proxy import DEFAULT_PORT, DEFAULT_TIMEOUT, SMBus, SMBusPro
 
 _LOGGER = logging.getLogger(__name__)
 
-OM117_SLOT_TYPES = (OM117_MODE_SWITCH, OM117_MODE_SHUTTER, OM117_MODE_BLIND, OM117_MODE_PULSE)
-DM117_SLOT_TYPES = ("none", "binary_input", "switch", "dimmer")
-IM117_ROLES = (IM117_ROLE_SWITCH, IM117_ROLE_BUTTON, IM117_ROLE_CONTACT, IM117_ROLE_UNUSED)
+# Selector option lists must be lists: SelectSelectorConfig validates its options
+# against vol.Schema([...]), which rejects tuples with "expected a list".
+OM117_SLOT_TYPES = [OM117_MODE_SWITCH, OM117_MODE_SHUTTER, OM117_MODE_BLIND, OM117_MODE_PULSE]
+DM117_SLOT_TYPES = ["none", "binary_input", "switch", "dimmer"]
+IM117_ROLES = [IM117_ROLE_SWITCH, IM117_ROLE_BUTTON, IM117_ROLE_CONTACT, IM117_ROLE_UNUSED]
 
 # voluptuous cannot express "no selection", so the absence of a device class is
 # carried as an explicit sentinel that is mapped back to None on save.
 NO_DEVICE_CLASS = "none"
-CONTACT_DEVICE_CLASS_OPTIONS = (NO_DEVICE_CLASS, *IM117_CONTACT_DEVICE_CLASSES)
+CONTACT_DEVICE_CLASS_OPTIONS = [NO_DEVICE_CLASS, *IM117_CONTACT_DEVICE_CLASSES]
 
-ONEWIRE_PROFILES = (
+ONEWIRE_PROFILES = [
     "ds18b20_temp",
     "ds2438_hih4030_tept5600",
     "ds2438_hih5030_tept5600",
     "ds2413",
     "ds28e17_led",
-)
+]
 
 
 def _bridge_data_schema(defaults: Mapping[str, Any] | None = None) -> vol.Schema:
@@ -325,8 +327,12 @@ class OptionsFlowHandler(OptionsFlowWithReload):
         """Helper function to access the running API instance.
 
         We need to know which devices were FOUND on the bus.
+
+        The attribute only exists while the entry is loaded, so an entry that is
+        still retrying its setup would raise AttributeError here. Callers expect
+        None in that case and abort with "integration_not_ready".
         """
-        return self.config_entry.runtime_data
+        return getattr(self.config_entry, "runtime_data", None)
 
     def _default_profile_for_device(self, device_id: str) -> str:
         """Return default OneWire profile based on family code if available."""
@@ -884,7 +890,7 @@ class OptionsFlowHandler(OptionsFlowWithReload):
                 dev_id,
                 {0: DS2413_CHANNEL_INPUT, 1: DS2413_CHANNEL_INPUT},
             )
-            channel_options = (DS2413_CHANNEL_INPUT, DS2413_CHANNEL_OUTPUT)
+            channel_options = [DS2413_CHANNEL_INPUT, DS2413_CHANNEL_OUTPUT]
             for index in range(2):
                 schema[vol.Required(f"channel_{index + 1}_profile", default=channel_defaults[index])] = SelectSelector(
                     SelectSelectorConfig(options=channel_options, translation_key="ds2413_channel_profile")
