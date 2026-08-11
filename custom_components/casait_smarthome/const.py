@@ -73,12 +73,16 @@ EVENT_SINGLE_RELEASE: Final = "single_release"
 EVENT_DOUBLE_PRESS: Final = "double_press"
 EVENT_LONG_PRESS: Final = "long_press"
 EVENT_LONG_RELEASE: Final = "long_release"
+# Repeats while a button stays held, for gestures that should keep going the
+# longer they are held - dimming being the obvious one. Opt-in per input.
+EVENT_REPEAT: Final = "repeat"
 BUTTON_EVENT_TYPES: Final = [
     EVENT_SINGLE_PRESS,
     EVENT_SINGLE_RELEASE,
     EVENT_DOUBLE_PRESS,
     EVENT_LONG_PRESS,
     EVENT_LONG_RELEASE,
+    EVENT_REPEAT,
 ]
 
 # Button timing. Double click defaults to off: a second press is only reported
@@ -86,11 +90,15 @@ BUTTON_EVENT_TYPES: Final = [
 # switches where the extra gesture is not wanted.
 OPT_LONG_PRESS_MS: Final = "long_press_ms"
 OPT_DOUBLE_CLICK_MS: Final = "double_click_ms"
+OPT_REPEAT_INTERVAL_MS: Final = "repeat_interval_ms"
 OPT_FAST_POLL_INTERVAL_MS: Final = "fast_poll_interval_ms"
 OPT_SLOW_POLL_INTERVAL: Final = "slow_poll_interval"
 OPT_MAX_SEND_INTERVAL_MS: Final = "max_send_interval_ms"
 DEFAULT_LONG_PRESS_MS: Final = 500
 DEFAULT_DOUBLE_CLICK_MS: Final = 0
+# Gap between repeats once the hold threshold has passed. Dimming a light in
+# steps is the case this is tuned for.
+DEFAULT_REPEAT_INTERVAL_MS: Final = 400
 
 # Shared I2C poll loop. Inputs decide how responsive the system feels, so they are
 # read every cycle. Outputs only ever change because Home Assistant changed them,

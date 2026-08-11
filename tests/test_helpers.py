@@ -8,6 +8,7 @@ from custom_components.casait_smarthome.const import (
     DEFAULT_INPUT_DEBOUNCE_MS,
     DEFAULT_INPUT_ROLE,
     DEFAULT_LONG_PRESS_MS,
+    DEFAULT_REPEAT_INTERVAL_MS,
     DS2413_CHANNEL_INPUT,
     DS2413_CHANNEL_OUTPUT,
     INPUT_ROLE_BUTTON,
@@ -228,14 +229,19 @@ def test_get_input_settings_contract() -> None:
         double_click_ms=DEFAULT_DOUBLE_CLICK_MS,
     )
 
-    configured = get_input_settings({"settings": {"long_press_ms": 800, "double_click_ms": 250}})
-    assert configured == InputSettings(long_press_ms=800, double_click_ms=250)
+    configured = get_input_settings(
+        {"settings": {"long_press_ms": 800, "double_click_ms": 250, "repeat_interval_ms": 150}}
+    )
+    assert configured == InputSettings(long_press_ms=800, double_click_ms=250, repeat_interval_ms=150)
 
     # Out-of-range and malformed values fall back rather than propagate.
-    fallback = get_input_settings({"settings": {"long_press_ms": 10, "double_click_ms": "nope"}})
+    fallback = get_input_settings(
+        {"settings": {"long_press_ms": 10, "double_click_ms": "nope", "repeat_interval_ms": 10}}
+    )
     assert fallback == InputSettings(
         long_press_ms=DEFAULT_LONG_PRESS_MS,
         double_click_ms=DEFAULT_DOUBLE_CLICK_MS,
+        repeat_interval_ms=DEFAULT_REPEAT_INTERVAL_MS,
     )
 
 

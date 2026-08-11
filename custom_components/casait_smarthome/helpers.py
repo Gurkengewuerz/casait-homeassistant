@@ -25,6 +25,7 @@ from .const import (
     DEFAULT_MAX_SEND_INTERVAL,
     DEFAULT_OW_PROFILE,
     DEFAULT_PULSE_DURATION,
+    DEFAULT_REPEAT_INTERVAL_MS,
     DEFAULT_SLOW_POLL_INTERVAL,
     DOMAIN,
     DS2413_CHANNEL_INPUT,
@@ -49,6 +50,7 @@ from .const import (
     OPT_ONEWIRE,
     OPT_PAIRS,
     OPT_PORTS,
+    OPT_REPEAT_INTERVAL_MS,
     OPT_SETTINGS,
     OPT_SLOTS,
     OPT_SLOW_POLL_INTERVAL,
@@ -407,6 +409,7 @@ class InputSettings:
 
     long_press_ms: int = DEFAULT_LONG_PRESS_MS
     double_click_ms: int = DEFAULT_DOUBLE_CLICK_MS
+    repeat_interval_ms: int = DEFAULT_REPEAT_INTERVAL_MS
 
 
 @dataclass
@@ -542,9 +545,11 @@ def get_input_settings(options: Mapping[str, Any]) -> InputSettings:
     settings = _section(options, OPT_SETTINGS)
     long_press = _bounded_int(settings.get(OPT_LONG_PRESS_MS), 100, 5000)
     double_click = _bounded_int(settings.get(OPT_DOUBLE_CLICK_MS), 0, 2000)
+    repeat_interval = _bounded_int(settings.get(OPT_REPEAT_INTERVAL_MS), 50, 5000)
     return InputSettings(
         long_press_ms=DEFAULT_LONG_PRESS_MS if long_press is None else long_press,
         double_click_ms=DEFAULT_DOUBLE_CLICK_MS if double_click is None else double_click,
+        repeat_interval_ms=DEFAULT_REPEAT_INTERVAL_MS if repeat_interval is None else repeat_interval,
     )
 
 
@@ -636,6 +641,7 @@ def set_input_settings(options: Mapping[str, Any], settings: InputSettings) -> d
     section = _mutable_section(updated, OPT_SETTINGS)
     section[OPT_LONG_PRESS_MS] = settings.long_press_ms
     section[OPT_DOUBLE_CLICK_MS] = settings.double_click_ms
+    section[OPT_REPEAT_INTERVAL_MS] = settings.repeat_interval_ms
     return updated
 
 

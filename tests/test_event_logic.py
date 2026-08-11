@@ -9,6 +9,7 @@ from custom_components.casait_smarthome.const import (
     EVENT_DOUBLE_PRESS,
     EVENT_LONG_PRESS,
     EVENT_LONG_RELEASE,
+    EVENT_REPEAT,
     EVENT_SINGLE_PRESS,
     EVENT_SINGLE_RELEASE,
     PCF8574_MAPPED_PORTS,
@@ -66,9 +67,11 @@ def timers(monkeypatch) -> _Timers:
     return collected
 
 
-def _build(settings: InputSettings, *, invert: bool = False) -> tuple[CasaITButtonEvent, list[str]]:
+def _build(
+    settings: InputSettings, *, invert: bool = False, repeat: bool = False
+) -> tuple[CasaITButtonEvent, list[str]]:
     api = SimpleNamespace(pcf_states={0x38: [1] * 8})
-    entity = CasaITButtonEvent(api, ENTRY, 0x38, PORT, settings, invert=invert)
+    entity = CasaITButtonEvent(api, ENTRY, 0x38, PORT, settings, invert=invert, repeat=repeat)
 
     fired: list[str] = []
     entity._fire = fired.append  # noqa: SLF001
@@ -253,3 +256,35 @@ def test_dm117_button_presses_on_the_high_level(timers) -> None:
 
     assert fired == [EVENT_SINGLE_PRESS, EVENT_SINGLE_RELEASE]
     assert entity.available is True
+
+
+def test_repeat_starts_only_after_the_hold_threshold(timers) -> None:
+    """A tap must never repeat; a hold keeps repeating until released."""
+
+    entity, fired = _build(InputSettings(long_press_ms=500, double_click_ms=0, repeat_interval_ms=200), repeat=True)
+
+    entity._handle_edges(_edges(PRESSED))  # noqa: SLF001
+    assert timers.delays == [0.5]
+
+    timers.run(0.5)
+    assert fired == [EVENT_SINGLE_PRESS, EVENT_LONG_PRESS]
+
+    timers.run(0.2)
+    timers.run(0.2)
+    assert fired == [EVENT_SINGLE_PRESS, EVENT_LONG_PRESS, EVENT_REPEAT, EVENT_REPEAT]
+
+    entity._handle_edges(_edges(RELEASED))  # noqa: SLF001
+
+    assert fired[-1] == EVENT_LONG_RELEASE
+    # Releasing has to stop the repeats, not just the hold timer.
+    assert timers.delays == []
+
+
+def test_repeat_stays_off_unless_enabled(timers) -> None:
+    entity, fired = _build(InputSettings(long_press_ms=500, double_click_ms=0, repeat_interval_ms=200))
+
+    entity._handle_edges(_edges(PRESSED))  # noqa: SLF001
+    timers.run(0.5)
+
+    assert fired == [EVENT_SINGLE_PRESS, EVENT_LONG_PRESS]
+    assert timers.delays == []

@@ -24,6 +24,7 @@ from .const import (
     EVENT_DOUBLE_PRESS,
     EVENT_LONG_PRESS,
     EVENT_LONG_RELEASE,
+    EVENT_REPEAT,
     EVENT_SINGLE_PRESS,
     EVENT_SINGLE_RELEASE,
     INPUT_ROLE_BUTTON,
@@ -60,7 +61,7 @@ async def async_setup_entry(
     if (input_range := get_address_range("IM117")) is not None:
         port_config = get_im117_port_configuration(config_entry.options)
         entities.extend(
-            CasaITButtonEvent(api, config_entry, address, port, settings, invert=config.invert)
+            CasaITButtonEvent(api, config_entry, address, port, settings, invert=config.invert, repeat=config.repeat)
             for address in api.im117_om117
             if input_range[0] <= address <= input_range[1]
             for port, config in port_config.get(address, {}).items()
@@ -68,7 +69,9 @@ async def async_setup_entry(
         )
 
     entities.extend(
-        CasaITDM117ButtonEvent(api, config_entry, address, slot, channel, settings, invert=config.invert)
+        CasaITDM117ButtonEvent(
+            api, config_entry, address, slot, channel, settings, invert=config.invert, repeat=config.repeat
+        )
         for address, channels in get_dm117_input_configuration(config_entry.options).items()
         if address in api.dm117
         for (slot, channel), config in channels.items()
@@ -113,6 +116,7 @@ class CasaITInputEvent(EventEntity):
         state_cache: Mapping[int, Any],
         *,
         invert: bool = False,
+        repeat: bool = False,
     ) -> None:
         """Initialize the shared press-detection state."""
 
@@ -123,11 +127,13 @@ class CasaITInputEvent(EventEntity):
         self._settings = settings
         self._state_cache = state_cache
         self._invert = invert
+        self._repeat = repeat
         self._pressed_level = self._active_level is not invert
         self._held = False
         self._long_reported = False
         self._pending_double: CALLBACK_TYPE | None = None
         self._pending_long: CALLBACK_TYPE | None = None
+        self._pending_repeat: CALLBACK_TYPE | None = None
 
     async def async_added_to_hass(self) -> None:
         """Subscribe to the edges published for this module."""
@@ -138,6 +144,7 @@ class CasaITInputEvent(EventEntity):
         )
         self.async_on_remove(self._close_double_window)
         self.async_on_remove(self._cancel_pending_long)
+        self.async_on_remove(self._cancel_pending_repeat)
 
     @property
     def available(self) -> bool:
@@ -162,6 +169,14 @@ class CasaITInputEvent(EventEntity):
             self._pending_long = None
 
     @callback
+    def _cancel_pending_repeat(self) -> None:
+        """Stop repeating, if this input was repeating at all."""
+
+        if self._pending_repeat is not None:
+            self._pending_repeat()
+            self._pending_repeat = None
+
+    @callback
     def _handle_edges(self, edges: Mapping[Hashable, list[bool]]) -> None:
         """Translate raw input edges into button events."""
 
@@ -176,6 +191,7 @@ class CasaITInputEvent(EventEntity):
         """Report the press itself and arm the hold timer."""
 
         self._cancel_pending_long()
+        self._cancel_pending_repeat()
         self._held = True
         self._long_reported = False
         self._fire(EVENT_SINGLE_PRESS)
@@ -203,6 +219,32 @@ class CasaITInputEvent(EventEntity):
         self._pending_long = None
         self._long_reported = True
         self._fire(EVENT_LONG_PRESS)
+        self._arm_repeat()
+
+    @callback
+    def _arm_repeat(self) -> None:
+        """Schedule the next repeat while the button is still held.
+
+        Repeats start once the hold is established, so a normal press never
+        produces one and an automation can treat them as "keep going".
+        """
+
+        if not self._repeat or not self._held:
+            return
+
+        self._pending_repeat = async_call_later(
+            self.hass,
+            self._settings.repeat_interval_ms / 1000,
+            self._flush_repeat,
+        )
+
+    @callback
+    def _flush_repeat(self, _now: Any) -> None:
+        """Report one repeat and queue the next."""
+
+        self._pending_repeat = None
+        self._fire(EVENT_REPEAT)
+        self._arm_repeat()
 
     @callback
     def _handle_release(self) -> None:
@@ -213,6 +255,7 @@ class CasaITInputEvent(EventEntity):
 
         self._held = False
         self._cancel_pending_long()
+        self._cancel_pending_repeat()
 
         if self._long_reported:
             self._long_reported = False
@@ -267,6 +310,7 @@ class CasaITButtonEvent(CasaITInputEvent):
         settings: InputSettings,
         *,
         invert: bool = False,
+        repeat: bool = False,
     ) -> None:
         """Initialize the IM117 button event entity."""
 
@@ -278,6 +322,7 @@ class CasaITButtonEvent(CasaITInputEvent):
             settings,
             api.pcf_states,
             invert=invert,
+            repeat=repeat,
         )
 
         bridge_slug = build_bridge_slug(config_entry.entry_id, config_entry.unique_id)
@@ -310,6 +355,7 @@ class CasaITDM117ButtonEvent(CasaITInputEvent):
         settings: InputSettings,
         *,
         invert: bool = False,
+        repeat: bool = False,
     ) -> None:
         """Initialize the DM117 button event entity."""
 
@@ -322,6 +368,7 @@ class CasaITDM117ButtonEvent(CasaITInputEvent):
             settings,
             api.dm117_states,
             invert=invert,
+            repeat=repeat,
         )
 
         bridge_slug = build_bridge_slug(config_entry.entry_id, config_entry.unique_id)

@@ -49,6 +49,7 @@ from .const import (
     OPT_FAST_POLL_INTERVAL_MS,
     OPT_LONG_PRESS_MS,
     OPT_MAX_SEND_INTERVAL_MS,
+    OPT_REPEAT_INTERVAL_MS,
     OPT_SLOW_POLL_INTERVAL,
 )
 from .helpers import (
@@ -125,6 +126,7 @@ def _input_config_schema(
             SelectSelectorConfig(options=CONTACT_DEVICE_CLASS_OPTIONS, translation_key="contact_device_class")
         ),
         vol.Required(f"{prefix}_invert", default=config.invert): BooleanSelector(),
+        vol.Required(f"{prefix}_repeat", default=config.repeat): BooleanSelector(),
     }
 
 
@@ -149,6 +151,7 @@ def _input_config_from_form(user_input: Mapping[str, Any], prefix: str, role: st
         role=role,
         device_class=str(device_class) if device_class else None,
         invert=bool(user_input.get(f"{prefix}_invert", False)),
+        repeat=bool(user_input.get(f"{prefix}_repeat", False)),
     )
 
 
@@ -549,6 +552,7 @@ class OptionsFlowHandler(OptionsFlowWithReload):
             input_settings = InputSettings(
                 long_press_ms=int(user_input[OPT_LONG_PRESS_MS]),
                 double_click_ms=int(user_input[OPT_DOUBLE_CLICK_MS]),
+                repeat_interval_ms=int(user_input[OPT_REPEAT_INTERVAL_MS]),
             )
             polling_settings = PollingSettings(
                 fast_poll_interval=float(user_input[OPT_FAST_POLL_INTERVAL_MS]) / 1000,
@@ -570,6 +574,9 @@ class OptionsFlowHandler(OptionsFlowWithReload):
                     ),
                     vol.Required(OPT_DOUBLE_CLICK_MS, default=current_input.double_click_ms): NumberSelector(
                         NumberSelectorConfig(min=0, max=2000, step=10, mode=NumberSelectorMode.BOX)
+                    ),
+                    vol.Required(OPT_REPEAT_INTERVAL_MS, default=current_input.repeat_interval_ms): NumberSelector(
+                        NumberSelectorConfig(min=50, max=5000, step=10, mode=NumberSelectorMode.BOX)
                     ),
                     vol.Required(
                         OPT_FAST_POLL_INTERVAL_MS,
