@@ -44,7 +44,7 @@ class PCF8574:
         self.bus = bus
         self.address = address
         self.last_value = -1
-        self._edges = EdgeTracker(debounce_time)
+        self._edges = EdgeTracker[int](debounce_time)
         self.port_states = [0] * 8
         self._needs_set_high = True
         self._reads_since_set_high = 0

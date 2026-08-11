@@ -6,7 +6,7 @@ from collections.abc import Hashable, Mapping
 import time
 
 
-class EdgeTracker:
+class EdgeTracker[KeyT: Hashable]:
     """Remember the level of every tracked input and report its transitions.
 
     Debouncing is leading edge: a change is adopted the moment it is seen, and
@@ -14,24 +14,25 @@ class EdgeTracker:
     would defer the change instead, which loses a button press that is already
     released again by the time of the next sample.
 
-    Keys are opaque - a PCF8574 tracks bit positions, a DM117 tracks
-    (slot, channel) pairs.
+    Keys are opaque, and each user pins its own type - a PCF8574 tracks bit
+    positions, a DM117 tracks (slot, channel) pairs. The parameter keeps those
+    key types from leaking into each other through a shared Hashable.
     """
 
     def __init__(self, debounce_time: int = 0) -> None:
         """Initialize an empty tracker debouncing for the given milliseconds."""
 
         self.debounce_time = debounce_time
-        self._levels: dict[Hashable, bool] = {}
-        self._changed_at: dict[Hashable, float] = {}
+        self._levels: dict[KeyT, bool] = {}
+        self._changed_at: dict[KeyT, float] = {}
 
     @property
-    def levels(self) -> dict[Hashable, bool]:
+    def levels(self) -> dict[KeyT, bool]:
         """Return the debounced level of every key seen so far."""
 
         return dict(self._levels)
 
-    def level(self, key: Hashable) -> bool | None:
+    def level(self, key: KeyT) -> bool | None:
         """Return the debounced level of one key, or None when never sampled."""
 
         return self._levels.get(key)
@@ -42,7 +43,7 @@ class EdgeTracker:
         self._levels.clear()
         self._changed_at.clear()
 
-    def adopt(self, key: Hashable, level: bool, timestamp_ms: float | None = None) -> None:
+    def adopt(self, key: KeyT, level: bool, timestamp_ms: float | None = None) -> None:
         """Take on a level this side caused, so the next sample is not an edge.
 
         Used after writing an output: the change is ours, not an input event.
@@ -53,9 +54,9 @@ class EdgeTracker:
 
     def apply(
         self,
-        sample: Mapping[Hashable, bool],
+        sample: Mapping[KeyT, bool],
         timestamp_ms: float | None = None,
-    ) -> dict[Hashable, list[bool]]:
+    ) -> dict[KeyT, list[bool]]:
         """Adopt one sample and return the levels each key transitioned to.
 
         ``timestamp_ms`` lets a caller that sampled several modules in one batch
@@ -64,7 +65,7 @@ class EdgeTracker:
         """
 
         now = time.monotonic() * 1000 if timestamp_ms is None else timestamp_ms
-        edges: dict[Hashable, list[bool]] = {}
+        edges: dict[KeyT, list[bool]] = {}
 
         for key, level in sample.items():
             previous = self._levels.get(key)

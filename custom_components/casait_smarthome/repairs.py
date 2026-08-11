@@ -11,7 +11,7 @@ from homeassistant.components.repairs import RepairsFlow
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers import device_registry as dr, issue_registry as ir
 
 from .config_flow import validate_input
 from .const import DOMAIN
@@ -30,9 +30,94 @@ class CasaITRepairFlow(RepairsFlow):
         self,
         user_input: dict[str, Any] | None = None,
     ) -> data_entry_flow.FlowResult:
-        """Open the confirmation step."""
+        """Open the step this issue is answered with."""
 
+        if self._issue_id.startswith("device_gone_"):
+            return await self.async_step_device_gone()
         return await self.async_step_confirm(user_input)
+
+    async def async_step_device_gone(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> data_entry_flow.FlowResult:
+        """Ask whether the device should be looked for again or given up on."""
+
+        return self.async_show_menu(
+            step_id="device_gone",
+            menu_options=["rescan", "forget"],
+            description_placeholders=self._device_placeholders,
+        )
+
+    async def async_step_rescan(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> data_entry_flow.FlowResult:
+        """Scan the bus again and close the issue once the device answers."""
+
+        if await self._async_device_returned():
+            ir.async_delete_issue(self.hass, DOMAIN, self._issue_id)
+            return self.async_create_entry(title="", data={})
+
+        return self.async_show_form(
+            step_id="still_missing",
+            data_schema=vol.Schema({}),
+            errors={"base": "still_missing"},
+            description_placeholders=self._device_placeholders,
+        )
+
+    async def async_step_still_missing(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> data_entry_flow.FlowResult:
+        """Return to the choice after a scan that did not find the device."""
+
+        return await self.async_step_device_gone()
+
+    async def async_step_forget(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> data_entry_flow.FlowResult:
+        """Remove the device from the registry once the user confirms it is gone."""
+
+        if user_input is None:
+            return self.async_show_form(
+                step_id="forget",
+                data_schema=vol.Schema({}),
+                description_placeholders=self._device_placeholders,
+            )
+
+        self._forget_device()
+        ir.async_delete_issue(self.hass, DOMAIN, self._issue_id)
+        return self.async_create_entry(title="", data={})
+
+    @property
+    def _device_placeholders(self) -> dict[str, str]:
+        """Return the name every step of the device_gone flow refers to."""
+
+        identifier = str(self._issue_data.get("identifier") or "")
+        return {"name": str(self._issue_data.get("name") or identifier)}
+
+    async def _async_device_returned(self) -> bool:
+        """Rescan the bus and report whether the missing device is back on it."""
+
+        entry_id = str(self._issue_data.get("entry_id") or "")
+        entry = self.hass.config_entries.async_get_entry(entry_id)
+        if entry is None or entry.state is not ConfigEntryState.LOADED:
+            return False
+
+        api = entry.runtime_data
+        await api.scan_devices()
+        identifier = str(self._issue_data.get("identifier") or "")
+        return (DOMAIN, identifier) in api.current_device_identifiers
+
+    def _forget_device(self) -> None:
+        """Drop the registry device, taking its entities and history with it."""
+
+        identifier = str(self._issue_data.get("identifier") or "")
+        device_registry = dr.async_get(self.hass)
+        device = device_registry.async_get_device(identifiers={(DOMAIN, identifier)})
+        if device is not None:
+            device_registry.async_remove_device(device.id)
 
     async def async_step_confirm(
         self,

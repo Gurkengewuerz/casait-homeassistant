@@ -30,6 +30,7 @@ from .helpers import (
     get_module_name,
     get_om117_pair_configuration,
     get_polling_settings,
+    get_topology_settings,
     migrate_options_to_nested,
     migrated_device_identifiers,
     migrated_entity_identity,
@@ -306,6 +307,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> bo
             }
             for module_kind in ("im117", "dm117")
         },
+        topology_settings=get_topology_settings(entry.options),
     )
     entry.runtime_data = api
 

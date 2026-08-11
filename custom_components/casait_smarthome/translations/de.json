@@ -369,6 +369,32 @@
           "still_unresolved": "Die Bridge ist weiterhin nicht verf\u00fcgbar."
         }
       }
+    },
+    "device_gone": {
+      "title": "{name} antwortet nicht mehr auf dem Bus",
+      "fix_flow": {
+        "step": {
+          "device_gone": {
+            "title": "{name} fehlt",
+            "description": "Das Ger\u00e4t hat bei den letzten Bus-Scans nicht geantwortet. Es ist weiterhin mit allen Entit\u00e4ten und dem Verlauf vorhanden; es wird nichts entfernt, bevor du dich daf\u00fcr entscheidest.",
+            "menu_options": {
+              "rescan": "Erneut danach suchen",
+              "forget": "Ger\u00e4t vergessen"
+            }
+          },
+          "still_missing": {
+            "title": "{name} fehlt weiterhin",
+            "description": "Pr\u00fcfe Stromversorgung und Busverkabelung des Moduls und best\u00e4tige danach f\u00fcr einen weiteren Versuch."
+          },
+          "forget": {
+            "title": "{name} vergessen",
+            "description": "Damit werden das Ger\u00e4t, seine Entit\u00e4ten und deren aufgezeichneter Verlauf entfernt. Automationen und Dashboards, die sie verwenden, funktionieren danach nicht mehr. Zum Best\u00e4tigen absenden."
+          }
+        },
+        "error": {
+          "still_missing": "Das Ger\u00e4t hat beim Scan nicht geantwortet."
+        }
+      }
     }
   },
   "selector": {
@@ -536,7 +562,9 @@
           "repeat_interval_ms": "Wiederholintervall (ms)",
           "fast_poll_interval_ms": "Schnelles Abfrageintervall (ms)",
           "slow_poll_interval": "Langsames Abfrageintervall (s)",
-          "max_send_interval_ms": "Maximaler Sendeabstand (ms)"
+          "max_send_interval_ms": "Maximaler Sendeabstand (ms)",
+          "topology_scan_interval": "Intervall der Topologie\u00fcberwachung (s)",
+          "topology_missing_scans": "Scans, bis ein Ger\u00e4t als verschwunden gilt"
         },
         "data_description": {
           "long_press_ms": "Wird ein Taster mindestens so lange gehalten, wird ein langer Druck gemeldet.",
@@ -544,7 +572,9 @@
           "repeat_interval_ms": "Abstand zwischen Wiederholungen, solange ein Taster mit Wiederholung gehalten wird.",
           "fast_poll_interval_ms": "Pause zwischen den Abfragezyklen der Eing\u00e4nge.",
           "slow_poll_interval": "Intervall f\u00fcr Konsistenzpr\u00fcfungen reiner Ausgangsmodule.",
-          "max_send_interval_ms": "Gr\u00f6\u00dfter Abstand, den der adaptive Bridge-Transport nach Kommunikationsfehlern verwenden darf."
+          "max_send_interval_ms": "Gr\u00f6\u00dfter Abstand, den der adaptive Bridge-Transport nach Kommunikationsfehlern verwenden darf.",
+          "topology_scan_interval": "Wie oft der Bus nach verschwundenen Modulen abgesucht wird. Mit 0 wird nur beim Start und auf Anforderung gescannt.",
+          "topology_missing_scans": "Wie oft ein Modul hintereinander fehlen muss, bevor es gemeldet wird. Verhindert, dass ein einzelner ausgelasteter Scan ein Modul verwirft."
         }
       },
       "om117_select": {

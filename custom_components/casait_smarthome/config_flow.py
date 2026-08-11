@@ -51,6 +51,8 @@ from .const import (
     OPT_MAX_SEND_INTERVAL_MS,
     OPT_REPEAT_INTERVAL_MS,
     OPT_SLOW_POLL_INTERVAL,
+    OPT_TOPOLOGY_MISSING_SCANS,
+    OPT_TOPOLOGY_SCAN_INTERVAL,
 )
 from .helpers import (
     DigitalInputConfig,
@@ -58,6 +60,7 @@ from .helpers import (
     InputSettings,
     OM117PairConfig,
     PollingSettings,
+    TopologySettings,
     get_address_range,
     get_configured_ds2413_channels,
     get_configured_led_counts,
@@ -72,6 +75,7 @@ from .helpers import (
     get_module_name,
     get_om117_pair_configuration,
     get_polling_settings,
+    get_topology_settings,
     set_dm117_inputs,
     set_dm117_slots,
     set_ds2413_inputs,
@@ -81,6 +85,7 @@ from .helpers import (
     set_om117_pairs,
     set_onewire_device,
     set_polling_settings,
+    set_topology_settings,
 )
 from .services.smbus_proxy import DEFAULT_PORT, DEFAULT_TIMEOUT, SMBus, SMBusProxyError
 
@@ -559,11 +564,17 @@ class OptionsFlowHandler(OptionsFlowWithReload):
                 slow_poll_interval=float(user_input[OPT_SLOW_POLL_INTERVAL]),
                 max_send_interval=float(user_input[OPT_MAX_SEND_INTERVAL_MS]) / 1000,
             )
+            topology_settings = TopologySettings(
+                scan_interval=int(user_input[OPT_TOPOLOGY_SCAN_INTERVAL]),
+                missing_scans=int(user_input[OPT_TOPOLOGY_MISSING_SCANS]),
+            )
             options = set_input_settings(self._options, input_settings)
-            return await self._stage(set_polling_settings(options, polling_settings))
+            options = set_polling_settings(options, polling_settings)
+            return await self._stage(set_topology_settings(options, topology_settings))
 
         current_input = get_input_settings(self._options)
         current_polling = get_polling_settings(self._options)
+        current_topology = get_topology_settings(self._options)
 
         return self.async_show_form(
             step_id="global_settings",
@@ -589,6 +600,14 @@ class OptionsFlowHandler(OptionsFlowWithReload):
                     vol.Required(
                         OPT_MAX_SEND_INTERVAL_MS,
                         default=round(current_polling.max_send_interval * 1000, 3),
+                    ): NumberSelector(NumberSelectorConfig(min=1, max=20, step=1, mode=NumberSelectorMode.BOX)),
+                    vol.Required(
+                        OPT_TOPOLOGY_SCAN_INTERVAL,
+                        default=current_topology.scan_interval,
+                    ): NumberSelector(NumberSelectorConfig(min=0, max=86400, step=60, mode=NumberSelectorMode.BOX)),
+                    vol.Required(
+                        OPT_TOPOLOGY_MISSING_SCANS,
+                        default=current_topology.missing_scans,
                     ): NumberSelector(NumberSelectorConfig(min=1, max=20, step=1, mode=NumberSelectorMode.BOX)),
                 }
             ),

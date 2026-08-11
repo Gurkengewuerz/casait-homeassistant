@@ -107,6 +107,16 @@ DEFAULT_FAST_POLL_INTERVAL: Final = 0.02
 DEFAULT_SLOW_POLL_INTERVAL: Final = 5.0
 DEFAULT_MAX_SEND_INTERVAL: Final = 0.005
 
+# Optional slow topology watch. Off by default: a full scan walks every address
+# range and enumerates each 1-Wire bus, which is bus time the inputs would
+# otherwise get, and the bus is already scanned at startup and on demand.
+OPT_TOPOLOGY_SCAN_INTERVAL: Final = "topology_scan_interval"
+OPT_TOPOLOGY_MISSING_SCANS: Final = "topology_missing_scans"
+DEFAULT_TOPOLOGY_SCAN_INTERVAL: Final = 0
+# A watched module has to be absent this many scans in a row before it is
+# treated as gone. One flaky scan must not tear down a module's entities.
+DEFAULT_TOPOLOGY_MISSING_SCANS: Final = 3
+
 # Button events mirrored to the Home Assistant event bus for device triggers.
 EVENT_BUTTON: Final = f"{DOMAIN}_button_event"
 EVENT_DATA_EVENT_TYPE: Final = "event_type"

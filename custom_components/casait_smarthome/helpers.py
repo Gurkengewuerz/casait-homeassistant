@@ -27,6 +27,8 @@ from .const import (
     DEFAULT_PULSE_DURATION,
     DEFAULT_REPEAT_INTERVAL_MS,
     DEFAULT_SLOW_POLL_INTERVAL,
+    DEFAULT_TOPOLOGY_MISSING_SCANS,
+    DEFAULT_TOPOLOGY_SCAN_INTERVAL,
     DOMAIN,
     DS2413_CHANNEL_INPUT,
     DS2413_CHANNEL_OUTPUT,
@@ -54,6 +56,8 @@ from .const import (
     OPT_SETTINGS,
     OPT_SLOTS,
     OPT_SLOW_POLL_INTERVAL,
+    OPT_TOPOLOGY_MISSING_SCANS,
+    OPT_TOPOLOGY_SCAN_INTERVAL,
 )
 from .services.i2cClasses.dm117 import DeviceType
 
@@ -421,6 +425,20 @@ class PollingSettings:
     max_send_interval: float = DEFAULT_MAX_SEND_INTERVAL
 
 
+@dataclass
+class TopologySettings:
+    """Cadence and tolerance of the optional slow topology watch."""
+
+    scan_interval: int = DEFAULT_TOPOLOGY_SCAN_INTERVAL
+    missing_scans: int = DEFAULT_TOPOLOGY_MISSING_SCANS
+
+    @property
+    def enabled(self) -> bool:
+        """Return whether the watch runs at all."""
+
+        return self.scan_interval > 0
+
+
 def _parse_input_config(raw: Any, *, allow_button: bool = True) -> DigitalInputConfig | None:
     """Read one stored input entry, or None when it is not an entry at all.
 
@@ -565,6 +583,28 @@ def get_polling_settings(options: Mapping[str, Any]) -> PollingSettings:
         slow_poll_interval=DEFAULT_SLOW_POLL_INTERVAL if slow_seconds is None else slow_seconds,
         max_send_interval=DEFAULT_MAX_SEND_INTERVAL if max_send_ms is None else max_send_ms / 1000,
     )
+
+
+def get_topology_settings(options: Mapping[str, Any]) -> TopologySettings:
+    """Return topology watch settings, falling back to defaults."""
+
+    settings = _section(options, OPT_SETTINGS)
+    interval = _bounded_int(settings.get(OPT_TOPOLOGY_SCAN_INTERVAL), 0, 86400)
+    missing = _bounded_int(settings.get(OPT_TOPOLOGY_MISSING_SCANS), 1, 20)
+    return TopologySettings(
+        scan_interval=DEFAULT_TOPOLOGY_SCAN_INTERVAL if interval is None else interval,
+        missing_scans=DEFAULT_TOPOLOGY_MISSING_SCANS if missing is None else missing,
+    )
+
+
+def set_topology_settings(options: Mapping[str, Any], settings: TopologySettings) -> dict[str, Any]:
+    """Return options with topology watch settings replaced."""
+
+    updated = deepcopy(dict(options))
+    section = _mutable_section(updated, OPT_SETTINGS)
+    section[OPT_TOPOLOGY_SCAN_INTERVAL] = settings.scan_interval
+    section[OPT_TOPOLOGY_MISSING_SCANS] = settings.missing_scans
+    return updated
 
 
 def set_im117_ports(

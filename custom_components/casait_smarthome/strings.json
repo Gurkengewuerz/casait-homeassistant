@@ -369,6 +369,32 @@
           "still_unresolved": "The bridge is still unavailable."
         }
       }
+    },
+    "device_gone": {
+      "title": "{name} no longer answers on the bus",
+      "fix_flow": {
+        "step": {
+          "device_gone": {
+            "title": "{name} is missing",
+            "description": "The device has not answered the last few bus scans. It is still listed with all of its entities and history, and nothing is removed until you choose to.",
+            "menu_options": {
+              "rescan": "Scan for it again",
+              "forget": "Forget this device"
+            }
+          },
+          "still_missing": {
+            "title": "{name} is still missing",
+            "description": "Check the module's power and its bus wiring, then submit to try once more."
+          },
+          "forget": {
+            "title": "Forget {name}",
+            "description": "This removes the device along with its entities and their recorded history. Automations and dashboards referring to them will stop working. Submit to confirm."
+          }
+        },
+        "error": {
+          "still_missing": "The device did not answer the scan."
+        }
+      }
     }
   },
   "selector": {
@@ -536,7 +562,9 @@
           "repeat_interval_ms": "Repeat interval (ms)",
           "fast_poll_interval_ms": "Fast polling interval (ms)",
           "slow_poll_interval": "Slow polling interval (s)",
-          "max_send_interval_ms": "Maximum send spacing (ms)"
+          "max_send_interval_ms": "Maximum send spacing (ms)",
+          "topology_scan_interval": "Topology scan interval (s)",
+          "topology_missing_scans": "Scans before a device counts as gone"
         },
         "data_description": {
           "long_press_ms": "Holding a button at least this long reports a long press.",
@@ -544,7 +572,9 @@
           "repeat_interval_ms": "Gap between repeats while a button with repeating enabled is held.",
           "fast_poll_interval_ms": "Delay between input polling cycles.",
           "slow_poll_interval": "Interval for consistency checks of output-only modules.",
-          "max_send_interval_ms": "Largest spacing the adaptive bridge transport may use after communication errors."
+          "max_send_interval_ms": "Largest spacing the adaptive bridge transport may use after communication errors.",
+          "topology_scan_interval": "How often to rescan the bus for modules that disappeared. Set to 0 to only scan at startup and on request.",
+          "topology_missing_scans": "How many scans in a row a module has to miss before it is reported. Guards against a single busy scan dropping a module."
         }
       },
       "om117_select": {

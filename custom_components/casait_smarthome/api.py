@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import asyncio
 from collections import defaultdict
-from collections.abc import AsyncIterator, Hashable, Iterable, Mapping
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator, Iterable, Mapping
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from functools import partial
 import logging
@@ -26,7 +26,7 @@ from .const import (
     I2C_ADDR_RANGES,
     SIGNAL_STATE_UPDATED,
 )
-from .helpers import OM117PairConfig, build_device_identifier, get_address_range
+from .helpers import OM117PairConfig, TopologySettings, build_device_identifier, get_address_range
 from .services.i2cClasses.dm117 import DM117, DeviceType, DM117PortConfig, PortConfig
 from .services.i2cClasses.ds2438 import DS2438Reading
 from .services.i2cClasses.edge_tracker import EdgeTracker
@@ -74,6 +74,7 @@ class CasaITApi:
         slow_poll_interval: float = DEFAULT_SLOW_POLL_INTERVAL,
         configured_module_addresses: Mapping[str, set[int]] | None = None,
         input_debounce_ms: Mapping[str, Mapping[int, int]] | None = None,
+        topology_settings: TopologySettings | None = None,
     ) -> None:
         """Initialize the API."""
         self.hass = hass
@@ -102,9 +103,16 @@ class CasaITApi:
         self._dm117_states: dict[int, dict[int, int]] = {}
         # The DM117 reports levels, so its input edges are derived here rather than
         # inside a driver that latches them.
-        self._dm117_edges: dict[int, EdgeTracker] = {}
+        self._dm117_edges: dict[int, EdgeTracker[tuple[int, int]]] = {}
         self._read_errors: set[tuple[str, int]] = set()
         self._connection_failure_cycles = 0
+        self._topology = topology_settings or TopologySettings()
+        # How many scans in a row each known module or 1-Wire chip has been
+        # missing from. Only the topology watch counts; an explicit scan reports
+        # what it just saw.
+        self._missing_scans: dict[tuple[str, int], int] = {}
+        self._ow_missing_scans: dict[str, int] = {}
+        self._topology_task: asyncio.Task | None = None
         self._poll_interval = fast_poll_interval
         self._slow_poll_interval = slow_poll_interval
         self._dm_config: dict[int, dict[int, DeviceType]] = {}
@@ -205,6 +213,14 @@ class CasaITApi:
                 "fast_addresses": [f"0x{address:02X}" for address in sorted(self._fast_pcf_addresses())],
                 "bridge_scanned_addresses": [f"0x{address:02X}" for address in self._scan_addresses],
             },
+            "topology": {
+                "scan_interval_s": self._topology.scan_interval,
+                "missing_scans_threshold": self._topology.missing_scans,
+                "missing_scans": {
+                    f"{code} 0x{address:02X}": count for (code, address), count in sorted(self._missing_scans.items())
+                }
+                | dict(sorted(self._ow_missing_scans.items())),
+            },
             "transport": self.bus.stats,
         }
 
@@ -260,12 +276,18 @@ class CasaITApi:
         self,
         *,
         device_codes: Iterable[str] | None = None,
+        tolerate_misses: bool = False,
     ) -> None:
         """Scan I2C bus for supported devices.
 
         device_codes limits scanning to the specified codes from I2C_ADDR_RANGES
         (for example, {"IM117", "OM117", "DM117", "SM117"}). When omitted,
         all codes are scanned.
+
+        tolerate_misses keeps a known module in the topology until it has been
+        absent from several scans in a row. The topology watch sets it because a
+        single missed probe is far more likely to be a busy bus than a module
+        that left; a scan the user asked for reports what the bus just said.
         """
 
         target_codes = set(device_codes) if device_codes else None
@@ -290,6 +312,8 @@ class CasaITApi:
 
                 found_by_code[code].add(addr)
 
+        self._apply_miss_tolerance(found_by_code, tolerate=tolerate_misses)
+
         log_snapshot = {key: sorted(value) for key, value in found_by_code.items()}
         self.found_i2c_devices = log_snapshot
         _LOGGER.info("Found I2C devices: %s", log_snapshot)
@@ -298,9 +322,47 @@ class CasaITApi:
         self._refresh_dm117(found_by_code)
         await self._refresh_sm117(found_by_code)
 
-        await self.scan_onewire()
+        await self.scan_onewire(tolerate_misses=tolerate_misses)
         self._sync_missing_module_issues(found_by_code)
-        self._remove_stale_registry_devices()
+        self._sync_disappeared_device_issues()
+
+    def _apply_miss_tolerance(self, found_by_code: dict[str, set[int]], *, tolerate: bool) -> None:
+        """Hold a known module in the topology until it has been absent often enough.
+
+        Modules only leave the bus when someone unplugs one, so a module that
+        answered a moment ago and does not answer now is far more likely to have
+        lost a probe than to be gone. Dropping it right away would tear down its
+        entities and put them back seconds later.
+        """
+
+        threshold = self._topology.missing_scans
+        for code, previous in self.found_i2c_devices.items():
+            for address in previous:
+                key = (code, address)
+                if address in found_by_code.get(code, ()) or not tolerate:
+                    self._missing_scans.pop(key, None)
+                    continue
+
+                misses = self._missing_scans[key] = self._missing_scans.get(key, 0) + 1
+                if misses < threshold:
+                    found_by_code[code].add(address)
+                    _LOGGER.debug(
+                        "%s at 0x%02X missed %s of %s scans; keeping it for now",
+                        code,
+                        address,
+                        misses,
+                        threshold,
+                    )
+                else:
+                    _LOGGER.warning(
+                        "%s at 0x%02X has been absent from %s scans in a row; treating it as gone",
+                        code,
+                        address,
+                        misses,
+                    )
+
+        still_known = {(code, address) for code, addresses in found_by_code.items() for address in addresses}
+        self._missing_scans = {key: count for key, count in self._missing_scans.items() if key in still_known}
 
     async def async_rescan_devices(self) -> None:
         """Scan for topology changes and reload platforms to expose them."""
@@ -318,6 +380,8 @@ class CasaITApi:
 
         self._stop_event = asyncio.Event()
         self._poll_task = self.hass.async_create_background_task(self._poll_loop(), "casait_poll_loop")
+        if self._topology.enabled:
+            self._topology_task = self.hass.async_create_background_task(self._topology_loop(), "casait_topology_watch")
 
     async def stop_polling(self) -> None:
         """Stop background polling task."""
@@ -328,7 +392,37 @@ class CasaITApi:
         self._stop_event.set()
         await self._poll_task
         self._poll_task = None
+        if self._topology_task:
+            # Cancelled rather than awaited: the watch may be halfway through a
+            # 1-Wire enumeration, and an unload must not sit and wait for that.
+            # It only reads, so there is no half-finished write to land.
+            self._topology_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self._topology_task
+            self._topology_task = None
         self._stop_event = None
+
+    async def _topology_loop(self) -> None:
+        """Rescan the bus on a slow cadence so a module that left gets noticed.
+
+        Deliberately does not reload the config entry: a reload drops and rebuilds
+        every entity, which is far too heavy to happen behind the user's back on a
+        timer. Finding out is the job here; acting on it is the repair flow's.
+        """
+
+        assert self._stop_event is not None
+        while not self._stop_event.is_set():
+            try:
+                await asyncio.wait_for(self._stop_event.wait(), timeout=self._topology.scan_interval)
+            except TimeoutError:
+                pass
+            else:
+                return
+
+            try:
+                await self.scan_devices(tolerate_misses=True)
+            except Exception:
+                _LOGGER.exception("Error scanning casaIT bus topology")
 
     async def _poll_loop(self) -> None:
         """Continuously poll devices and dispatch updates."""
@@ -730,7 +824,7 @@ class CasaITApi:
             async_dispatcher_send(self.hass, self.address_signal(address))
         self._sync_dm117_configuration_issues(address, device)
 
-    def _dm117_input_edges(self, address: int, port_states: Mapping[int, int]) -> dict[Hashable, list[bool]]:
+    def _dm117_input_edges(self, address: int, port_states: Mapping[int, int]) -> dict[tuple[int, int], list[bool]]:
         """Debounce the input slots of one DM117 and return their transitions.
 
         Unlike the PCF8574, the DM117 reports a level rather than latching edges,
@@ -744,9 +838,9 @@ class CasaITApi:
 
         tracker = self._dm117_edges.get(address)
         if tracker is None:
-            tracker = self._dm117_edges[address] = EdgeTracker(self.debounce_time("dm117", address))
+            tracker = self._dm117_edges[address] = EdgeTracker[tuple[int, int]](self.debounce_time("dm117", address))
 
-        sample: dict[Hashable, bool] = {}
+        sample: dict[tuple[int, int], bool] = {}
         for slot in input_slots:
             if (raw := port_states.get(slot)) is None:
                 continue
@@ -825,15 +919,43 @@ class CasaITApi:
         )
         return identifiers
 
-    def _remove_stale_registry_devices(self) -> None:
-        """Remove registry devices that disappeared from a complete scan."""
+    def _sync_disappeared_device_issues(self) -> None:
+        """Report registry devices the bus no longer answers for.
+
+        Nothing is deleted here. A module goes missing either because someone
+        removed it on purpose or because a connector worked loose, and only the
+        user can tell those apart - so the device keeps its entities, its history
+        and its place in automations until the repair flow is answered.
+        """
 
         device_registry = dr.async_get(self.hass)
         current = self.current_device_identifiers
         for device in dr.async_entries_for_config_entry(device_registry, self.entry_id):
             integration_identifiers = {identifier for identifier in device.identifiers if identifier[0] == DOMAIN}
-            if integration_identifiers and integration_identifiers.isdisjoint(current):
-                device_registry.async_remove_device(device.id)
+            if not integration_identifiers:
+                continue
+
+            identifier = min(value for _, value in integration_identifiers)
+            issue_id = f"device_gone_{self.entry_id}_{identifier}"
+            if not integration_identifiers.isdisjoint(current):
+                ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+                continue
+
+            # The name is carried in the issue data as well as in the placeholders:
+            # the placeholders only reach the issue itself, while the repair flow
+            # has to fill the same name into its own steps.
+            name = device.name_by_user or device.name or identifier
+            ir.async_create_issue(
+                self.hass,
+                DOMAIN,
+                issue_id,
+                data={"entry_id": self.entry_id, "identifier": identifier, "name": name},
+                is_fixable=True,
+                is_persistent=False,
+                severity=ir.IssueSeverity.WARNING,
+                translation_key="device_gone",
+                translation_placeholders={"name": name},
+            )
 
     def _drop_state(self, states: dict[int, Any], address: int) -> None:
         """Forget a module's cached state and tell its entities it went away."""
@@ -912,12 +1034,17 @@ class CasaITApi:
             if addr not in found:
                 del self.sm117[addr]
 
-    async def scan_onewire(self) -> None:
-        """Scan all detected SM117 bridges for 1-Wire devices."""
+    async def scan_onewire(self, *, tolerate_misses: bool = False) -> None:
+        """Scan all detected SM117 bridges for 1-Wire devices.
+
+        tolerate_misses has the same meaning as in scan_devices: a chip keeps its
+        place until it has been absent from several enumerations in a row.
+        """
 
         if not self.sm117:
             self.ow_devices = {}
             self.ow_ids = set()
+            self._ow_missing_scans.clear()
             return
 
         discovered: dict[str, dict[str, Any]] = {}
@@ -933,6 +1060,8 @@ class CasaITApi:
             for device_id, meta in devices.items():
                 discovered[device_id] = {"bus_address": addr, **meta}
 
+        self._apply_onewire_miss_tolerance(discovered, tolerate=tolerate_misses)
+
         self.ow_devices = discovered
         self.ow_ids = set(discovered)
         self._apply_onewire_intervals()
@@ -941,6 +1070,37 @@ class CasaITApi:
             _LOGGER.info("Discovered OneWire devices: %s", list(discovered.keys()))
         else:
             _LOGGER.info("No OneWire devices discovered")
+
+    def _apply_onewire_miss_tolerance(self, discovered: dict[str, dict[str, Any]], *, tolerate: bool) -> None:
+        """Keep a known 1-Wire chip listed until it has been absent often enough.
+
+        A 1-Wire enumeration is the most failure-prone thing on the bus - one
+        marginal contact is enough to lose a chip for a single pass - so this
+        tolerance matters more here than it does for the I2C modules.
+        """
+
+        threshold = self._topology.missing_scans
+        for device_id, meta in self.ow_devices.items():
+            if device_id in discovered or not tolerate:
+                self._ow_missing_scans.pop(device_id, None)
+                continue
+
+            misses = self._ow_missing_scans[device_id] = self._ow_missing_scans.get(device_id, 0) + 1
+            if misses < threshold:
+                discovered[device_id] = meta
+                _LOGGER.debug(
+                    "1-Wire device %s missed %s of %s scans; keeping it for now", device_id, misses, threshold
+                )
+            else:
+                _LOGGER.warning(
+                    "1-Wire device %s has been absent from %s scans in a row; treating it as gone",
+                    device_id,
+                    misses,
+                )
+
+        self._ow_missing_scans = {
+            device_id: count for device_id, count in self._ow_missing_scans.items() if device_id in discovered
+        }
 
     def _apply_onewire_intervals(self) -> None:
         """Apply configured or profile-default cache intervals after a 1-Wire scan."""

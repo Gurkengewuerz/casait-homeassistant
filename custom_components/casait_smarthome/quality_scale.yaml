@@ -22,27 +22,38 @@ rules:
   # Silver
   action-exceptions: done
   config-entry-unloading: done
-  docs-configuration-parameters: todo
-  docs-installation-parameters: todo
+  docs-configuration-parameters: done
+  docs-installation-parameters: done
   entity-unavailable: done
-  integration-owner: todo
+  integration-owner: done
   log-when-unavailable: done
   parallel-updates: done
-  reauthentication-flow: todo
-  test-coverage: todo
+  reauthentication-flow:
+    status: exempt
+    comment: >
+      The bridge is a plain local TCP endpoint with no credentials of any kind,
+      so there is nothing that can expire and nothing to re-enter. Host, port and
+      timeout changes are handled by the reconfigure flow.
+  test-coverage:
+    status: todo
+    comment: >
+      Overall coverage is around 55%, against the 95% the rule asks for. The API,
+      helpers, edge tracker and const modules are well covered; the gap is the
+      entity platforms and the 1-Wire chip drivers (ds28e17, oneWireBus, ds2438,
+      ds2413), which need a fake bus to exercise at all.
 
   # Gold
   devices: done
   diagnostics: done
   discovery-update-info: done
   discovery: done
-  docs-data-update: todo
-  docs-examples: todo
-  docs-known-limitations: todo
-  docs-supported-devices: todo
-  docs-supported-functions: todo
-  docs-troubleshooting: todo
-  docs-use-cases: todo
+  docs-data-update: done
+  docs-examples: done
+  docs-known-limitations: done
+  docs-supported-devices: done
+  docs-supported-functions: done
+  docs-troubleshooting: done
+  docs-use-cases: done
   dynamic-devices: done
   entity-category: done
   entity-device-class: done
@@ -55,6 +66,17 @@ rules:
   stale-devices: done
 
   # Platinum
-  async-dependency: todo
-  inject-websession: todo
+  async-dependency:
+    status: todo
+    comment: >
+      Not exempt, even though the only external requirement (crccheck) is a pure
+      CRC calculation that does no I/O. The bus client in services/smbus_proxy.py
+      is a blocking socket driven through async_add_executor_job, so the executor
+      hop the rule is aimed at is really there. Satisfying this means porting that
+      client to asyncio streams.
+  inject-websession:
+    status: exempt
+    comment: >
+      The integration speaks a binary protocol over a raw TCP socket and never
+      makes an HTTP request, so there is no aiohttp or httpx session to inject.
   strict-typing: todo
