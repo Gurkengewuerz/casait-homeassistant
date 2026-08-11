@@ -46,6 +46,11 @@ class PCF8574:
         self.port_states = [0] * 8
         self._needs_set_high = True
         self._reads_since_set_high = 0
+        # Give each module its own refresh threshold. When a whole cycle is read in
+        # one batch, modules re-arming on the same cycle stack their settle delays
+        # into a single frame; differing thresholds keep them drifting apart instead
+        # of lining up again after every shared re-arm.
+        self._refresh_reads = SET_HIGH_REFRESH_READS + (address % 8)
         self._last_change = [0.0] * 8
 
     def invalidate(self) -> None:
@@ -53,25 +58,56 @@ class PCF8574:
 
         self._needs_set_high = True
 
+    def needs_rearm(self, set_high: bool = True) -> bool:
+        """Return True when the next sample has to re-arm the latch first.
+
+        Quasi-bidirectional ports only need re-arming after a write, after an error,
+        or periodically as a safety net. Doing it on every read costs a round trip
+        plus a 5 ms settle for no gain.
+        """
+
+        return bool(set_high) and (self._needs_set_high or self._reads_since_set_high >= self._refresh_reads)
+
+    def note_rearmed(self) -> None:
+        """Record that the latch was just re-armed by the caller."""
+
+        self._needs_set_high = False
+        self._reads_since_set_high = 0
+
+    def note_read_error(self) -> PCF8574Reading:
+        """Record a failed sample and return the empty reading that signals it."""
+
+        self._needs_set_high = True
+        return PCF8574Reading([], -1)
+
     def read_ports(self, set_high: bool = True) -> PCF8574Reading:
-        """Read all ports, debounce per bit and report the observed edges."""
+        """Read all ports, debounce per bit and report the observed edges.
+
+        Convenience wrapper for single-device access. The poll loop instead batches
+        the bus traffic for every module into one frame and calls ``apply_reading``.
+        """
         try:
-            # Quasi-bidirectional ports only need re-arming after a write, after an
-            # error, or periodically as a safety net. Doing it on every read costs a
-            # round trip plus a 5 ms settle for no gain.
-            if set_high and (self._needs_set_high or self._reads_since_set_high >= SET_HIGH_REFRESH_READS):
+            if self.needs_rearm(set_high):
                 self.bus.write_byte(self.address, 0xFF)
                 time.sleep(0.005)  # 5ms delay for I2C bus to settle
-                self._needs_set_high = False
-                self._reads_since_set_high = 0
+                self.note_rearmed()
 
             value = self.bus.read_byte(self.address)
         except OSError:
-            self._needs_set_high = True
-            return PCF8574Reading([], -1)
+            return self.note_read_error()
+
+        return self.apply_reading(value)
+
+    def apply_reading(self, value: int, timestamp_ms: float | None = None) -> PCF8574Reading:
+        """Debounce a sampled port byte per bit and report the observed edges.
+
+        ``timestamp_ms`` lets a caller that sampled several modules in one batch pass
+        a single instant for all of them, so their debounce windows do not drift
+        apart by the time it takes to decode the frame.
+        """
 
         self._reads_since_set_high += 1
-        curr_time = time.monotonic() * 1000
+        curr_time = time.monotonic() * 1000 if timestamp_ms is None else timestamp_ms
         port_values = [(value & (1 << i)) >> i for i in range(8)]
 
         if self.last_value < 0:

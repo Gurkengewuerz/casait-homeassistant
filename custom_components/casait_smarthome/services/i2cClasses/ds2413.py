@@ -109,7 +109,10 @@ class DS2413:
         """Get binary state for specified channel."""
         state = self._get_state(device_id)
 
-        if state.reading and state.reading.is_valid and state.state != ConversionState.IDLE:
+        # Serve the cache from IDLE too - see the note in ds18b20.get_temperature.
+        # This is what makes the configured interval bite instead of the platform
+        # SCAN_INTERVAL, which had both channels reading the bus every second.
+        if state.state == ConversionState.IDLE and state.reading and state.reading.is_valid:
             return state.reading.port_a if channel == 0 else state.reading.port_b
 
         if not self._process_state(device_id, state, custom_cache):

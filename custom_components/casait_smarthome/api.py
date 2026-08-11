@@ -6,6 +6,7 @@ import asyncio
 from collections import defaultdict
 from collections.abc import AsyncIterator, Iterable, Mapping
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from functools import partial
 import logging
 import time
@@ -29,10 +30,33 @@ from .services.i2cClasses.dm117 import DM117, DeviceType, DM117PortConfig
 from .services.i2cClasses.ds2438 import DS2438Reading
 from .services.i2cClasses.led_controller import LEDConfig
 from .services.i2cClasses.oneWireBus import OneWireBus
-from .services.i2cClasses.pcf8574 import PCF8574
-from .services.smbus_proxy import SMBus, SMBusProxyError
+from .services.i2cClasses.pcf8574 import PCF8574, PCF8574Reading
+from .services.smbus_proxy import SCAN_FLAG_OVERFLOW, I2CBatch, I2CBatchError, SMBus, SMBusProxyError
 
 _LOGGER = logging.getLogger(__name__)
+
+# Bridge-side settle time after re-arming a PCF8574 latch, in milliseconds. Matches
+# the delay the single-device path sleeps for client side.
+PCF_REARM_SETTLE_MS = 5
+# Per-bit debounce window applied to input modules, in milliseconds.
+INPUT_DEBOUNCE_MS = 40
+# Re-arms run on the bridge and each one stalls the frame for the settle time above.
+# Capping them per cycle bounds that cost; a deferred re-arm keeps its flag and is
+# picked up by one of the next cycles, which is harmless for a periodic safety net.
+MAX_REARMS_PER_CYCLE = 2
+
+
+@dataclass
+class _PolledModule:
+    """One module's place in a batched poll: which ops it owns and where its results are."""
+
+    kind: str
+    address: int
+    first_op: int
+    result_start: int
+    result_count: int
+    rearmed: bool = False
+    is_input: bool = False
 
 
 class CasaITApi:
@@ -82,8 +106,16 @@ class CasaITApi:
         self._write_pending = 0
         self._writes_idle = asyncio.Event()
         self._writes_idle.set()
+        # Background reads (1-Wire) yield to the input poll the same way the poll
+        # yields to writes, so a temperature conversion cannot stall the inputs.
+        self._poll_idle = asyncio.Event()
+        self._poll_idle.set()
         self._last_fast_cycle = 0.0
         self._last_full_cycle = 0.0
+        self._frames_last_cycle = 0
+        # Addresses the bridge samples for us; empty means Home Assistant reads them.
+        self._scan_addresses: list[int] = []
+        self._input_debounce_ms = INPUT_DEBOUNCE_MS
         self._stop_event: asyncio.Event | None = None
         self._poll_task: asyncio.Task | None = None
         self._init_done = asyncio.Event()
@@ -161,9 +193,11 @@ class CasaITApi:
             "poll": {
                 "fast_cycle_ms": round(self._last_fast_cycle * 1000, 2),
                 "full_cycle_ms": round(self._last_full_cycle * 1000, 2),
+                "frames_per_cycle": self._frames_last_cycle,
                 "fast_interval_ms": round(self._poll_interval * 1000, 2),
                 "slow_interval_s": self._slow_poll_interval,
                 "fast_addresses": [f"0x{address:02X}" for address in sorted(self._fast_pcf_addresses())],
+                "bridge_scanned_addresses": [f"0x{address:02X}" for address in self._scan_addresses],
             },
             "transport": self.bus.stats,
         }
@@ -191,6 +225,25 @@ class CasaITApi:
             self._write_pending -= 1
             if not self._write_pending:
                 self._writes_idle.set()
+
+    @asynccontextmanager
+    async def _background_access(self) -> AsyncIterator[None]:
+        """Claim the bus for a background read, behind both writes and the poll loop.
+
+        1-Wire transactions are long and cannot be interleaved - a ROM select has to
+        stay with the transfer it belongs to. Taking the lock only once the poll loop
+        is between cycles keeps a temperature conversion from delaying an input edge
+        by the length of a whole transaction.
+        """
+
+        while True:
+            await self._writes_idle.wait()
+            await self._poll_idle.wait()
+            if self._writes_idle.is_set():
+                break
+
+        async with self._lock:
+            yield
 
     async def scan_devices(
         self,
@@ -250,6 +303,8 @@ class CasaITApi:
         if self._poll_task:
             return
 
+        await self._async_start_input_scanner()
+
         self._stop_event = asyncio.Event()
         self._poll_task = self.hass.async_create_background_task(self._poll_loop(), "casait_poll_loop")
 
@@ -272,11 +327,15 @@ class CasaITApi:
         while not self._stop_event.is_set():
             try:
                 include_slow = time.monotonic() >= slow_due
+                self._poll_idle.clear()
                 await self._poll_cycle(include_slow=include_slow)
                 if include_slow:
                     slow_due = time.monotonic() + self._slow_poll_interval
             except Exception:
                 _LOGGER.exception("Error polling casaIT devices")
+            finally:
+                # Background reads get their turn in the gap between cycles.
+                self._poll_idle.set()
             try:
                 await asyncio.wait_for(self._stop_event.wait(), timeout=self._poll_interval)
             except TimeoutError:
@@ -300,19 +359,27 @@ class CasaITApi:
 
         Outputs cannot change on their own, so a fast cycle skips them entirely and
         the slow cycle picks them up to catch drift.
+
+        Every module in the cycle is read through as few batches as the frame limits
+        allow. One operation per network round trip is what made the cycle time scale
+        with the number of modules; the bus itself was never the bottleneck.
         """
 
         started = time.monotonic()
+        self._frames_last_cycle = 0
 
         fast_pcf = self._fast_pcf_addresses()
-        pcf_addresses = set(self.im117_om117) if include_slow else fast_pcf
-        dm_addresses = set(self.dm117) if include_slow else self._fast_dm117_addresses()
+        pcf_addresses = sorted(set(self.im117_om117) if include_slow else fast_pcf)
+        dm_addresses = sorted(set(self.dm117) if include_slow else self._fast_dm117_addresses())
 
-        for address in sorted(pcf_addresses):
-            await self._poll_pcf8574(address, is_input=address in fast_pcf)
+        if self._scan_addresses:
+            # The bridge samples these itself; fetching its latched transitions
+            # replaces reading them here.
+            await self._fetch_scanned_inputs()
+            pcf_addresses = [address for address in pcf_addresses if address not in self._scan_addresses]
 
-        for address in sorted(dm_addresses):
-            await self._poll_dm117(address)
+        for batch, modules in self._plan_poll_batches(pcf_addresses, dm_addresses, fast_pcf):
+            await self._run_poll_batch(batch, modules)
 
         duration = time.monotonic() - started
         if include_slow:
@@ -320,6 +387,235 @@ class CasaITApi:
         else:
             self._last_fast_cycle = duration
         self._sync_bridge_connection_issue()
+
+    async def _async_start_input_scanner(self) -> None:
+        """Hand the input addresses to the bridge, if it can sample them itself.
+
+        Probed once per config entry. A bridge on older firmware does not answer the
+        command, so this costs the transport's whole retry budget once before falling
+        back to reading the inputs here - which is why it is never retried.
+        """
+
+        self._scan_addresses = []
+        addresses = sorted(self._fast_pcf_addresses())
+        if not addresses:
+            return
+
+        period_ms = max(1, min(255, round(self._poll_interval * 1000)))
+        debounce_ms = min(255, self._input_debounce_ms)
+        config_job = partial(self.bus.scan_config, addresses, period_ms, debounce_ms)
+        try:
+            async with self._write_access():
+                accepted = await self.hass.async_add_executor_job(config_job)
+        except Exception:
+            _LOGGER.exception("Failed to configure the bridge input scanner")
+            return
+
+        if not accepted:
+            return
+
+        self._scan_addresses = addresses
+        # The bridge debounces with a clock that is not subject to network jitter,
+        # so the driver must not debounce the same edge a second time.
+        for address in addresses:
+            device = self.im117_om117.get(address)
+            if device is not None:
+                device.debounce_time = 0
+        _LOGGER.info(
+            "Bridge samples %s input modules every %s ms; Home Assistant only collects the edges",
+            len(addresses),
+            period_ms,
+        )
+
+    async def _fetch_scanned_inputs(self) -> None:
+        """Collect and publish the transitions the bridge latched for us."""
+
+        await self._writes_idle.wait()
+
+        try:
+            async with self._lock:
+                flags, entries = await self.hass.async_add_executor_job(self.bus.scan_fetch)
+        except Exception as exc:  # noqa: BLE001
+            for address in self._scan_addresses:
+                self._record_read_error("PCF8574", address, exc)
+                self._drop_state(self._pcf_states, address)
+            return
+
+        self._frames_last_cycle += 1
+
+        if flags & SCAN_FLAG_OVERFLOW:
+            # Snapshots were dropped, so the edges no longer form a complete
+            # sequence. Re-baseline instead of reporting transitions that would be
+            # wrong, the same way a driver treats its very first read.
+            _LOGGER.warning("Bridge input queue overflowed; re-baselining input state")
+            for address in self._scan_addresses:
+                device = self.im117_om117.get(address)
+                if device is not None:
+                    device.last_value = -1
+
+        sampled_at = time.monotonic() * 1000
+        for index, value in entries:
+            if index >= len(self._scan_addresses):
+                continue
+            address = self._scan_addresses[index]
+            device = self.im117_om117.get(address)
+            if device is None:
+                continue
+            self._publish_pcf_reading(address, device.apply_reading(value, sampled_at))
+
+    def _plan_poll_batches(
+        self,
+        pcf_addresses: list[int],
+        dm_addresses: list[int],
+        fast_pcf: set[int],
+    ) -> list[tuple[I2CBatch, list[_PolledModule]]]:
+        """Pack the cycle's reads into as few frames as the batch limits allow.
+
+        Splitting is driven by ``capacity_for`` rather than by counting bytes here, so
+        the frame and result limits stay owned by the transport.
+        """
+
+        planned: list[tuple[I2CBatch, list[_PolledModule]]] = []
+        batch = self.bus.new_batch()
+        modules: list[_PolledModule] = []
+        results = 0
+        rearms_left = MAX_REARMS_PER_CYCLE
+
+        def flush() -> None:
+            nonlocal batch, modules, results
+            if modules:
+                planned.append((batch, modules))
+            batch = self.bus.new_batch()
+            modules = []
+            results = 0
+
+        for address in pcf_addresses:
+            device = self.im117_om117.get(address)
+            if device is None:
+                continue
+
+            is_input = address in fast_pcf
+            rearm = device.needs_rearm(is_input) and rearms_left > 0
+            if rearm:
+                rearms_left -= 1
+            # write_byte + delay + read_byte, or just read_byte when already armed.
+            request_bytes = 3 + 2 + 2 if rearm else 2
+            if not batch.capacity_for(request_bytes=request_bytes, result_bytes=1):
+                flush()
+
+            modules.append(_PolledModule("pcf", address, len(batch), results, 1, rearmed=rearm, is_input=is_input))
+            if rearm:
+                batch.write_byte(address, 0xFF).delay(PCF_REARM_SETTLE_MS)
+            batch.read_byte(address)
+            results += 1
+
+        for address in dm_addresses:
+            device = self.dm117.get(address)
+            if device is None or device.cached_ports() is not None:
+                continue
+
+            size = device.expected_response_size()
+            # write_byte + delay + read_block
+            if not batch.capacity_for(request_bytes=3 + 2 + 3, result_bytes=size):
+                flush()
+
+            modules.append(_PolledModule("dm117", address, len(batch), results, size))
+            batch.write_byte(address, device.CMD_READ).delay(1).read_block(address, size)
+            results += size
+
+        flush()
+        return planned
+
+    async def _run_poll_batch(self, batch: I2CBatch, modules: list[_PolledModule]) -> None:
+        """Execute one batch and publish each module's result."""
+
+        await self._writes_idle.wait()
+
+        try:
+            async with self._lock:
+                results = await self.hass.async_add_executor_job(self.bus.execute_batch, batch)
+        except I2CBatchError as exc:
+            await self._recover_failed_batch(modules, exc)
+            return
+        except Exception as exc:  # noqa: BLE001
+            # The whole frame was lost, so nothing can be attributed to one module.
+            for module in modules:
+                self._fail_module(module, exc)
+            return
+
+        self._frames_last_cycle += 1
+        sampled_at = time.monotonic() * 1000
+        for module in modules:
+            values = results[module.result_start : module.result_start + module.result_count]
+            self._publish_module(module, values, sampled_at)
+
+    async def _recover_failed_batch(self, modules: list[_PolledModule], exc: I2CBatchError) -> None:
+        """Attribute a batch failure to one module and re-read the rest on their own.
+
+        The bridge aborts the whole batch at the first failing operation, so the
+        results of healthy modules in the same frame are lost even though their reads
+        would have succeeded. Reading them individually keeps one bad module from
+        dropping everyone else's state.
+        """
+
+        self._frames_last_cycle += 1
+        culprit = self._module_for_op(modules, exc.op_index)
+        if culprit is not None:
+            self._fail_module(culprit, exc)
+
+        for module in modules:
+            if module is culprit:
+                continue
+            if module.kind == "pcf":
+                await self._poll_pcf8574(module.address, is_input=module.is_input)
+            else:
+                await self._poll_dm117(module.address)
+
+    @staticmethod
+    def _module_for_op(modules: list[_PolledModule], op_index: int | None) -> _PolledModule | None:
+        """Return the module owning the given batch operation index."""
+
+        if op_index is None:
+            return None
+
+        culprit: _PolledModule | None = None
+        for module in modules:
+            if module.first_op <= op_index:
+                culprit = module
+            else:
+                break
+        return culprit
+
+    def _fail_module(self, module: _PolledModule, exc: Exception | None = None) -> None:
+        """Record a failed read and drop the module's cached state."""
+
+        if module.kind == "pcf":
+            device = self.im117_om117.get(module.address)
+            if device is not None:
+                device.note_read_error()
+            self._record_read_error("PCF8574", module.address, exc)
+            self._drop_state(self._pcf_states, module.address)
+            return
+
+        self._record_read_error("DM117", module.address, exc)
+        self._drop_state(self._dm117_states, module.address)
+
+    def _publish_module(self, module: _PolledModule, values: list[int], sampled_at: float) -> None:
+        """Decode one module's batch results and dispatch what changed."""
+
+        if module.kind == "pcf":
+            device = self.im117_om117.get(module.address)
+            if device is None:
+                return
+            if module.rearmed:
+                device.note_rearmed()
+            self._publish_pcf_reading(module.address, device.apply_reading(values[0], sampled_at))
+            return
+
+        device = self.dm117.get(module.address)
+        if device is None:
+            return
+        self._publish_dm117_reading(module.address, device.decode_response(values), device)
 
     def _sync_bridge_connection_issue(self) -> None:
         """Raise a repair issue when the live bridge remains disconnected."""
@@ -361,6 +657,11 @@ class CasaITApi:
             self._drop_state(self._pcf_states, address)
             return
 
+        self._publish_pcf_reading(address, reading)
+
+    def _publish_pcf_reading(self, address: int, reading: PCF8574Reading) -> None:
+        """Cache one PCF8574 reading and dispatch state changes plus input edges."""
+
         if not reading.ok:
             self._record_read_error("PCF8574", address)
             self._drop_state(self._pcf_states, address)
@@ -391,6 +692,11 @@ class CasaITApi:
             self._record_read_error("DM117", address, exc)
             self._drop_state(self._dm117_states, address)
             return
+
+        self._publish_dm117_reading(address, port_states, device)
+
+    def _publish_dm117_reading(self, address: int, port_states: dict[int, int] | None, device: DM117) -> None:
+        """Cache one DM117 reading and dispatch when its port values changed."""
 
         if port_states is None:
             self._record_read_error("DM117", address)
@@ -528,7 +834,9 @@ class CasaITApi:
             if addr not in self.im117_om117:
                 # Debouncing only makes sense for inputs. An output latch is driven by
                 # Home Assistant, so suppressing a change there would hide a real write.
-                self.im117_om117[addr] = PCF8574(self.bus, addr, debounce_time=40 if addr in input_addresses else 0)
+                self.im117_om117[addr] = PCF8574(
+                    self.bus, addr, debounce_time=INPUT_DEBOUNCE_MS if addr in input_addresses else 0
+                )
 
         for addr in list(self.im117_om117):
             if addr not in found:
@@ -637,7 +945,7 @@ class CasaITApi:
         if not bus:
             return None
 
-        async with self._lock:
+        async with self._background_access():
             return await self.hass.async_add_executor_job(bus.read_temperature, device_id)
 
     async def read_ds2438(self, device_id: str) -> DS2438Reading | None:
@@ -647,7 +955,7 @@ class CasaITApi:
         if not bus:
             return None
 
-        async with self._lock:
+        async with self._background_access():
             return await self.hass.async_add_executor_job(
                 bus.ds2438.get_reading, device_id, bus.get_interval(device_id)
             )
@@ -660,7 +968,7 @@ class CasaITApi:
             return None
 
         read_job = partial(bus.read_binary_state, device_id, channel, invert=invert)
-        async with self._lock:
+        async with self._background_access():
             return await self.hass.async_add_executor_job(read_job)
 
     async def write_ds2413_state(self, device_id: str, channel: int, value: bool) -> bool:
@@ -681,7 +989,7 @@ class CasaITApi:
             return None
 
         read_job = partial(bus.read_led_config, device_id, use_cache)
-        async with self._lock:
+        async with self._background_access():
             return await self.hass.async_add_executor_job(read_job)
 
     async def write_led_config(self, device_id: str, config: LEDConfig) -> bool:

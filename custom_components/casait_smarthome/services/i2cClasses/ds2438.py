@@ -138,8 +138,8 @@ class DS2438:
         """Get reading, starting a new conversion cycle if needed."""
         state = self._get_state(device_id)
 
-        # Return existing reading if still valid and not in IDLE state
-        if state.reading and state.reading.is_valid and state.state != ConversionState.IDLE:
+        # Serve the cache from IDLE too - see the note in ds18b20.get_temperature.
+        if state.state == ConversionState.IDLE and state.reading and state.reading.is_valid:
             return state.reading
 
         # Process current state

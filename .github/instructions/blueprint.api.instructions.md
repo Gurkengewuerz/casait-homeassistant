@@ -26,7 +26,12 @@ Entities → CasaITApi → synchronous hardware drivers
 
 ## Polling and State
 
-- The integration intentionally uses a free-running 2 ms polling loop for shared I2C state.
+- The integration intentionally uses a free-running polling loop for shared I2C state, at
+  `fast_poll_interval` (20 ms by default).
+- Pack a cycle's reads into as few `I2CBatch` frames as the limits allow; one operation per round
+  trip made cycle time scale with the module count.
+- Input modules are handed to the bridge scanner once at startup; a bridge on older firmware
+  rejects the command and the poll loop reads those addresses itself. Never probe it repeatedly.
 - Cache updates dispatch the config-entry-scoped state signal.
 - One failed module read must not erase healthy state for other modules.
 - A stopped or failed poll task must be observable through initialization/error state.

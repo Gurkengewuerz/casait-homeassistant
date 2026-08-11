@@ -26,6 +26,11 @@ CMD_WRITE_I2C_BLOCK_DATA = 0x05
 CMD_READ_I2C_BLOCK = 0x06
 CMD_BATCH = 0x07
 CMD_PING = 0x11
+# Autonomous input scanning. The bridge samples a configured set of PCF8574s on its
+# own and latches the transitions, so a press cannot fall between two HA cycles and
+# the input latency stops depending on the network round trip.
+CMD_SCAN_CONFIG = 0x12
+CMD_SCAN_FETCH = 0x13
 
 # Batch sub-opcodes, numbered like the top-level commands so both sides stay readable
 BOP_WRITE_BYTE = 0x01
@@ -47,6 +52,13 @@ MAX_BATCH_RESULTS = MAX_FRAME_PAYLOAD - 1
 MAX_WAIT_STATUS_MS = 50
 MAX_DELAY_MS = 10
 
+# Scanner limits. Entries are (address index, sampled value) pairs and share the one
+# frame with the status, flags and count bytes.
+MAX_SCAN_ADDRESSES = 32
+MAX_SCAN_ENTRIES = (MAX_FRAME_PAYLOAD - 3) // 2
+# Set by the bridge when its transition queue overflowed and snapshots were dropped.
+SCAN_FLAG_OVERFLOW = 0x01
+
 # Default configuration from environment variables
 DEFAULT_PORT = 8555
 DEFAULT_TIMEOUT = 2.0
@@ -59,10 +71,30 @@ MAX_SEND_INTERVAL = 0.005
 SEND_INTERVAL_STEP = 0.001
 # Consecutive error-free frames required before the spacing is relaxed one step.
 SEND_INTERVAL_RECOVERY_FRAMES = 50
+# Pause between send attempts, indexed by the attempt that just failed. This runs
+# while the I/O lock is held, so it stalls every other caller including the input
+# poll loop; it exists to let the bridge settle, not to wait out an outage.
+RETRY_BACKOFF = (0.05, 0.15)
+# Pause after the bridge reports maintenance mode. Same constraint as above.
+MAINTENANCE_BACKOFF = 0.5
 
 
 class SMBusProxyError(Exception):
     """Exception raised for SMBus proxy errors."""
+
+
+class I2CBatchError(OSError):
+    """A batch failed, naming the operation that failed where the bridge reported it.
+
+    Callers that pack several independent devices into one batch need to know which
+    one failed so a single bad module does not discard the others' results.
+    """
+
+    def __init__(self, message: str, op_index: int | None = None) -> None:
+        """Store the failing operation index alongside the message."""
+
+        super().__init__(message)
+        self.op_index = op_index
 
 
 class I2CBatch:
@@ -389,10 +421,12 @@ class SMBus:
                     response = self._receive_frame()
                     rtt = time.monotonic() - send_start
 
-                    # Bridge may signal maintenance; back off to avoid busy reconnect loops
+                    # Bridge may signal maintenance; back off to avoid busy reconnect
+                    # loops. Kept short because this sleep holds the I/O lock and so
+                    # stalls the input poll loop along with everything else.
                     if len(response) >= 3 and response[:3] == b"\xff\xee\x01":
                         self._reset_socket()
-                        time.sleep(2)
+                        time.sleep(MAINTENANCE_BACKOFF)
                         raise SMBusProxyError("Bridge in maintenance mode")  # noqa: TRY301
                 except TimeoutError as e:
                     self._timeouts += 1
@@ -404,7 +438,7 @@ class SMBus:
                     )
                     self._reset_socket()
                     if attempt < 2:
-                        time.sleep(1.0)
+                        time.sleep(RETRY_BACKOFF[attempt])
                         continue
                     raise SMBusProxyError("Communication timeout") from e
                 except SMBusProxyError as e:
@@ -417,7 +451,7 @@ class SMBus:
                     )
                     self._reset_socket()
                     if attempt < 2:
-                        time.sleep(1.0)
+                        time.sleep(RETRY_BACKOFF[attempt])
                         continue
                     raise
                 except OSError as e:
@@ -431,7 +465,7 @@ class SMBus:
                     )
                     self._reset_socket()
                     if attempt < 2:
-                        time.sleep(1.0)
+                        time.sleep(RETRY_BACKOFF[attempt])
                         continue
                     raise SMBusProxyError(f"Communication error: {e}") from e
                 else:
@@ -582,8 +616,8 @@ class SMBus:
         if response and response[0] == 0x00 and len(response) >= batch.result_count + 1:
             return list(response[1 : batch.result_count + 1])
         if len(response) >= 2 and response[0] == 0xFF:
-            raise OSError(f"I2C batch failed at operation {response[1]} of {len(batch)}")
-        raise OSError("I2C batch returned a malformed response")
+            raise I2CBatchError(f"I2C batch failed at operation {response[1]} of {len(batch)}", response[1])
+        raise I2CBatchError("I2C batch returned a malformed response")
 
     def read_i2c_block(self, addr: int, count: int) -> list[int]:
         """Read ``count`` bytes from a device in a single I2C transaction.
@@ -639,6 +673,64 @@ class SMBus:
             raise OSError(f"Write i2c block data failed for address 0x{i2c_addr:02X} register 0x{register:02X}")
         except SMBusProxyError as e:
             raise OSError(str(e)) from e
+
+    def scan_config(self, addresses: list[int], period_ms: int, debounce_ms: int) -> bool:
+        """Hand the bridge the input addresses to sample on its own.
+
+        Returns False when the bridge does not implement the scanner, which is the
+        signal for the caller to keep polling the inputs itself. A firmware without
+        this command does not answer at all, so the probe costs the full retry budget
+        once - never call it from a path that runs repeatedly.
+
+        Args:
+            addresses: PCF8574 addresses to sample, in the order fetch results index
+            period_ms: How often the bridge samples the whole set
+            debounce_ms: Per-bit debounce the bridge applies before latching an edge
+
+        Returns:
+            True if the bridge accepted the configuration
+        """
+
+        if not addresses:
+            return False
+        if len(addresses) > MAX_SCAN_ADDRESSES:
+            raise ValueError(f"At most {MAX_SCAN_ADDRESSES} scan addresses, got {len(addresses)}")
+
+        payload = bytes([CMD_SCAN_CONFIG, period_ms & 0xFF, debounce_ms & 0xFF, len(addresses), *addresses])
+        try:
+            response = self._send_command(payload)
+        except SMBusProxyError:
+            _LOGGER.info("Bridge does not support autonomous input scanning; polling inputs from Home Assistant")
+            return False
+        return bool(response) and response[0] == 0x00
+
+    def scan_fetch(self) -> tuple[int, list[tuple[int, int]]]:
+        """Collect the transitions the bridge latched since the last fetch.
+
+        Returns:
+            The flags byte and the latched (address index, port value) snapshots in
+            the order they were sampled. Several snapshots for one address mean the
+            input changed more than once between fetches.
+
+        Raises:
+            OSError: If the fetch fails or the response is malformed
+        """
+
+        try:
+            response = self._send_command(bytes([CMD_SCAN_FETCH]))
+        except SMBusProxyError as e:
+            raise OSError(str(e)) from e
+
+        if len(response) < 3 or response[0] != 0x00:
+            raise OSError("Scan fetch returned a malformed response")
+
+        flags = response[1]
+        count = response[2]
+        if count > MAX_SCAN_ENTRIES or len(response) < 3 + count * 2:
+            raise OSError("Scan fetch returned a truncated entry list")
+
+        entries = response[3 : 3 + count * 2]
+        return flags, [(entries[index], entries[index + 1]) for index in range(0, count * 2, 2)]
 
     def ping(self) -> bool:
         """Send a keep-alive ping to the bridge."""

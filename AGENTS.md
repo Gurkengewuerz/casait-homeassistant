@@ -337,7 +337,8 @@ See `.github/instructions/blueprint.config_flow.instructions.md` for comprehensi
 
 **Polling and API:**
 
-- The integration intentionally uses a free-running 2 ms API poll loop with entry-scoped dispatcher signals
+- The integration intentionally uses a free-running poll loop (`fast_poll_interval`, 20 ms by default) with
+  entry-scoped dispatcher signals. One cycle reads every module through as few batched frames as fit.
 - Acquire the private hardware lock for one device transaction at a time so 1-Wire calls receive bus time
 - Entities call async `CasaITApi` methods and never access driver objects or the hardware lock directly
 - Do not introduce a `DataUpdateCoordinator` unless the polling architecture itself is deliberately replaced

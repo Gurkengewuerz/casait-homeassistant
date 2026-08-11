@@ -77,10 +77,9 @@ class DS28E17:
             _LOGGER.error("Failed to select device %s", device_id)
             return False
 
-        for byte in packet:
-            if not self.bus.bridge.wire_write_byte(byte):
-                _LOGGER.error("Failed to write byte %02X", byte)
-                return False
+        if not self.bus.bridge.wire_write_bytes(list(packet)):
+            _LOGGER.error("Failed to write command packet")
+            return False
 
         retries = 0
         while True:
@@ -96,12 +95,11 @@ class DS28E17:
                 return False
             time.sleep(0.001)
 
-        status = self.bus.bridge.wire_read_byte()
-        write_status = self.bus.bridge.wire_read_byte()
-
-        if status is None or write_status is None:
+        status_bytes = self.bus.bridge.wire_read_bytes(2)
+        if status_bytes is None:
             _LOGGER.error("Failed to read status bytes")
             return False
+        status, write_status = status_bytes
 
         _LOGGER.debug("Write complete - status: %02X, write_status: %02X", status, write_status)
         return status == 0
@@ -139,10 +137,9 @@ class DS28E17:
             _LOGGER.error("Failed to select device %s", device_id)
             return None
 
-        for byte in packet:
-            if not self.bus.bridge.wire_write_byte(byte):
-                _LOGGER.error("Failed to write command byte %02X", byte)
-                return None
+        if not self.bus.bridge.wire_write_bytes(list(packet)):
+            _LOGGER.error("Failed to write command packet")
+            return None
 
         retries = 0
         while True:
@@ -165,13 +162,11 @@ class DS28E17:
 
         _LOGGER.debug("Status byte: %02X", status)
 
-        data = bytearray()
-        for _ in range(num_bytes):
-            byte = self.bus.bridge.wire_read_byte()
-            if byte is None:
-                _LOGGER.error("Failed to read data byte %s", len(data))
-                return None
-            data.append(byte)
+        values = self.bus.bridge.wire_read_bytes(num_bytes)
+        if values is None:
+            _LOGGER.error("Failed to read %s data bytes", num_bytes)
+            return None
 
+        data = bytes(values)
         _LOGGER.debug("Read complete - data: %s", " ".join(f"{x:02X}" for x in data))
-        return bytes(data)
+        return data

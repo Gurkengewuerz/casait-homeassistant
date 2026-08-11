@@ -58,6 +58,7 @@ class DM117:
         self.last_port_types: dict[int, DeviceType] = {}
         self._last_read_time = 0
         self._read_interval = 0.01  # 10ms minimum between reads
+        self._force_full_read = True
 
     def configure_ports(self, config: dict[int, DeviceType], commit: bool = True) -> bool:
         """Configure module ports."""
@@ -168,12 +169,40 @@ class DM117:
             return False
         return True
 
+    def expected_response_size(self) -> int:
+        """Return how many bytes the next read has to fetch.
+
+        Once the slot layout is known, the response is shorter than the worst case:
+        a module count byte, then a type byte plus one value byte per slot (two for a
+        dimmer), then the CRC. Reading only that much lets more modules share one
+        batch. Falls back to the worst case until the layout has been seen, and after
+        any failed decode, so a re-configured module recovers on the next cycle
+        instead of failing forever against a truncated response.
+        """
+
+        types = self.last_port_types or self.port_config
+        if self._force_full_read or not types:
+            return self.READ_RESPONSE_SIZE
+
+        size = 2 + sum(3 if device_type == DeviceType.DIMMER else 2 for device_type in types.values())
+        return min(size, self.READ_RESPONSE_SIZE)
+
+    def cached_ports(self) -> dict[int, int] | None:
+        """Return the cached values while the minimum read interval has not elapsed."""
+
+        if time.time() - self._last_read_time < self._read_interval:
+            return self.last_values
+        return None
+
     def read_ports(self) -> dict[int, int] | None:
-        """Read all port values; returns dict of port→raw-value or None on error."""
+        """Read all port values; returns dict of port→raw-value or None on error.
+
+        Convenience wrapper for single-device access. The poll loop instead batches
+        the bus traffic for every module into one frame and calls ``decode_response``.
+        """
         try:
-            current_time = time.time()
-            if current_time - self._last_read_time < self._read_interval:
-                return self.last_values
+            if (cached := self.cached_ports()) is not None:
+                return cached
 
             # Locking must be handled by the caller. This method only prepares
             # and sends the payload.
@@ -183,8 +212,15 @@ class DM117:
             # The slave streams its whole prepared buffer from a single transaction
             # and answers 0xFF once it runs out, so reading the worst-case length in
             # one go is safe and costs one round trip instead of up to 26.
-            block = self.bus.read_i2c_block(self.address, self.READ_RESPONSE_SIZE)
+            block = self.bus.read_i2c_block(self.address, self.expected_response_size())
+        except OSError:
+            return None
+        return self.decode_response(block)
 
+    def decode_response(self, block: list[int]) -> dict[int, int] | None:
+        """Parse and CRC-check a read response; returns None when it is not usable."""
+
+        try:
             num_modules = block[0]
             if num_modules > 8:  # Sanity check
                 raise ValueError(f"Invalid number of modules: {num_modules}")  # noqa: TRY301
@@ -220,13 +256,18 @@ class DM117:
             # Verify CRC
             calculated_crc = Crc8Smbus.calc(data)
             if received_crc != calculated_crc:
+                self._force_full_read = True
                 return None
 
             self.last_values = values
             self.last_port_types = port_types
-            self._last_read_time = current_time
+            self._last_read_time = time.time()
+            self._force_full_read = False
 
-        except OSError, ValueError:
+        except IndexError, ValueError:
+            # A slot layout change truncates a shortened read. Fetch the worst case
+            # next time so the new layout can be learned.
+            self._force_full_read = True
             return None
         return values
 
