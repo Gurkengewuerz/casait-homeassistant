@@ -781,13 +781,21 @@
           "poll_interval": "Polling interval (s)",
           "led_count": "LED count",
           "channel_1_profile": "Channel A role",
-          "channel_2_profile": "Channel B role"
+          "channel_1_device_class": "Channel A device class",
+          "channel_1_invert": "Invert channel A",
+          "channel_2_profile": "Channel B role",
+          "channel_2_device_class": "Channel B device class",
+          "channel_2_invert": "Invert channel B"
         },
         "data_description": {
           "poll_interval": "Time between reads of this device.",
           "led_count": "Number of addressable LEDs connected to the controller.",
           "channel_1_profile": "Choose whether channel A is exposed as an input or output.",
-          "channel_2_profile": "Choose whether channel B is exposed as an input or output."
+          "channel_1_device_class": "Device class used when channel A is an input.",
+          "channel_1_invert": "Report channel A the other way round, for a normally closed contact.",
+          "channel_2_profile": "Choose whether channel B is exposed as an input or output.",
+          "channel_2_device_class": "Device class used when channel B is an input.",
+          "channel_2_invert": "Report channel B the other way round, for a normally closed contact."
         }
       }
     },

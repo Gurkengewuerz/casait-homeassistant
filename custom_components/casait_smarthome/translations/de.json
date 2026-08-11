@@ -781,13 +781,21 @@
           "poll_interval": "Abfrageintervall (s)",
           "led_count": "Anzahl LEDs",
           "channel_1_profile": "Rolle Kanal A",
-          "channel_2_profile": "Rolle Kanal B"
+          "channel_1_device_class": "Ger\u00e4teklasse Kanal A",
+          "channel_1_invert": "Kanal A invertieren",
+          "channel_2_profile": "Rolle Kanal B",
+          "channel_2_device_class": "Ger\u00e4teklasse Kanal B",
+          "channel_2_invert": "Kanal B invertieren"
         },
         "data_description": {
           "poll_interval": "Zeit zwischen den Abfragen dieses Ger\u00e4ts.",
           "led_count": "Anzahl der am Controller angeschlossenen adressierbaren LEDs.",
           "channel_1_profile": "W\u00e4hle, ob Kanal A als Ein- oder Ausgang bereitgestellt wird.",
-          "channel_2_profile": "W\u00e4hle, ob Kanal B als Ein- oder Ausgang bereitgestellt wird."
+          "channel_1_device_class": "Ger\u00e4teklasse, wenn Kanal A als Eingang verwendet wird.",
+          "channel_1_invert": "Kanal A umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
+          "channel_2_profile": "W\u00e4hle, ob Kanal B als Ein- oder Ausgang bereitgestellt wird.",
+          "channel_2_device_class": "Ger\u00e4teklasse, wenn Kanal B als Eingang verwendet wird.",
+          "channel_2_invert": "Kanal B umgekehrt melden, etwa f\u00fcr einen \u00d6ffner."
         }
       }
     },

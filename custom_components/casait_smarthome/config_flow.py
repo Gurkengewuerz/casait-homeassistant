@@ -64,6 +64,7 @@ from .helpers import (
     get_configured_onewire_profiles,
     get_dm117_input_configuration,
     get_dm117_slot_types,
+    get_ds2413_input_configuration,
     get_im117_port_configuration,
     get_input_module_settings,
     get_input_settings,
@@ -72,6 +73,7 @@ from .helpers import (
     get_polling_settings,
     set_dm117_inputs,
     set_dm117_slots,
+    set_ds2413_inputs,
     set_im117_ports,
     set_input_settings,
     set_module_name,
@@ -132,10 +134,14 @@ def _dm117_channel_key(slot: int, channel: int) -> str:
     return f"slot_{slot + 1}_channel_{'a' if channel == 0 else 'b'}"
 
 
-def _input_config_from_form(user_input: Mapping[str, Any], prefix: str) -> DigitalInputConfig:
-    """Read back one digital input from a submitted form."""
+def _input_config_from_form(user_input: Mapping[str, Any], prefix: str, role: str | None = None) -> DigitalInputConfig:
+    """Read back one digital input from a submitted form.
 
-    role = str(user_input[f"{prefix}_role"])
+    ``role`` is given where the form has no role field of its own, as on the
+    DS2413 whose channels choose between input and output instead.
+    """
+
+    role = str(user_input[f"{prefix}_role"]) if role is None else role
     device_class = user_input.get(f"{prefix}_device_class")
     if role != INPUT_ROLE_CONTACT or device_class == NO_DEVICE_CLASS:
         device_class = None
@@ -970,16 +976,26 @@ class OptionsFlowHandler(OptionsFlowWithReload):
                     0: str(user_input["channel_1_profile"]),
                     1: str(user_input["channel_2_profile"]),
                 }
-            return await self._stage(
-                set_onewire_device(
-                    self._options,
-                    dev_id,
-                    stored_profile,
-                    led_count=int(user_input["led_count"]) if profile == "ds28e17_led" else None,
-                    poll_interval=int(user_input["poll_interval"]),
-                    ds2413_channels=channels,
-                )
+            updated = set_onewire_device(
+                self._options,
+                dev_id,
+                stored_profile,
+                led_count=int(user_input["led_count"]) if profile == "ds28e17_led" else None,
+                poll_interval=int(user_input["poll_interval"]),
+                ds2413_channels=channels,
             )
+            if channels is not None:
+                # Written after the device entry, which replaces the whole section.
+                # Both channels are stored; the reader only surfaces the input ones.
+                updated = set_ds2413_inputs(
+                    updated,
+                    dev_id,
+                    {
+                        index: _input_config_from_form(user_input, f"channel_{index + 1}", INPUT_ROLE_CONTACT)
+                        for index in range(2)
+                    },
+                )
+            return await self._stage(updated)
 
         poll_interval_default = get_configured_onewire_poll_intervals(self._options).get(
             dev_id, DEFAULT_OW_POLL_INTERVAL.get(profile, 60)
@@ -1000,10 +1016,20 @@ class OptionsFlowHandler(OptionsFlowWithReload):
                 {0: DS2413_CHANNEL_INPUT, 1: DS2413_CHANNEL_INPUT},
             )
             channel_options = [DS2413_CHANNEL_INPUT, DS2413_CHANNEL_OUTPUT]
+            input_defaults = get_ds2413_input_configuration(self._options).get(dev_id, {})
             for index in range(2):
+                config = input_defaults.get(index, DigitalInputConfig())
                 schema[vol.Required(f"channel_{index + 1}_profile", default=channel_defaults[index])] = SelectSelector(
                     SelectSelectorConfig(options=channel_options, translation_key="ds2413_channel_profile")
                 )
+                # Shown for both channels: the one that is an output ignores them,
+                # and a channel switched to input in this same form still gets them.
+                schema[
+                    vol.Optional(f"channel_{index + 1}_device_class", default=config.device_class or NO_DEVICE_CLASS)
+                ] = SelectSelector(
+                    SelectSelectorConfig(options=CONTACT_DEVICE_CLASS_OPTIONS, translation_key="contact_device_class")
+                )
+                schema[vol.Required(f"channel_{index + 1}_invert", default=config.invert)] = BooleanSelector()
 
         return self.async_show_form(
             step_id="onewire_settings",

@@ -29,6 +29,7 @@ from .helpers import (
     get_configured_ds2413_channels,
     get_configured_onewire_profiles,
     get_dm117_input_configuration,
+    get_ds2413_input_configuration,
     get_im117_port_configuration,
     get_module_name,
 )
@@ -76,6 +77,7 @@ async def async_setup_entry(
     ds2413_entities: list[BinarySensorEntity] = []
     configured_profiles = get_configured_onewire_profiles(config_entry.options)
     configured_channels = get_configured_ds2413_channels(config_entry.options)
+    configured_inputs = get_ds2413_input_configuration(config_entry.options)
 
     for device_id, meta in api.ow_devices.items():
         profile = configured_profiles.get(device_id) or default_onewire_profile(meta)
@@ -83,8 +85,11 @@ async def async_setup_entry(
             continue
         fallback = DS2413_CHANNEL_INPUT if profile != "ds2413_out" else "output"
         channel_roles = configured_channels.get(device_id, {0: fallback, 1: fallback})
+        inputs = configured_inputs.get(device_id, {})
         ds2413_entities.extend(
-            CasaITDS2413BinarySensor(api, config_entry, device_id, channel, meta)
+            CasaITDS2413BinarySensor(
+                api, config_entry, device_id, channel, meta, inputs.get(channel, DigitalInputConfig())
+            )
             for channel, role in channel_roles.items()
             if role == DS2413_CHANNEL_INPUT
         )
@@ -278,6 +283,7 @@ class CasaITDS2413BinarySensor(BinarySensorEntity):
         device_id: str,
         channel: int,
         meta: dict[str, Any],
+        config: DigitalInputConfig | None = None,
     ) -> None:
         """Initialize the DS2413 binary sensor."""
 
@@ -285,6 +291,9 @@ class CasaITDS2413BinarySensor(BinarySensorEntity):
         self._device_id = device_id
         self._channel = channel
         self._meta = meta
+        self._invert = config.invert if config is not None else False
+        if config is not None and config.device_class:
+            self._attr_device_class = BinarySensorDeviceClass(config.device_class)
         channel_name = "A" if channel == 0 else "B"
         bridge_slug = build_bridge_slug(config_entry.entry_id, config_entry.unique_id)
         self._attr_unique_id = f"{config_entry.entry_id}_{device_id}_channel_{channel}_input"
@@ -299,5 +308,5 @@ class CasaITDS2413BinarySensor(BinarySensorEntity):
         state = await self._api.read_ds2413_state(self._device_id, self._channel)
         if state is None:
             return
-        self._attr_is_on = state
+        self._attr_is_on = state is not self._invert
         self._attr_available = True

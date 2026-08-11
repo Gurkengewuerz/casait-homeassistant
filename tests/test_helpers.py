@@ -484,3 +484,15 @@ def test_migrated_entity_identity_contract() -> None:
     assert {
         identity: migrated_entity_identity("entry-test", "AA:BB:CC:DD:EE:FF", *identity) for identity in legacy_entities
     } == legacy_entities
+
+
+def test_ds2413_input_defaults_survive_a_device_rewrite() -> None:
+    """set_onewire_device replaces the whole entry, so order matters."""
+
+    device_id = "3a00000000000002"
+    options = set_onewire_device({}, device_id, "ds2413", ds2413_channels={0: DS2413_CHANNEL_INPUT})
+    options = set_ds2413_inputs(options, device_id, {0: DigitalInputConfig(device_class="motion")})
+
+    rewritten = set_onewire_device(options, device_id, "ds2413", ds2413_channels={0: DS2413_CHANNEL_INPUT})
+
+    assert get_ds2413_input_configuration(rewritten)[device_id][0] == DigitalInputConfig()
