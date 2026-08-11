@@ -428,6 +428,22 @@ async def test_accepted_scanner_takes_over_debounce_and_addresses(hass) -> None:
 
 
 @pytest.mark.unit
+async def test_scanner_debounces_at_the_shared_floor(hass) -> None:
+    """The bridge takes one value for every address, the driver keeps the rest."""
+
+    bus = ScanBus(accept=True)
+    api = CasaITApi(hass, bus, "entry-test", input_debounce_ms={"im117": {0x38: 20, 0x39: 50}})
+    quick = _pcf(api, 0x38, bus)
+    slow = _pcf(api, 0x39, bus)
+
+    await api._async_start_input_scanner()  # noqa: SLF001
+
+    assert bus.configured == ([0x38, 0x39], 20, 20)
+    assert quick.debounce_time == 0
+    assert slow.debounce_time == 30
+
+
+@pytest.mark.unit
 async def test_fetched_snapshots_are_replayed_as_edges(hass) -> None:
     # Two snapshots for one module: pressed, then released again.
     bus = ScanBus(accept=True, fetch=(0, [(0, 0xFE), (0, 0xFF)]))

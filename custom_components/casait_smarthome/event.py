@@ -60,7 +60,7 @@ async def async_setup_entry(
     settings = get_input_settings(config_entry.options)
 
     entities = [
-        CasaITButtonEvent(api, config_entry, address, port, settings)
+        CasaITButtonEvent(api, config_entry, address, port, settings, invert=config.invert)
         for address in api.im117_om117
         if input_range[0] <= address <= input_range[1]
         for port, config in port_config.get(address, {}).items()
@@ -97,6 +97,8 @@ class CasaITButtonEvent(EventEntity):
         address: int,
         port: int,
         settings: InputSettings,
+        *,
+        invert: bool = False,
     ) -> None:
         """Initialize the button event entity."""
 
@@ -105,6 +107,7 @@ class CasaITButtonEvent(EventEntity):
         self._port = port
         self._hardware_port = PCF8574_MAPPED_PORTS[port]
         self._settings = settings
+        self._invert = invert
         self._held = False
         self._long_reported = False
         self._pending_double: CALLBACK_TYPE | None = None
@@ -159,8 +162,9 @@ class CasaITButtonEvent(EventEntity):
         """Translate raw port edges into button events."""
 
         for level in edges.get(self._hardware_port, ()):
-            # Inputs are active low: the level drops while the button is held.
-            if level:
+            # Inputs are active low: the level drops while the button is held. A
+            # button wired the other way round inverts that.
+            if level is not self._invert:
                 self._handle_release()
             else:
                 self._handle_press()

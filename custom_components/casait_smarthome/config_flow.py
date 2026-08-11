@@ -15,6 +15,7 @@ from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.selector import (
+    BooleanSelector,
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
@@ -43,6 +44,7 @@ from .const import (
     OM117_MODE_PULSE,
     OM117_MODE_SHUTTER,
     OM117_MODE_SWITCH,
+    OPT_DEBOUNCE_MS,
     OPT_DOUBLE_CLICK_MS,
     OPT_FAST_POLL_INTERVAL_MS,
     OPT_LONG_PRESS_MS,
@@ -51,6 +53,7 @@ from .const import (
 )
 from .helpers import (
     DigitalInputConfig,
+    InputModuleSettings,
     InputSettings,
     OM117PairConfig,
     PollingSettings,
@@ -61,6 +64,7 @@ from .helpers import (
     get_configured_onewire_profiles,
     get_dm117_slot_types,
     get_im117_port_configuration,
+    get_input_module_settings,
     get_input_settings,
     get_module_name,
     get_om117_pair_configuration,
@@ -95,6 +99,43 @@ ONEWIRE_PROFILES = [
     "ds2413",
     "ds28e17_led",
 ]
+
+
+def _input_config_schema(
+    prefix: str,
+    config: DigitalInputConfig,
+    *,
+    roles: list[str] = INPUT_ROLES,
+) -> dict[Any, Any]:
+    """Return the schema describing one digital input, whatever module it sits on.
+
+    ``prefix`` names the input within its form, for example "port_3" or
+    "slot_2_channel_a".
+    """
+
+    return {
+        vol.Required(f"{prefix}_role", default=config.role): SelectSelector(
+            SelectSelectorConfig(options=roles, translation_key="input_role")
+        ),
+        vol.Optional(f"{prefix}_device_class", default=config.device_class or NO_DEVICE_CLASS): SelectSelector(
+            SelectSelectorConfig(options=CONTACT_DEVICE_CLASS_OPTIONS, translation_key="contact_device_class")
+        ),
+        vol.Required(f"{prefix}_invert", default=config.invert): BooleanSelector(),
+    }
+
+
+def _input_config_from_form(user_input: Mapping[str, Any], prefix: str) -> DigitalInputConfig:
+    """Read back one digital input from a submitted form."""
+
+    role = str(user_input[f"{prefix}_role"])
+    device_class = user_input.get(f"{prefix}_device_class")
+    if role != INPUT_ROLE_CONTACT or device_class == NO_DEVICE_CLASS:
+        device_class = None
+    return DigitalInputConfig(
+        role=role,
+        device_class=str(device_class) if device_class else None,
+        invert=bool(user_input.get(f"{prefix}_invert", False)),
+    )
 
 
 def _bridge_data_schema(defaults: Mapping[str, Any] | None = None) -> vol.Schema:
@@ -449,35 +490,28 @@ class OptionsFlowHandler(OptionsFlowWithReload):
             return self.async_abort(reason="integration_not_ready")
 
         if user_input is not None:
-            ports = {}
-            for index in range(1, 9):
-                role = user_input[f"port_{index}_role"]
-                device_class = user_input.get(f"port_{index}_device_class")
-                if role != INPUT_ROLE_CONTACT or device_class == NO_DEVICE_CLASS:
-                    device_class = None
-                ports[index - 1] = DigitalInputConfig(role=role, device_class=device_class)
+            ports = {index - 1: _input_config_from_form(user_input, f"port_{index}") for index in range(1, 9)}
             return await self._stage(
                 set_im117_ports(
                     self._options,
                     addr,
                     ports,
                     name=str(user_input["module_name"]),
+                    debounce_ms=int(user_input[OPT_DEBOUNCE_MS]),
                 )
             )
 
         configured = get_im117_port_configuration(self._options).get(addr, {})
+        module_settings = get_input_module_settings(self._options, "im117").get(addr, InputModuleSettings())
         module_name = get_module_name(self._options, "im117", addr, f"IM117 0x{addr:02X}")
-        schema: dict[Any, Any] = {vol.Required("module_name", default=module_name): TextSelector(TextSelectorConfig())}
+        schema: dict[Any, Any] = {
+            vol.Required("module_name", default=module_name): TextSelector(TextSelectorConfig()),
+            vol.Required(OPT_DEBOUNCE_MS, default=module_settings.debounce_ms): NumberSelector(
+                NumberSelectorConfig(min=0, max=255, step=1, mode=NumberSelectorMode.BOX)
+            ),
+        }
         for index in range(1, 9):
-            config = configured.get(index - 1, DigitalInputConfig())
-            schema[vol.Required(f"port_{index}_role", default=config.role)] = SelectSelector(
-                SelectSelectorConfig(options=INPUT_ROLES, translation_key="input_role")
-            )
-            schema[vol.Optional(f"port_{index}_device_class", default=config.device_class or NO_DEVICE_CLASS)] = (
-                SelectSelector(
-                    SelectSelectorConfig(options=CONTACT_DEVICE_CLASS_OPTIONS, translation_key="contact_device_class")
-                )
-            )
+            schema.update(_input_config_schema(f"port_{index}", configured.get(index - 1, DigitalInputConfig())))
 
         return self.async_show_form(
             step_id="im117_config",

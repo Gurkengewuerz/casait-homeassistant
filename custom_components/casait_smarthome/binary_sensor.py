@@ -145,6 +145,7 @@ class CasaITBinarySensor(BinarySensorEntity):
         self._address = address
         self._port = port
         self._hardware_port = PCF8574_MAPPED_PORTS[port]
+        self._invert = config.invert if config is not None else False
         if config is not None and config.device_class:
             self._attr_device_class = BinarySensorDeviceClass(config.device_class)
         bridge_slug = build_bridge_slug(config_entry.entry_id, config_entry.unique_id)
@@ -165,7 +166,9 @@ class CasaITBinarySensor(BinarySensorEntity):
         if self._address in self._api.pcf_states:
             states = self._api.pcf_states[self._address]
             if states is not None and 0 <= self._hardware_port < len(states):
-                self._attr_is_on = states[self._hardware_port] == 0  # Inverted logic for PCF8574 inputs
+                # PCF8574 inputs are active low; a normally closed contact inverts
+                # that again.
+                self._attr_is_on = (states[self._hardware_port] == 0) is not self._invert
             else:
                 self._attr_is_on = None
         else:

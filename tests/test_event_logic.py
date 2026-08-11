@@ -66,9 +66,9 @@ def timers(monkeypatch) -> _Timers:
     return collected
 
 
-def _build(settings: InputSettings) -> tuple[CasaITButtonEvent, list[str]]:
+def _build(settings: InputSettings, *, invert: bool = False) -> tuple[CasaITButtonEvent, list[str]]:
     api = SimpleNamespace(pcf_states={0x38: [1] * 8})
-    entity = CasaITButtonEvent(api, ENTRY, 0x38, PORT, settings)
+    entity = CasaITButtonEvent(api, ENTRY, 0x38, PORT, settings, invert=invert)
 
     fired: list[str] = []
     entity._fire = fired.append  # noqa: SLF001
@@ -222,3 +222,15 @@ def test_holding_the_second_press_reports_double_and_long(timers) -> None:
         EVENT_LONG_PRESS,
         EVENT_LONG_RELEASE,
     ]
+
+
+def test_inverted_button_swaps_the_edges(timers) -> None:
+    """A button wired as a normally closed contact presses on the rising edge."""
+
+    entity, fired = _build(InputSettings(long_press_ms=500, double_click_ms=0), invert=True)
+
+    entity._handle_edges(_edges(RELEASED))  # noqa: SLF001
+    assert fired == [EVENT_SINGLE_PRESS]
+
+    entity._handle_edges(_edges(PRESSED))  # noqa: SLF001
+    assert fired == [EVENT_SINGLE_PRESS, EVENT_SINGLE_RELEASE]

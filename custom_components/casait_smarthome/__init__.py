@@ -26,6 +26,7 @@ from .helpers import (
     get_configured_onewire_poll_intervals,
     get_configured_onewire_profiles,
     get_dm117_port_configuration,
+    get_input_module_settings,
     get_module_name,
     get_om117_pair_configuration,
     get_polling_settings,
@@ -298,6 +299,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> bo
         polling_settings.fast_poll_interval,
         polling_settings.slow_poll_interval,
         get_configured_module_addresses(entry.options),
+        input_debounce_ms={
+            module_kind: {
+                address: settings.debounce_ms
+                for address, settings in get_input_module_settings(entry.options, module_kind).items()
+            }
+            for module_kind in ("im117", "dm117")
+        },
     )
     entry.runtime_data = api
 

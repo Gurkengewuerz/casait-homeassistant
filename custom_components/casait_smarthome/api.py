@@ -72,6 +72,7 @@ class CasaITApi:
         fast_poll_interval: float = DEFAULT_FAST_POLL_INTERVAL,
         slow_poll_interval: float = DEFAULT_SLOW_POLL_INTERVAL,
         configured_module_addresses: Mapping[str, set[int]] | None = None,
+        input_debounce_ms: Mapping[str, Mapping[int, int]] | None = None,
     ) -> None:
         """Initialize the API."""
         self.hass = hass
@@ -87,6 +88,9 @@ class CasaITApi:
         self._onewire_poll_intervals = dict(onewire_poll_intervals or {})
         self.om117_pair_configuration = {
             address: dict(pairs) for address, pairs in (om117_pair_configuration or {}).items()
+        }
+        self._input_debounce_ms = {
+            module_kind: dict(addresses) for module_kind, addresses in (input_debounce_ms or {}).items()
         }
         self._configured_module_addresses = {
             module_kind: set(addresses) for module_kind, addresses in (configured_module_addresses or {}).items()
@@ -114,7 +118,6 @@ class CasaITApi:
         self._frames_last_cycle = 0
         # Addresses the bridge samples for us; empty means Home Assistant reads them.
         self._scan_addresses: list[int] = []
-        self._input_debounce_ms = DEFAULT_INPUT_DEBOUNCE_MS
         self._stop_event: asyncio.Event | None = None
         self._poll_task: asyncio.Task | None = None
         self._init_done = asyncio.Event()
@@ -200,6 +203,11 @@ class CasaITApi:
             },
             "transport": self.bus.stats,
         }
+
+    def debounce_time(self, module_kind: str, address: int) -> int:
+        """Return the configured debounce window of one input module."""
+
+        return self._input_debounce_ms.get(module_kind, {}).get(address, DEFAULT_INPUT_DEBOUNCE_MS)
 
     def address_signal(self, address: int) -> str:
         """Return the dispatcher signal carrying state changes for one module."""
@@ -401,7 +409,10 @@ class CasaITApi:
             return
 
         period_ms = max(1, min(255, round(self._poll_interval * 1000)))
-        debounce_ms = min(255, self._input_debounce_ms)
+        # One debounce value covers every scanned address, so the bridge gets the
+        # smallest one configured. A module asking for more keeps the difference in
+        # its driver below.
+        debounce_ms = min(255, *(self.debounce_time("im117", address) for address in addresses))
         config_job = partial(self.bus.scan_config, addresses, period_ms, debounce_ms)
         try:
             async with self._write_access():
@@ -415,11 +426,13 @@ class CasaITApi:
 
         self._scan_addresses = addresses
         # The bridge debounces with a clock that is not subject to network jitter,
-        # so the driver must not debounce the same edge a second time.
+        # so the driver must not debounce the same window a second time - only the
+        # part the bridge did not cover, which is nothing unless this module was
+        # configured above the shared floor.
         for address in addresses:
             device = self.im117_om117.get(address)
             if device is not None:
-                device.debounce_time = 0
+                device.debounce_time = max(0, self.debounce_time("im117", address) - debounce_ms)
         _LOGGER.info(
             "Bridge samples %s input modules every %s ms; Home Assistant only collects the edges",
             len(addresses),
@@ -834,7 +847,7 @@ class CasaITApi:
                 # Debouncing only makes sense for inputs. An output latch is driven by
                 # Home Assistant, so suppressing a change there would hide a real write.
                 self.im117_om117[addr] = PCF8574(
-                    self.bus, addr, debounce_time=DEFAULT_INPUT_DEBOUNCE_MS if addr in input_addresses else 0
+                    self.bus, addr, debounce_time=self.debounce_time("im117", addr) if addr in input_addresses else 0
                 )
 
         for addr in list(self.im117_om117):
