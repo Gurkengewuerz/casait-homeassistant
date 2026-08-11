@@ -339,11 +339,10 @@
     }
   },
   "selector": {
-    "im117_role": {
+    "input_role": {
       "options": {
-        "switch": "Switch (persistent state)",
+        "contact": "Contact or switch",
         "button": "Push button",
-        "contact": "Contact with device class",
         "unused": "Unused"
       }
     },

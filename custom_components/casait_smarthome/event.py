@@ -25,7 +25,7 @@ from .const import (
     EVENT_LONG_RELEASE,
     EVENT_SINGLE_PRESS,
     EVENT_SINGLE_RELEASE,
-    IM117_ROLE_BUTTON,
+    INPUT_ROLE_BUTTON,
     PCF8574_MAPPED_PORTS,
 )
 from .helpers import (
@@ -64,7 +64,7 @@ async def async_setup_entry(
         for address in api.im117_om117
         if input_range[0] <= address <= input_range[1]
         for port, config in port_config.get(address, {}).items()
-        if config.role == IM117_ROLE_BUTTON
+        if config.role == INPUT_ROLE_BUTTON
     ]
 
     if entities:

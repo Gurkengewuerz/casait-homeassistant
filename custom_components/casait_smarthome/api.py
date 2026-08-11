@@ -18,6 +18,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .const import (
     DEFAULT_FAST_POLL_INTERVAL,
+    DEFAULT_INPUT_DEBOUNCE_MS,
     DEFAULT_OW_POLL_INTERVAL,
     DEFAULT_OW_PROFILE,
     DEFAULT_SLOW_POLL_INTERVAL,
@@ -38,8 +39,6 @@ _LOGGER = logging.getLogger(__name__)
 # Bridge-side settle time after re-arming a PCF8574 latch, in milliseconds. Matches
 # the delay the single-device path sleeps for client side.
 PCF_REARM_SETTLE_MS = 5
-# Per-bit debounce window applied to input modules, in milliseconds.
-INPUT_DEBOUNCE_MS = 40
 # Re-arms run on the bridge and each one stalls the frame for the settle time above.
 # Capping them per cycle bounds that cost; a deferred re-arm keeps its flag and is
 # picked up by one of the next cycles, which is harmless for a periodic safety net.
@@ -115,7 +114,7 @@ class CasaITApi:
         self._frames_last_cycle = 0
         # Addresses the bridge samples for us; empty means Home Assistant reads them.
         self._scan_addresses: list[int] = []
-        self._input_debounce_ms = INPUT_DEBOUNCE_MS
+        self._input_debounce_ms = DEFAULT_INPUT_DEBOUNCE_MS
         self._stop_event: asyncio.Event | None = None
         self._poll_task: asyncio.Task | None = None
         self._init_done = asyncio.Event()
@@ -835,7 +834,7 @@ class CasaITApi:
                 # Debouncing only makes sense for inputs. An output latch is driven by
                 # Home Assistant, so suppressing a change there would hide a real write.
                 self.im117_om117[addr] = PCF8574(
-                    self.bus, addr, debounce_time=INPUT_DEBOUNCE_MS if addr in input_addresses else 0
+                    self.bus, addr, debounce_time=DEFAULT_INPUT_DEBOUNCE_MS if addr in input_addresses else 0
                 )
 
         for addr in list(self.im117_om117):

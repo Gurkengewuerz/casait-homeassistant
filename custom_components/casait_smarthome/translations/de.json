@@ -339,11 +339,10 @@
     }
   },
   "selector": {
-    "im117_role": {
+    "input_role": {
       "options": {
-        "switch": "Schalter (Dauerzustand)",
+        "contact": "Kontakt oder Schalter",
         "button": "Taster",
-        "contact": "Kontakt mit Ger\u00e4teklasse",
         "unused": "Nicht belegt"
       }
     },

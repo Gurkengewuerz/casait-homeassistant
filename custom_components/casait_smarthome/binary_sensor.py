@@ -15,9 +15,9 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import CasaITConfigEntry
 from .api import CasaITApi
-from .const import DOMAIN, DS2413_CHANNEL_INPUT, IM117_ROLE_CONTACT, IM117_ROLE_SWITCH, PCF8574_MAPPED_PORTS
+from .const import DOMAIN, DS2413_CHANNEL_INPUT, INPUT_ROLE_CONTACT, PCF8574_MAPPED_PORTS
 from .helpers import (
-    IM117PortConfig,
+    DigitalInputConfig,
     build_bridge_slug,
     build_device_identifier,
     build_entity_id,
@@ -60,8 +60,8 @@ async def async_setup_entry(
             for port in range(8):
                 # Ports default to a plain binary sensor, which is what every
                 # port used to be before roles existed.
-                config = configured.get(port, IM117PortConfig())
-                if config.role not in (IM117_ROLE_SWITCH, IM117_ROLE_CONTACT):
+                config = configured.get(port, DigitalInputConfig())
+                if config.role != INPUT_ROLE_CONTACT:
                     continue
                 pcf_entities.append(CasaITBinarySensor(api, config_entry, addr, port, config))
 
@@ -138,7 +138,7 @@ class CasaITBinarySensor(BinarySensorEntity):
         config_entry: CasaITConfigEntry,
         address: int,
         port: int,
-        config: IM117PortConfig | None = None,
+        config: DigitalInputConfig | None = None,
     ) -> None:
         """Initialize the binary sensor."""
         self._api = api

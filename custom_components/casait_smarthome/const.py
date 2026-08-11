@@ -19,7 +19,9 @@ OPT_SETTINGS: Final = "settings"
 OPT_PAIRS: Final = "pairs"
 OPT_SLOTS: Final = "slots"
 OPT_PORTS: Final = "ports"
+OPT_INPUTS: Final = "inputs"
 OPT_NAME: Final = "name"
+OPT_DEBOUNCE_MS: Final = "debounce_ms"
 
 # I2C address ranges for device scanning
 I2C_ADDR_RANGES: Final = [
@@ -32,17 +34,24 @@ I2C_ADDR_RANGES: Final = [
 # Platforms
 PLATFORMS: Final = ["binary_sensor", "button", "cover", "event", "light", "number", "sensor", "switch"]
 
-# What an IM117 input port is wired to. The default keeps every discovered port
+# What a digital input is wired to. IM117 ports, DM117 input slots and DS2413
+# input channels share this vocabulary. The default keeps every discovered input
 # a plain binary sensor, which is how the integration behaved before roles
 # existed - upgrading must not silently delete anyone's entities.
-IM117_ROLE_SWITCH: Final = "switch"
-IM117_ROLE_BUTTON: Final = "button"
-IM117_ROLE_CONTACT: Final = "contact"
-IM117_ROLE_UNUSED: Final = "unused"
-DEFAULT_IM117_ROLE: Final = IM117_ROLE_SWITCH
+INPUT_ROLE_BUTTON: Final = "button"
+INPUT_ROLE_CONTACT: Final = "contact"
+INPUT_ROLE_UNUSED: Final = "unused"
+DEFAULT_INPUT_ROLE: Final = INPUT_ROLE_CONTACT
+# Older options stored a separate "switch" role for a contact without a device
+# class. It is read as a contact; nothing on disk is rewritten.
+LEGACY_INPUT_ROLE_SWITCH: Final = "switch"
 
-# Device classes offered for the "contact" role.
-IM117_CONTACT_DEVICE_CLASSES: Final = [
+# How long a bit is ignored after it changed, in milliseconds. Configurable per
+# input module; this is what a module without an explicit setting uses.
+DEFAULT_INPUT_DEBOUNCE_MS: Final = 40
+
+# Device classes offered for inputs reporting a state rather than a gesture.
+INPUT_DEVICE_CLASSES: Final = [
     "door",
     "window",
     "garage_door",

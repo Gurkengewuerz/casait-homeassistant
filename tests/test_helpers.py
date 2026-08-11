@@ -5,19 +5,21 @@ from custom_components.casait_smarthome.const import (
     DEFAULT_BLIND_OPEN_TIME,
     DEFAULT_BLIND_OVERRUN_TIME,
     DEFAULT_DOUBLE_CLICK_MS,
-    DEFAULT_IM117_ROLE,
+    DEFAULT_INPUT_DEBOUNCE_MS,
+    DEFAULT_INPUT_ROLE,
     DEFAULT_LONG_PRESS_MS,
     DS2413_CHANNEL_INPUT,
     DS2413_CHANNEL_OUTPUT,
-    IM117_ROLE_BUTTON,
-    IM117_ROLE_CONTACT,
-    IM117_ROLE_SWITCH,
-    IM117_ROLE_UNUSED,
+    INPUT_ROLE_BUTTON,
+    INPUT_ROLE_CONTACT,
+    INPUT_ROLE_UNUSED,
+    LEGACY_INPUT_ROLE_SWITCH,
     OM117_MODE_BLIND,
     OM117_MODE_SWITCH,
 )
 from custom_components.casait_smarthome.helpers import (
-    IM117PortConfig,
+    DigitalInputConfig,
+    InputModuleSettings,
     InputSettings,
     OM117PairConfig,
     build_bridge_slug,
@@ -25,14 +27,19 @@ from custom_components.casait_smarthome.helpers import (
     get_configured_led_counts,
     get_configured_onewire_poll_intervals,
     get_configured_onewire_profiles,
+    get_dm117_input_configuration,
     get_dm117_port_configuration,
+    get_ds2413_input_configuration,
     get_im117_port_configuration,
+    get_input_module_settings,
     get_input_settings,
     get_om117_pair_configuration,
     migrate_options_to_nested,
     migrated_device_identifiers,
     migrated_entity_identity,
+    set_dm117_inputs,
     set_dm117_slots,
+    set_ds2413_inputs,
     set_im117_ports,
     set_input_settings,
     set_om117_pairs,
@@ -185,7 +192,9 @@ def test_get_im117_port_configuration_contract() -> None:
                         "3": {"role": "unused"},
                         "4": {"role": "bogus"},
                         # A device class only means anything for the contact role.
-                        "5": {"role": "switch", "device_class": "door"},
+                        "5": {"role": LEGACY_INPUT_ROLE_SWITCH, "device_class": "door"},
+                        "6": {"role": "button", "invert": True, "repeat": True},
+                        "7": {"role": "contact", "repeat": True},
                         "0": {"role": "button"},
                         "9": {"role": "button"},
                     }
@@ -198,13 +207,19 @@ def test_get_im117_port_configuration_contract() -> None:
     parsed = get_im117_port_configuration(options)
 
     assert set(parsed) == {56}
-    assert set(parsed[56]) == {0, 1, 2, 3, 4}
-    assert parsed[56][0].role == IM117_ROLE_BUTTON
-    assert parsed[56][1].role == IM117_ROLE_CONTACT
+    assert set(parsed[56]) == {0, 1, 2, 3, 4, 5, 6}
+    assert parsed[56][0].role == INPUT_ROLE_BUTTON
+    assert parsed[56][1].role == INPUT_ROLE_CONTACT
     assert parsed[56][1].device_class == "window"
-    assert parsed[56][2].role == IM117_ROLE_UNUSED
-    assert parsed[56][3].role == DEFAULT_IM117_ROLE
-    assert parsed[56][4].device_class is None
+    assert parsed[56][2].role == INPUT_ROLE_UNUSED
+    assert parsed[56][3].role == DEFAULT_INPUT_ROLE
+    # The retired "switch" role reads as a contact, and its device class with it.
+    assert parsed[56][4].role == INPUT_ROLE_CONTACT
+    assert parsed[56][4].device_class == "door"
+    assert parsed[56][5].invert is True
+    assert parsed[56][5].repeat is True
+    # Repeating only means something while a button is held.
+    assert parsed[56][6].repeat is False
 
 
 def test_get_input_settings_contract() -> None:
@@ -229,17 +244,96 @@ def test_set_im117_ports_round_trip() -> None:
         {},
         56,
         {
-            0: IM117PortConfig(role=IM117_ROLE_BUTTON),
-            1: IM117PortConfig(role=IM117_ROLE_CONTACT, device_class="door"),
-            2: IM117PortConfig(role=IM117_ROLE_SWITCH, device_class="door"),
+            0: DigitalInputConfig(role=INPUT_ROLE_BUTTON, repeat=True),
+            1: DigitalInputConfig(role=INPUT_ROLE_CONTACT, device_class="door", invert=True),
+            2: DigitalInputConfig(role=INPUT_ROLE_UNUSED, device_class="door", repeat=True),
         },
+        debounce_ms=80,
     )
 
     parsed = get_im117_port_configuration(options)[56]
-    assert parsed[0].role == IM117_ROLE_BUTTON
+    assert parsed[0].role == INPUT_ROLE_BUTTON
+    assert parsed[0].repeat is True
     assert parsed[1].device_class == "door"
-    # A device class on a non-contact role is not persisted.
+    assert parsed[1].invert is True
+    # A device class and a repeat flag only survive on the role they belong to.
     assert parsed[2].device_class is None
+    assert parsed[2].repeat is False
+    assert get_input_module_settings(options, "im117")[56] == InputModuleSettings(debounce_ms=80)
+
+
+def test_get_input_module_settings_contract() -> None:
+    options = {
+        "modules": {
+            "im117": {
+                "56": {"debounce_ms": 80},
+                "57": {"debounce_ms": "nonsense"},
+                "58": {},
+            }
+        }
+    }
+
+    parsed = get_input_module_settings(options, "im117")
+
+    assert parsed[56].debounce_ms == 80
+    # Malformed and missing values fall back rather than propagate.
+    assert parsed[57].debounce_ms == DEFAULT_INPUT_DEBOUNCE_MS
+    assert parsed[58].debounce_ms == DEFAULT_INPUT_DEBOUNCE_MS
+    assert get_input_module_settings({}, "im117") == {}
+
+
+def test_dm117_inputs_round_trip() -> None:
+    options = set_dm117_slots({}, 16, {0: "binary_input", 1: "switch", 2: "binary_input"})
+    options = set_dm117_inputs(
+        options,
+        16,
+        {
+            (0, 0): DigitalInputConfig(role=INPUT_ROLE_BUTTON, repeat=True),
+            (0, 1): DigitalInputConfig(role=INPUT_ROLE_CONTACT, device_class="door", invert=True),
+        },
+        debounce_ms=25,
+    )
+
+    parsed = get_dm117_input_configuration(options)[16]
+
+    # Both channels of every input slot are configurable; a slot left alone keeps
+    # the defaults, and an output slot contributes nothing.
+    assert set(parsed) == {(0, 0), (0, 1), (2, 0), (2, 1)}
+    assert parsed[0, 0].role == INPUT_ROLE_BUTTON
+    assert parsed[0, 0].repeat is True
+    assert parsed[0, 1].device_class == "door"
+    assert parsed[0, 1].invert is True
+    assert parsed[2, 0] == DigitalInputConfig()
+    assert get_input_module_settings(options, "dm117")[16].debounce_ms == 25
+    # The slot types themselves are untouched by the input configuration.
+    assert get_dm117_port_configuration(options)[16][1] is DeviceType.OUTPUT
+
+
+def test_ds2413_inputs_round_trip() -> None:
+    device_id = "3a00000000000001"
+    options = set_onewire_device(
+        {},
+        device_id,
+        "ds2413",
+        ds2413_channels={0: DS2413_CHANNEL_INPUT, 1: DS2413_CHANNEL_OUTPUT},
+    )
+    options = set_ds2413_inputs(
+        options,
+        device_id,
+        {
+            0: DigitalInputConfig(role=INPUT_ROLE_BUTTON, device_class="motion", invert=True),
+            1: DigitalInputConfig(role=INPUT_ROLE_CONTACT),
+        },
+    )
+
+    parsed = get_ds2413_input_configuration(options)[device_id]
+
+    # Only the channel wired as an input is reported, and it never becomes a button:
+    # one 1-Wire read per second cannot carry a gesture.
+    assert set(parsed) == {0}
+    assert parsed[0].role == INPUT_ROLE_CONTACT
+    assert parsed[0].device_class == "motion"
+    assert parsed[0].invert is True
 
 
 def test_set_input_settings_round_trip() -> None:

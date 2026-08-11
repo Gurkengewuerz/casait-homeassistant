@@ -35,11 +35,10 @@ from .const import (
     DOMAIN,
     DS2413_CHANNEL_INPUT,
     DS2413_CHANNEL_OUTPUT,
-    IM117_CONTACT_DEVICE_CLASSES,
-    IM117_ROLE_BUTTON,
-    IM117_ROLE_CONTACT,
-    IM117_ROLE_SWITCH,
-    IM117_ROLE_UNUSED,
+    INPUT_DEVICE_CLASSES,
+    INPUT_ROLE_BUTTON,
+    INPUT_ROLE_CONTACT,
+    INPUT_ROLE_UNUSED,
     OM117_MODE_BLIND,
     OM117_MODE_PULSE,
     OM117_MODE_SHUTTER,
@@ -51,7 +50,7 @@ from .const import (
     OPT_SLOW_POLL_INTERVAL,
 )
 from .helpers import (
-    IM117PortConfig,
+    DigitalInputConfig,
     InputSettings,
     OM117PairConfig,
     PollingSettings,
@@ -82,12 +81,12 @@ _LOGGER = logging.getLogger(__name__)
 # against vol.Schema([...]), which rejects tuples with "expected a list".
 OM117_SLOT_TYPES = [OM117_MODE_SWITCH, OM117_MODE_SHUTTER, OM117_MODE_BLIND, OM117_MODE_PULSE]
 DM117_SLOT_TYPES = ["none", "binary_input", "switch", "dimmer"]
-IM117_ROLES = [IM117_ROLE_SWITCH, IM117_ROLE_BUTTON, IM117_ROLE_CONTACT, IM117_ROLE_UNUSED]
+INPUT_ROLES = [INPUT_ROLE_CONTACT, INPUT_ROLE_BUTTON, INPUT_ROLE_UNUSED]
 
 # voluptuous cannot express "no selection", so the absence of a device class is
 # carried as an explicit sentinel that is mapped back to None on save.
 NO_DEVICE_CLASS = "none"
-CONTACT_DEVICE_CLASS_OPTIONS = [NO_DEVICE_CLASS, *IM117_CONTACT_DEVICE_CLASSES]
+CONTACT_DEVICE_CLASS_OPTIONS = [NO_DEVICE_CLASS, *INPUT_DEVICE_CLASSES]
 
 ONEWIRE_PROFILES = [
     "ds18b20_temp",
@@ -454,9 +453,9 @@ class OptionsFlowHandler(OptionsFlowWithReload):
             for index in range(1, 9):
                 role = user_input[f"port_{index}_role"]
                 device_class = user_input.get(f"port_{index}_device_class")
-                if role != IM117_ROLE_CONTACT or device_class == NO_DEVICE_CLASS:
+                if role != INPUT_ROLE_CONTACT or device_class == NO_DEVICE_CLASS:
                     device_class = None
-                ports[index - 1] = IM117PortConfig(role=role, device_class=device_class)
+                ports[index - 1] = DigitalInputConfig(role=role, device_class=device_class)
             return await self._stage(
                 set_im117_ports(
                     self._options,
@@ -470,9 +469,9 @@ class OptionsFlowHandler(OptionsFlowWithReload):
         module_name = get_module_name(self._options, "im117", addr, f"IM117 0x{addr:02X}")
         schema: dict[Any, Any] = {vol.Required("module_name", default=module_name): TextSelector(TextSelectorConfig())}
         for index in range(1, 9):
-            config = configured.get(index - 1, IM117PortConfig())
+            config = configured.get(index - 1, DigitalInputConfig())
             schema[vol.Required(f"port_{index}_role", default=config.role)] = SelectSelector(
-                SelectSelectorConfig(options=IM117_ROLES, translation_key="im117_role")
+                SelectSelectorConfig(options=INPUT_ROLES, translation_key="input_role")
             )
             schema[vol.Optional(f"port_{index}_device_class", default=config.device_class or NO_DEVICE_CLASS)] = (
                 SelectSelector(

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Mapping
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import re
 from typing import Any
 
@@ -19,7 +19,8 @@ from .const import (
     DEFAULT_BLIND_TILT_TIME,
     DEFAULT_DOUBLE_CLICK_MS,
     DEFAULT_FAST_POLL_INTERVAL,
-    DEFAULT_IM117_ROLE,
+    DEFAULT_INPUT_DEBOUNCE_MS,
+    DEFAULT_INPUT_ROLE,
     DEFAULT_LONG_PRESS_MS,
     DEFAULT_MAX_SEND_INTERVAL,
     DEFAULT_OW_PROFILE,
@@ -29,16 +30,18 @@ from .const import (
     DS2413_CHANNEL_INPUT,
     DS2413_CHANNEL_OUTPUT,
     I2C_ADDR_RANGES,
-    IM117_ROLE_BUTTON,
-    IM117_ROLE_CONTACT,
-    IM117_ROLE_SWITCH,
-    IM117_ROLE_UNUSED,
+    INPUT_ROLE_BUTTON,
+    INPUT_ROLE_CONTACT,
+    INPUT_ROLE_UNUSED,
+    LEGACY_INPUT_ROLE_SWITCH,
     OM117_MODE_BLIND,
     OM117_MODE_PULSE,
     OM117_MODE_SHUTTER,
     OM117_MODE_SWITCH,
+    OPT_DEBOUNCE_MS,
     OPT_DOUBLE_CLICK_MS,
     OPT_FAST_POLL_INTERVAL_MS,
+    OPT_INPUTS,
     OPT_LONG_PRESS_MS,
     OPT_MAX_SEND_INTERVAL_MS,
     OPT_MODULES,
@@ -55,7 +58,7 @@ from .services.i2cClasses.dm117 import DeviceType
 DM117_SLOT_PREFIX = "dm117_"
 DM117_SLOT_SEPARATOR = "_slot_"
 
-VALID_IM117_ROLES = frozenset({IM117_ROLE_SWITCH, IM117_ROLE_BUTTON, IM117_ROLE_CONTACT, IM117_ROLE_UNUSED})
+VALID_INPUT_ROLES = frozenset({INPUT_ROLE_BUTTON, INPUT_ROLE_CONTACT, INPUT_ROLE_UNUSED})
 
 SLOT_TYPE_TO_DEVICE_TYPE: dict[str, DeviceType] = {
     "binary_input": DeviceType.INPUT,
@@ -372,11 +375,30 @@ def get_dm117_port_configuration(
 
 
 @dataclass
-class IM117PortConfig:
-    """What a single IM117 input port is wired to."""
+class DigitalInputConfig:
+    """What a single digital input is wired to.
 
-    role: str = DEFAULT_IM117_ROLE
+    Shared by every input module: IM117 ports, DM117 input slots and DS2413 input
+    channels differ in how they are addressed and read, not in what can be said
+    about them.
+    """
+
+    role: str = DEFAULT_INPUT_ROLE
     device_class: str | None = None
+    invert: bool = False
+    repeat: bool = False
+
+
+@dataclass
+class InputModuleSettings:
+    """Settings a whole input module shares.
+
+    Debouncing is per module rather than per port: the bridge scanner takes one
+    debounce value for every address it samples, and the driver applies it to a
+    whole chip.
+    """
+
+    debounce_ms: int = DEFAULT_INPUT_DEBOUNCE_MS
 
 
 @dataclass
@@ -396,30 +418,122 @@ class PollingSettings:
     max_send_interval: float = DEFAULT_MAX_SEND_INTERVAL
 
 
-def get_im117_port_configuration(options: Mapping[str, Any]) -> dict[int, dict[int, IM117PortConfig]]:
+def _parse_input_config(raw: Any, *, allow_button: bool = True) -> DigitalInputConfig | None:
+    """Read one stored input entry, or None when it is not an entry at all.
+
+    ``allow_button`` is False for inputs that are sampled too slowly to derive
+    gestures from; a stored button role degrades to a contact there instead of
+    producing an event entity that would miss half of what it reports.
+    """
+
+    if not isinstance(raw, Mapping):
+        return None
+
+    role = str(raw.get("role", DEFAULT_INPUT_ROLE))
+    if role == LEGACY_INPUT_ROLE_SWITCH:
+        # A switch was a contact without a device class; it never was its own thing.
+        role = INPUT_ROLE_CONTACT
+    if role not in VALID_INPUT_ROLES or (role == INPUT_ROLE_BUTTON and not allow_button):
+        role = DEFAULT_INPUT_ROLE
+
+    device_class = raw.get("device_class")
+    return DigitalInputConfig(
+        role=role,
+        device_class=str(device_class) if role == INPUT_ROLE_CONTACT and device_class else None,
+        invert=bool(raw.get("invert", False)),
+        repeat=role == INPUT_ROLE_BUTTON and bool(raw.get("repeat", False)),
+    )
+
+
+def _input_config_entry(config: DigitalInputConfig) -> dict[str, Any]:
+    """Return the storable form of one input, omitting everything left at default."""
+
+    entry: dict[str, Any] = {"role": config.role}
+    if config.role == INPUT_ROLE_CONTACT and config.device_class:
+        entry["device_class"] = config.device_class
+    if config.invert:
+        entry["invert"] = True
+    if config.role == INPUT_ROLE_BUTTON and config.repeat:
+        entry["repeat"] = True
+    return entry
+
+
+def get_im117_port_configuration(options: Mapping[str, Any]) -> dict[int, dict[int, DigitalInputConfig]]:
     """Return the configured role of every IM117 input port, keyed by address.
 
-    Ports without an entry are absent; callers fall back to DEFAULT_IM117_ROLE so
+    Ports without an entry are absent; callers fall back to DEFAULT_INPUT_ROLE so
     that a freshly discovered module still produces the binary sensors it always
     did.
     """
 
-    port_map: dict[int, dict[int, IM117PortConfig]] = defaultdict(dict)
+    port_map: dict[int, dict[int, DigitalInputConfig]] = defaultdict(dict)
 
     for address, module in _module_entries(options, "im117").items():
         for port_index, raw in _index_items(_section(module, OPT_PORTS), 8):
-            if not isinstance(raw, Mapping):
-                continue
-            role = str(raw.get("role", DEFAULT_IM117_ROLE))
-            if role not in VALID_IM117_ROLES:
-                role = DEFAULT_IM117_ROLE
-            device_class = raw.get("device_class")
-            port_map[address][port_index] = IM117PortConfig(
-                role=role,
-                device_class=str(device_class) if role == IM117_ROLE_CONTACT and device_class else None,
-            )
+            if (config := _parse_input_config(raw)) is not None:
+                port_map[address][port_index] = config
 
     return port_map
+
+
+def get_dm117_input_configuration(options: Mapping[str, Any]) -> dict[int, dict[tuple[int, int], DigitalInputConfig]]:
+    """Return the configured DM117 input channels, keyed by address.
+
+    The inner key is ``(slot index, channel)`` with channel 0 for A and 1 for B.
+    Only slots typed as an input carry a configuration; the slot type itself stays
+    in its own section so the output platforms keep reading what they always did.
+    """
+
+    input_map: dict[int, dict[tuple[int, int], DigitalInputConfig]] = defaultdict(dict)
+    slot_types = get_dm117_port_configuration(options)
+
+    for address, module in _module_entries(options, "dm117").items():
+        inputs = _section(module, OPT_INPUTS)
+        for slot_index, _ in sorted(slot_types.get(address, {}).items()):
+            if slot_types[address][slot_index] is not DeviceType.INPUT:
+                continue
+            channels = _section(inputs, str(slot_index + 1))
+            for channel in range(2):
+                raw = channels.get(str(channel + 1))
+                config = _parse_input_config(raw) if raw is not None else DigitalInputConfig()
+                if config is not None:
+                    input_map[address][slot_index, channel] = config
+
+    return input_map
+
+
+def get_ds2413_input_configuration(options: Mapping[str, Any]) -> dict[str, dict[int, DigitalInputConfig]]:
+    """Return the configured DS2413 input channels, keyed by device id.
+
+    DS2413 channels are read one 1-Wire transaction at a time on a slow cadence,
+    which is why they never carry a button role - see ``_parse_input_config``.
+    """
+
+    input_map: dict[str, dict[int, DigitalInputConfig]] = {}
+
+    for device_id, channels in get_configured_ds2413_channels(options).items():
+        stored = _section(_onewire_entries(options).get(device_id, {}), OPT_INPUTS)
+        configured: dict[int, DigitalInputConfig] = {}
+        for channel, role in channels.items():
+            if role != DS2413_CHANNEL_INPUT:
+                continue
+            raw = stored.get(str(channel + 1))
+            config = _parse_input_config(raw, allow_button=False) if raw is not None else DigitalInputConfig()
+            configured[channel] = config if config is not None else DigitalInputConfig()
+        if configured:
+            input_map[device_id] = configured
+
+    return input_map
+
+
+def get_input_module_settings(options: Mapping[str, Any], module_kind: str) -> dict[int, InputModuleSettings]:
+    """Return the per-module input settings of one I2C module kind, keyed by address."""
+
+    settings: dict[int, InputModuleSettings] = {}
+    for address, module in _module_entries(options, module_kind).items():
+        debounce = _bounded_int(module.get(OPT_DEBOUNCE_MS), 0, 255)
+        settings[address] = InputModuleSettings(debounce_ms=DEFAULT_INPUT_DEBOUNCE_MS if debounce is None else debounce)
+    return settings
 
 
 def get_input_settings(options: Mapping[str, Any]) -> InputSettings:
@@ -451,22 +565,66 @@ def get_polling_settings(options: Mapping[str, Any]) -> PollingSettings:
 def set_im117_ports(
     options: Mapping[str, Any],
     address: int,
-    ports: Mapping[int, IM117PortConfig],
+    ports: Mapping[int, DigitalInputConfig],
     *,
     name: str | None = None,
+    debounce_ms: int | None = None,
 ) -> dict[str, Any]:
-    """Return options with one IM117 module's port roles replaced."""
+    """Return options with one IM117 module's port configuration replaced."""
 
     updated = deepcopy(dict(options))
     section = _mutable_section(updated, OPT_MODULES, "im117", str(address))
     _set_module_name(section, name)
-    section[OPT_PORTS] = {
-        str(index + 1): (
-            {"role": config.role, "device_class": config.device_class}
-            if config.role == IM117_ROLE_CONTACT and config.device_class
-            else {"role": config.role}
+    if debounce_ms is not None:
+        section[OPT_DEBOUNCE_MS] = debounce_ms
+    section[OPT_PORTS] = {str(index + 1): _input_config_entry(config) for index, config in sorted(ports.items())}
+    return updated
+
+
+def set_dm117_inputs(
+    options: Mapping[str, Any],
+    address: int,
+    inputs: Mapping[tuple[int, int], DigitalInputConfig],
+    *,
+    debounce_ms: int | None = None,
+) -> dict[str, Any]:
+    """Return options with one DM117 module's input channels replaced.
+
+    The slot types stay untouched: which slots are inputs is decided in the slot
+    step, this only describes what the two channels of such a slot are wired to.
+    """
+
+    updated = deepcopy(dict(options))
+    section = _mutable_section(updated, OPT_MODULES, "dm117", str(address))
+    if debounce_ms is not None:
+        section[OPT_DEBOUNCE_MS] = debounce_ms
+
+    stored: dict[str, dict[str, Any]] = defaultdict(dict)
+    for (slot_index, channel), config in sorted(inputs.items()):
+        stored[str(slot_index + 1)][str(channel + 1)] = _input_config_entry(config)
+    section[OPT_INPUTS] = dict(stored)
+    return updated
+
+
+def set_ds2413_inputs(
+    options: Mapping[str, Any],
+    device_id: str,
+    inputs: Mapping[int, DigitalInputConfig],
+) -> dict[str, Any]:
+    """Return options with one DS2413's input channel configuration replaced.
+
+    Call this after ``set_onewire_device``, which rewrites the whole device entry.
+    A button role is stored as a contact: the channel is read one 1-Wire
+    transaction at a time and cannot carry a gesture.
+    """
+
+    updated = deepcopy(dict(options))
+    section = _mutable_section(updated, OPT_ONEWIRE, device_id)
+    section[OPT_INPUTS] = {
+        str(channel + 1): _input_config_entry(
+            replace(config, role=INPUT_ROLE_CONTACT) if config.role == INPUT_ROLE_BUTTON else config
         )
-        for index, config in sorted(ports.items())
+        for channel, config in sorted(inputs.items())
     }
     return updated
 
