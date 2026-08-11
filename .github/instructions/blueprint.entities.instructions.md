@@ -20,6 +20,20 @@ applyTo: "custom_components/**/binary_sensor.py, custom_components/**/cover.py, 
 - Use `_attr_has_entity_name = True`, translation keys, and translation placeholders for entity names.
 - Use `EntityDescription` dataclasses for reusable static metadata.
 
+## Digital Inputs
+
+- Every digital input carries the same `DigitalInputConfig`: role (`contact`, `button`, `unused`),
+  device class, inversion, and repeat. IM117 ports, DM117 input slots, and DS2413 input channels differ
+  only in how they are addressed and read.
+- The role decides the platform: `contact` produces a binary sensor, `button` an event entity, `unused`
+  nothing at all.
+- Keep the module's natural polarity in the entity and apply `invert` on top of it; do not push the
+  inversion into the drivers, which report what the chip reports.
+- Button events come from the edges the API publishes on `edge_signal`, never from polling entity state.
+  A module whose inputs are sampled too slowly for gestures must not offer the `button` role.
+- Debouncing is per module (`InputModuleSettings`), because the bridge scanner takes one value for every
+  address it samples.
+
 ## State and Availability
 
 - Entity properties must be synchronous, side-effect free, and exception free.

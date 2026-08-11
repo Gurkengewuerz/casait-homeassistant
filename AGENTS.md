@@ -348,6 +348,9 @@ See `.github/instructions/blueprint.config_flow.instructions.md` for comprehensi
 - Inherit from the Home Assistant platform entity base
 - Read shared I2C state from `CasaITApi` caches or call its async 1-Wire methods
 - Use `EntityDescription` for static metadata
+- Every digital input - IM117 port, DM117 input slot, DS2413 input channel - is described by one
+  `DigitalInputConfig` (role, device class, inversion, repeat); the role decides whether it becomes a
+  binary sensor, an event entity, or nothing
 
 See `.github/instructions/blueprint.entities.instructions.md` for entity patterns.
 
