@@ -28,11 +28,11 @@ from .helpers import (
     get_address_range,
     get_configured_ds2413_channels,
     get_configured_onewire_profiles,
-    get_dm117_port_configuration,
+    get_dm117_input_configuration,
     get_im117_port_configuration,
     get_module_name,
 )
-from .services.i2cClasses.dm117 import DeviceType, PortConfig
+from .services.i2cClasses.dm117 import PortConfig
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -65,16 +65,13 @@ async def async_setup_entry(
                     continue
                 pcf_entities.append(CasaITBinarySensor(api, config_entry, addr, port, config))
 
-    dm_entities: list[CasaITDM117BinarySensor] = []
-    dm_config = get_dm117_port_configuration(config_entry.options)
-    for addr, slots in dm_config.items():
-        if addr not in api.dm117:
-            continue
-        for port, device_type in slots.items():
-            if device_type is not DeviceType.INPUT:
-                continue
-            dm_entities.append(CasaITDM117BinarySensor(api, config_entry, addr, port, 0))
-            dm_entities.append(CasaITDM117BinarySensor(api, config_entry, addr, port, 1))
+    dm_entities: list[CasaITDM117BinarySensor] = [
+        CasaITDM117BinarySensor(api, config_entry, addr, slot, channel, config)
+        for addr, channels in get_dm117_input_configuration(config_entry.options).items()
+        if addr in api.dm117
+        for (slot, channel), config in channels.items()
+        if config.role == INPUT_ROLE_CONTACT
+    ]
 
     ds2413_entities: list[BinarySensorEntity] = []
     configured_profiles = get_configured_onewire_profiles(config_entry.options)
@@ -207,6 +204,7 @@ class CasaITDM117BinarySensor(BinarySensorEntity):
         address: int,
         port: int,
         channel: int,
+        config: DigitalInputConfig | None = None,
     ) -> None:
         """Initialize the DM117 binary sensor."""
 
@@ -215,6 +213,9 @@ class CasaITDM117BinarySensor(BinarySensorEntity):
         self._port = port
         self._slot = port + 1
         self._channel = channel  # 0 for port A, 1 for port B
+        self._invert = config.invert if config is not None else False
+        if config is not None and config.device_class:
+            self._attr_device_class = BinarySensorDeviceClass(config.device_class)
         bridge_slug = build_bridge_slug(config_entry.entry_id, config_entry.unique_id)
         self._attr_unique_id = f"{config_entry.entry_id}_dm117_{address}_{port}_input_{channel}"
         channel_name = "A" if channel == 0 else "B"
@@ -243,7 +244,7 @@ class CasaITDM117BinarySensor(BinarySensorEntity):
         # asymmetry, so the logical channel order here must remain unchanged.
         port_config = PortConfig.from_raw(raw_value)
         value = port_config.port_a if self._channel == 0 else port_config.port_b
-        self._attr_is_on = bool(value)
+        self._attr_is_on = bool(value) is not self._invert
 
     @callback
     def _handle_state_update(self) -> None:

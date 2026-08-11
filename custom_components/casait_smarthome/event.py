@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Hashable, Mapping
 from typing import Any
 
 from homeassistant.components.event import EventDeviceClass, EventEntity
@@ -34,6 +35,7 @@ from .helpers import (
     build_device_identifier,
     build_i2c_entity_id,
     get_address_range,
+    get_dm117_input_configuration,
     get_im117_port_configuration,
     get_input_settings,
     get_module_name,
@@ -52,29 +54,35 @@ async def async_setup_entry(
     api: CasaITApi = config_entry.runtime_data
     await api.async_wait_initialized()
 
-    input_range = get_address_range("IM117")
-    if input_range is None:
-        return
-
-    port_config = get_im117_port_configuration(config_entry.options)
     settings = get_input_settings(config_entry.options)
+    entities: list[CasaITInputEvent] = []
 
-    entities = [
-        CasaITButtonEvent(api, config_entry, address, port, settings, invert=config.invert)
-        for address in api.im117_om117
-        if input_range[0] <= address <= input_range[1]
-        for port, config in port_config.get(address, {}).items()
+    if (input_range := get_address_range("IM117")) is not None:
+        port_config = get_im117_port_configuration(config_entry.options)
+        entities.extend(
+            CasaITButtonEvent(api, config_entry, address, port, settings, invert=config.invert)
+            for address in api.im117_om117
+            if input_range[0] <= address <= input_range[1]
+            for port, config in port_config.get(address, {}).items()
+            if config.role == INPUT_ROLE_BUTTON
+        )
+
+    entities.extend(
+        CasaITDM117ButtonEvent(api, config_entry, address, slot, channel, settings, invert=config.invert)
+        for address, channels in get_dm117_input_configuration(config_entry.options).items()
+        if address in api.dm117
+        for (slot, channel), config in channels.items()
         if config.role == INPUT_ROLE_BUTTON
-    ]
+    )
 
     if entities:
         async_add_entities(entities)
 
 
-class CasaITButtonEvent(EventEntity):
-    """A push button on an IM117 input port.
+class CasaITInputEvent(EventEntity):
+    """A push button on a digital input, whatever module carries it.
 
-    Presses are derived from the edges the poll loop latches, so a tap that was
+    Presses are derived from the edges the poll loop reports, so a tap that was
     visible in only a single sample still produces an event.
 
     Every edge reports immediately: "single_press" when the button goes down,
@@ -82,48 +90,44 @@ class CasaITButtonEvent(EventEntity):
     and "single_release" or "long_release" when it comes back up. A press that
     lands inside the double click window adds "double_press". Automations
     therefore react while the user is still holding the button.
+
+    Subclasses supply the identity of the entity and where its edges come from:
+    the key they arrive under, and the state cache that says whether the owning
+    module is still responding.
     """
 
     _attr_has_entity_name = True
     _attr_should_poll = False
     _attr_device_class = EventDeviceClass.BUTTON
     _attr_event_types = BUTTON_EVENT_TYPES
-    _attr_translation_key = "im117_button"
+    # The chip level that means "held down" on this module type.
+    _active_level: bool = False
 
     def __init__(
         self,
         api: CasaITApi,
-        config_entry: CasaITConfigEntry,
         address: int,
-        port: int,
+        edge_key: Hashable,
+        subtype: str,
         settings: InputSettings,
+        state_cache: Mapping[int, Any],
         *,
         invert: bool = False,
     ) -> None:
-        """Initialize the button event entity."""
+        """Initialize the shared press-detection state."""
 
         self._api = api
         self._address = address
-        self._port = port
-        self._hardware_port = PCF8574_MAPPED_PORTS[port]
+        self._edge_key = edge_key
+        self._subtype = subtype
         self._settings = settings
+        self._state_cache = state_cache
         self._invert = invert
+        self._pressed_level = self._active_level is not invert
         self._held = False
         self._long_reported = False
         self._pending_double: CALLBACK_TYPE | None = None
         self._pending_long: CALLBACK_TYPE | None = None
-
-        bridge_slug = build_bridge_slug(config_entry.entry_id, config_entry.unique_id)
-        self._attr_unique_id = f"{config_entry.entry_id}_im117_{address}_{port}_button"
-        self.entity_id = build_i2c_entity_id("event", bridge_slug, "im117", address, "button", port + 1)
-        self._attr_translation_placeholders = {"port": str(port + 1)}
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, build_device_identifier(config_entry.entry_id, "im117", address))},
-            name=get_module_name(config_entry.options, "im117", address, f"IM117 0x{address:02X}"),
-            manufacturer="casaIT",
-            model="PCF8574 Input",
-            via_device=(DOMAIN, build_device_identifier(config_entry.entry_id, "bridge", "controller")),
-        )
 
     async def async_added_to_hass(self) -> None:
         """Subscribe to the edges published for this module."""
@@ -139,7 +143,7 @@ class CasaITButtonEvent(EventEntity):
     def available(self) -> bool:
         """Return if the owning module is responding."""
 
-        return self._address in self._api.pcf_states
+        return self._address in self._state_cache
 
     @callback
     def _close_double_window(self) -> None:
@@ -158,16 +162,14 @@ class CasaITButtonEvent(EventEntity):
             self._pending_long = None
 
     @callback
-    def _handle_edges(self, edges: dict[int, list[bool]]) -> None:
-        """Translate raw port edges into button events."""
+    def _handle_edges(self, edges: Mapping[Hashable, list[bool]]) -> None:
+        """Translate raw input edges into button events."""
 
-        for level in edges.get(self._hardware_port, ()):
-            # Inputs are active low: the level drops while the button is held. A
-            # button wired the other way round inverts that.
-            if level is not self._invert:
-                self._handle_release()
-            else:
+        for level in edges.get(self._edge_key, ()):
+            if level is self._pressed_level:
                 self._handle_press()
+            else:
+                self._handle_release()
 
     @callback
     def _handle_press(self) -> None:
@@ -243,7 +245,95 @@ class CasaITButtonEvent(EventEntity):
                 {
                     ATTR_DEVICE_ID: self.device_entry.id,
                     EVENT_DATA_EVENT_TYPE: event_type,
-                    EVENT_DATA_SUBTYPE: f"button_{self._port + 1}",
+                    EVENT_DATA_SUBTYPE: self._subtype,
                 },
             )
         self.async_write_ha_state()
+
+
+class CasaITButtonEvent(CasaITInputEvent):
+    """A push button on an IM117 input port."""
+
+    _attr_translation_key = "im117_button"
+    # PCF8574 inputs are active low: the level drops while the button is held.
+    _active_level = False
+
+    def __init__(
+        self,
+        api: CasaITApi,
+        config_entry: CasaITConfigEntry,
+        address: int,
+        port: int,
+        settings: InputSettings,
+        *,
+        invert: bool = False,
+    ) -> None:
+        """Initialize the IM117 button event entity."""
+
+        super().__init__(
+            api,
+            address,
+            PCF8574_MAPPED_PORTS[port],
+            f"button_{port + 1}",
+            settings,
+            api.pcf_states,
+            invert=invert,
+        )
+
+        bridge_slug = build_bridge_slug(config_entry.entry_id, config_entry.unique_id)
+        self._attr_unique_id = f"{config_entry.entry_id}_im117_{address}_{port}_button"
+        self.entity_id = build_i2c_entity_id("event", bridge_slug, "im117", address, "button", port + 1)
+        self._attr_translation_placeholders = {"port": str(port + 1)}
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, build_device_identifier(config_entry.entry_id, "im117", address))},
+            name=get_module_name(config_entry.options, "im117", address, f"IM117 0x{address:02X}"),
+            manufacturer="casaIT",
+            model="PCF8574 Input",
+            via_device=(DOMAIN, build_device_identifier(config_entry.entry_id, "bridge", "controller")),
+        )
+
+
+class CasaITDM117ButtonEvent(CasaITInputEvent):
+    """A push button on one channel of a DM117 input slot."""
+
+    _attr_translation_key = "dm117_button"
+    # DM117 input responses report a closed contact as a set bit.
+    _active_level = True
+
+    def __init__(
+        self,
+        api: CasaITApi,
+        config_entry: CasaITConfigEntry,
+        address: int,
+        slot: int,
+        channel: int,
+        settings: InputSettings,
+        *,
+        invert: bool = False,
+    ) -> None:
+        """Initialize the DM117 button event entity."""
+
+        channel_name = "a" if channel == 0 else "b"
+        super().__init__(
+            api,
+            address,
+            (slot, channel),
+            f"button_slot_{slot + 1}_{channel_name}",
+            settings,
+            api.dm117_states,
+            invert=invert,
+        )
+
+        bridge_slug = build_bridge_slug(config_entry.entry_id, config_entry.unique_id)
+        self._attr_unique_id = f"{config_entry.entry_id}_dm117_{address}_{slot}_{channel}_button"
+        self.entity_id = build_i2c_entity_id(
+            "event", bridge_slug, "dm117", address, "slot", slot + 1, "button", channel_name
+        )
+        self._attr_translation_placeholders = {"slot": str(slot + 1), "channel": channel_name.upper()}
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, build_device_identifier(config_entry.entry_id, "dm117", address))},
+            name=get_module_name(config_entry.options, "dm117", address, f"DM117 0x{address:02X}"),
+            manufacturer="casaIT",
+            model="DM117",
+            via_device=(DOMAIN, build_device_identifier(config_entry.entry_id, "bridge", "controller")),
+        )

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import defaultdict
-from collections.abc import AsyncIterator, Iterable, Mapping
+from collections.abc import AsyncIterator, Hashable, Iterable, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from functools import partial
@@ -27,8 +27,9 @@ from .const import (
     SIGNAL_STATE_UPDATED,
 )
 from .helpers import OM117PairConfig, build_device_identifier, get_address_range
-from .services.i2cClasses.dm117 import DM117, DeviceType, DM117PortConfig
+from .services.i2cClasses.dm117 import DM117, DeviceType, DM117PortConfig, PortConfig
 from .services.i2cClasses.ds2438 import DS2438Reading
+from .services.i2cClasses.edge_tracker import EdgeTracker
 from .services.i2cClasses.led_controller import LEDConfig
 from .services.i2cClasses.oneWireBus import OneWireBus
 from .services.i2cClasses.pcf8574 import PCF8574, PCF8574Reading
@@ -99,6 +100,9 @@ class CasaITApi:
         self._lock = asyncio.Lock()
         self._pcf_states: dict[int, list[int]] = {}
         self._dm117_states: dict[int, dict[int, int]] = {}
+        # The DM117 reports levels, so its input edges are derived here rather than
+        # inside a driver that latches them.
+        self._dm117_edges: dict[int, EdgeTracker] = {}
         self._read_errors: set[tuple[str, int]] = set()
         self._connection_failure_cycles = 0
         self._poll_interval = fast_poll_interval
@@ -708,20 +712,49 @@ class CasaITApi:
         self._publish_dm117_reading(address, port_states, device)
 
     def _publish_dm117_reading(self, address: int, port_states: dict[int, int] | None, device: DM117) -> None:
-        """Cache one DM117 reading and dispatch when its port values changed."""
+        """Cache one DM117 reading and dispatch its state changes plus input edges."""
 
         if port_states is None:
             self._record_read_error("DM117", address)
             self._drop_state(self._dm117_states, address)
+            self._dm117_edges.pop(address, None)
             return
 
         self._clear_read_error("DM117", address)
         previous = self._dm117_states.get(address)
         self._dm117_states[address] = dict(port_states)
 
+        if edges := self._dm117_input_edges(address, port_states):
+            async_dispatcher_send(self.hass, self.edge_signal(address), edges)
         if previous != port_states:
             async_dispatcher_send(self.hass, self.address_signal(address))
         self._sync_dm117_configuration_issues(address, device)
+
+    def _dm117_input_edges(self, address: int, port_states: Mapping[int, int]) -> dict[Hashable, list[bool]]:
+        """Debounce the input slots of one DM117 and return their transitions.
+
+        Unlike the PCF8574, the DM117 reports a level rather than latching edges,
+        so the transitions have to be derived here - which is the same work the
+        input driver does, done in the same way.
+        """
+
+        input_slots = [slot for slot, kind in self._dm_config.get(address, {}).items() if kind is DeviceType.INPUT]
+        if not input_slots:
+            return {}
+
+        tracker = self._dm117_edges.get(address)
+        if tracker is None:
+            tracker = self._dm117_edges[address] = EdgeTracker(self.debounce_time("dm117", address))
+
+        sample: dict[Hashable, bool] = {}
+        for slot in input_slots:
+            if (raw := port_states.get(slot)) is None:
+                continue
+            channels = PortConfig.from_raw(raw)
+            sample[slot, 0] = bool(channels.port_a)
+            sample[slot, 1] = bool(channels.port_b)
+
+        return tracker.apply(sample)
 
     def _sync_missing_module_issues(self, found_by_code: Mapping[str, set[int]]) -> None:
         """Create or clear repair issues for explicitly configured modules."""

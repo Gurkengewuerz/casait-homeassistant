@@ -68,13 +68,17 @@ def test_apply_reading_debounces_within_the_window() -> None:
 
 @pytest.mark.unit
 def test_shared_timestamp_keeps_debounce_windows_aligned() -> None:
+    """Modules read in one batch must debounce against the same instant."""
+
     first = PCF8574(NullBus(), 0x38, debounce_time=40)
     second = PCF8574(NullBus(), 0x39, debounce_time=40)
     for device in (first, second):
         device.apply_reading(0xFF, timestamp_ms=0.0)
         device.apply_reading(0xFE, timestamp_ms=50.0)
 
-    assert first._last_change[0] == second._last_change[0]  # noqa: SLF001
+    # Both windows opened at 50 ms, so the same bounce is suppressed for both.
+    assert [device.apply_reading(0xFF, timestamp_ms=80.0).edges for device in (first, second)] == [{}, {}]
+    assert [device.apply_reading(0xFF, timestamp_ms=95.0).edges for device in (first, second)] == [{0: [True]}] * 2
 
 
 @pytest.mark.unit

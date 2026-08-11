@@ -25,8 +25,13 @@ from homeassistant.helpers.typing import ConfigType
 
 from .const import BUTTON_EVENT_TYPES, CONF_SUBTYPE, DOMAIN, EVENT_BUTTON, EVENT_DATA_EVENT_TYPE, EVENT_DATA_SUBTYPE
 
-BUTTON_TRIGGER_SUBTYPES: Final = {f"button_{port}" for port in range(1, 9)}
-BUTTON_UNIQUE_ID_PATTERN: Final = re.compile(r"_im117_\d+_(\d+)_button$")
+BUTTON_TRIGGER_SUBTYPES: Final = {f"button_{port}" for port in range(1, 9)} | {
+    f"button_slot_{slot}_{channel}" for slot in range(1, 9) for channel in ("a", "b")
+}
+# One pattern per module type, because the subtype is built from what the module
+# calls its inputs: IM117 ports are numbered, DM117 inputs are a slot plus channel.
+IM117_BUTTON_PATTERN: Final = re.compile(r"_im117_\d+_(\d+)_button$")
+DM117_BUTTON_PATTERN: Final = re.compile(r"_dm117_\d+_(\d+)_(\d+)_button$")
 
 TRIGGER_SCHEMA: Final = DEVICE_TRIGGER_BASE_SCHEMA.extend(
     {
@@ -36,16 +41,27 @@ TRIGGER_SCHEMA: Final = DEVICE_TRIGGER_BASE_SCHEMA.extend(
 )
 
 
+def _trigger_subtype(unique_id: str) -> str | None:
+    """Return the trigger subtype of one button entity, or None if it is not one."""
+
+    if match := IM117_BUTTON_PATTERN.search(unique_id):
+        return f"button_{int(match.group(1)) + 1}"
+    if match := DM117_BUTTON_PATTERN.search(unique_id):
+        slot, channel = (int(value) for value in match.groups())
+        return f"button_slot_{slot + 1}_{'a' if channel == 0 else 'b'}"
+    return None
+
+
 async def async_get_triggers(hass: HomeAssistant, device_id: str) -> list[dict[str, str]]:
-    """Return the triggers exposed by configured IM117 button entities."""
+    """Return the triggers exposed by the configured button entities."""
 
     entity_registry = er.async_get(hass)
     subtypes = {
-        f"button_{int(match.group(1)) + 1}"
+        subtype
         for entry in er.async_entries_for_device(entity_registry, device_id)
         if entry.domain == "event"
         and entry.platform == DOMAIN
-        and (match := BUTTON_UNIQUE_ID_PATTERN.search(entry.unique_id)) is not None
+        and (subtype := _trigger_subtype(entry.unique_id)) is not None
     }
     return [
         {

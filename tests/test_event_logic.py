@@ -13,7 +13,7 @@ from custom_components.casait_smarthome.const import (
     EVENT_SINGLE_RELEASE,
     PCF8574_MAPPED_PORTS,
 )
-from custom_components.casait_smarthome.event import CasaITButtonEvent
+from custom_components.casait_smarthome.event import CasaITButtonEvent, CasaITDM117ButtonEvent
 from custom_components.casait_smarthome.helpers import InputSettings
 
 ENTRY = SimpleNamespace(entry_id="entry-test", unique_id="AA:BB:CC:DD:EE:FF", options={})
@@ -234,3 +234,22 @@ def test_inverted_button_swaps_the_edges(timers) -> None:
 
     entity._handle_edges(_edges(PRESSED))  # noqa: SLF001
     assert fired == [EVENT_SINGLE_PRESS, EVENT_SINGLE_RELEASE]
+
+
+def test_dm117_button_presses_on_the_high_level(timers) -> None:
+    """A DM117 input reports a closed contact as a set bit, unlike the IM117."""
+
+    api = SimpleNamespace(dm117_states={0x10: {0: 0}}, pcf_states={})
+    entity = CasaITDM117ButtonEvent(api, ENTRY, 0x10, 0, 1, InputSettings(long_press_ms=500, double_click_ms=0))
+    fired: list[str] = []
+    entity._fire = fired.append  # noqa: SLF001
+
+    # Slot 0 channel B, so edges for channel A must not reach this entity.
+    entity._handle_edges({(0, 0): [True]})  # noqa: SLF001
+    assert fired == []
+
+    entity._handle_edges({(0, 1): [True]})  # noqa: SLF001
+    entity._handle_edges({(0, 1): [False]})  # noqa: SLF001
+
+    assert fired == [EVENT_SINGLE_PRESS, EVENT_SINGLE_RELEASE]
+    assert entity.available is True

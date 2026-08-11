@@ -62,6 +62,7 @@ from .helpers import (
     get_configured_led_counts,
     get_configured_onewire_poll_intervals,
     get_configured_onewire_profiles,
+    get_dm117_input_configuration,
     get_dm117_slot_types,
     get_im117_port_configuration,
     get_input_module_settings,
@@ -69,6 +70,7 @@ from .helpers import (
     get_module_name,
     get_om117_pair_configuration,
     get_polling_settings,
+    set_dm117_inputs,
     set_dm117_slots,
     set_im117_ports,
     set_input_settings,
@@ -122,6 +124,12 @@ def _input_config_schema(
         ),
         vol.Required(f"{prefix}_invert", default=config.invert): BooleanSelector(),
     }
+
+
+def _dm117_channel_key(slot: int, channel: int) -> str:
+    """Return the form field prefix of one DM117 input channel."""
+
+    return f"slot_{slot + 1}_channel_{'a' if channel == 0 else 'b'}"
 
 
 def _input_config_from_form(user_input: Mapping[str, Any], prefix: str) -> DigitalInputConfig:
@@ -762,14 +770,17 @@ class OptionsFlowHandler(OptionsFlowWithReload):
 
         if user_input is not None:
             slots = {index - 1: user_input[f"slot_{index}"] for index in range(1, 9) if f"slot_{index}" in user_input}
-            return await self._stage(
-                set_dm117_slots(
-                    self._options,
-                    addr,
-                    slots,
-                    name=str(user_input["module_name"]),
-                )
+            self._staged_options = set_dm117_slots(
+                self._options,
+                addr,
+                slots,
+                name=str(user_input["module_name"]),
             )
+            # The channels of an input slot are described in their own step; the
+            # slot types have to be staged first so that step knows which to show.
+            if any(slot_type == "binary_input" for slot_type in slots.values()):
+                return await self.async_step_dm117_input_config()
+            return await self._stage(self._staged_options)
 
         configured = get_dm117_slot_types(self._options).get(addr, {})
         module_name = get_module_name(self._options, "dm117", addr, f"DM117 0x{addr:02X}")
@@ -781,6 +792,47 @@ class OptionsFlowHandler(OptionsFlowWithReload):
 
         return self.async_show_form(
             step_id="dm117_config",
+            data_schema=vol.Schema(schema),
+            description_placeholders={"module_name": module_name},
+        )
+
+    async def async_step_dm117_input_config(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Step 3: What the two channels of every input slot are wired to.
+
+        Only slots typed as an input appear here. Showing all eight slots would put
+        64 fields in one form for a module that usually carries one or two inputs.
+        """
+
+        if (addr := self._selected_dm117_addr) is None:
+            return self.async_abort(reason="integration_not_ready")
+
+        configured = get_dm117_input_configuration(self._options).get(addr, {})
+        if not configured:
+            return await self._stage(dict(self._options))
+
+        if user_input is not None:
+            inputs = {key: _input_config_from_form(user_input, _dm117_channel_key(*key)) for key in configured}
+            return await self._stage(
+                set_dm117_inputs(
+                    self._options,
+                    addr,
+                    inputs,
+                    debounce_ms=int(user_input[OPT_DEBOUNCE_MS]),
+                )
+            )
+
+        module_settings = get_input_module_settings(self._options, "dm117").get(addr, InputModuleSettings())
+        module_name = get_module_name(self._options, "dm117", addr, f"DM117 0x{addr:02X}")
+        schema: dict[Any, Any] = {
+            vol.Required(OPT_DEBOUNCE_MS, default=module_settings.debounce_ms): NumberSelector(
+                NumberSelectorConfig(min=0, max=255, step=1, mode=NumberSelectorMode.BOX)
+            )
+        }
+        for (slot, channel), config in sorted(configured.items()):
+            schema.update(_input_config_schema(_dm117_channel_key(slot, channel), config))
+
+        return self.async_show_form(
+            step_id="dm117_input_config",
             data_schema=vol.Schema(schema),
             description_placeholders={"module_name": module_name},
         )

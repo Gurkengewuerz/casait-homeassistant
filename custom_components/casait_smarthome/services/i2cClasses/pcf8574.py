@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 import logging
 import time
 
+from .edge_tracker import EdgeTracker
+
 _LOGGER = logging.getLogger(__name__)
 
 # Reads between forced re-arming of the quasi-bidirectional inputs. Writes and
@@ -42,7 +44,7 @@ class PCF8574:
         self.bus = bus
         self.address = address
         self.last_value = -1
-        self.debounce_time = debounce_time  # ms
+        self._edges = EdgeTracker(debounce_time)
         self.port_states = [0] * 8
         self._needs_set_high = True
         self._reads_since_set_high = 0
@@ -51,7 +53,18 @@ class PCF8574:
         # into a single frame; differing thresholds keep them drifting apart instead
         # of lining up again after every shared re-arm.
         self._refresh_reads = SET_HIGH_REFRESH_READS + (address % 8)
-        self._last_change = [0.0] * 8
+
+    @property
+    def debounce_time(self) -> int:
+        """Return the per-bit debounce window in milliseconds."""
+
+        return self._edges.debounce_time
+
+    @debounce_time.setter
+    def debounce_time(self, value: int) -> None:
+        """Set the per-bit debounce window, for example when the bridge takes over."""
+
+        self._edges.debounce_time = value
 
     def invalidate(self) -> None:
         """Force the next read to re-arm the inputs before sampling."""
@@ -108,30 +121,15 @@ class PCF8574:
 
         self._reads_since_set_high += 1
         curr_time = time.monotonic() * 1000 if timestamp_ms is None else timestamp_ms
-        port_values = [(value & (1 << i)) >> i for i in range(8)]
+        first_read = self.last_value < 0
 
-        if self.last_value < 0:
-            # First successful read: adopt the level without reporting edges.
-            self.port_states = port_values
-            self.last_value = value
-            self._last_change = [curr_time] * 8
-            return PCF8574Reading(list(self.port_states), value)
-
-        edges: dict[int, list[bool]] = {}
-        for bit in range(8):
-            if port_values[bit] == self.port_states[bit]:
-                continue
-            # Leading-edge debounce: adopt the change immediately, then ignore
-            # further transitions on this bit for debounce_time. Deferring the
-            # change instead (the trailing-edge variant) loses a button press that
-            # is already released again by the time of the next read.
-            if self.debounce_time > 0 and curr_time - self._last_change[bit] < self.debounce_time:
-                continue
-            self.port_states[bit] = port_values[bit]
-            self._last_change[bit] = curr_time
-            edges.setdefault(bit, []).append(bool(port_values[bit]))
-
+        edges = self._edges.apply({bit: bool(value & (1 << bit)) for bit in range(8)}, curr_time)
+        self.port_states = [int(self._edges.level(bit) or False) for bit in range(8)]
         self.last_value = sum(state << bit for bit, state in enumerate(self.port_states))
+
+        if first_read:
+            # The tracker already adopted the levels without reporting edges.
+            return PCF8574Reading(list(self.port_states), value)
 
         return PCF8574Reading(list(self.port_states), self.last_value, edges)
 
@@ -188,9 +186,9 @@ class PCF8574:
 
             self.last_value = new_value
             self.port_states[port] = state
-            # Own writes are not input edges; keep the debounce window aligned so the
-            # next read does not report the change we just made.
-            self._last_change[port] = time.monotonic() * 1000
+            # Own writes are not input edges; hand the new level to the tracker so
+            # the next read does not report the change we just made.
+            self._edges.adopt(port, bool(state))
 
         except OSError:
             self._needs_set_high = True

@@ -504,3 +504,71 @@ def test_module_for_op_maps_indices_to_owners(hass) -> None:
     assert api._module_for_op(modules, 2).address == 0x38  # noqa: SLF001
     assert api._module_for_op(modules, 3).address == 0x39  # noqa: SLF001
     assert api._module_for_op(modules, None) is None  # noqa: SLF001
+
+
+# ---------------------------------------------------------------------------
+# DM117 input edges
+# ---------------------------------------------------------------------------
+
+
+def _dm117_input(api: CasaITApi, bus: FakeBus, address: int, slot: int) -> DM117:
+    device = DM117(bus, address)
+    device.last_port_types = {slot: DeviceType.INPUT}
+    api.dm117[address] = device
+    api._dm_config = {address: {slot: DeviceType.INPUT}}  # noqa: SLF001
+    return device
+
+
+@pytest.mark.unit
+def test_dm117_publishes_input_edges(hass) -> None:
+    """The DM117 reports levels, so the API has to derive the transitions."""
+
+    bus = FakeBus()
+    api = CasaITApi(hass, bus, "entry-test", input_debounce_ms={"dm117": {0x10: 0}})
+    device = _dm117_input(api, bus, 0x10, slot=0)
+
+    with patch("custom_components.casait_smarthome.api.async_dispatcher_send") as dispatch:
+        # First reading only establishes the baseline.
+        api._publish_dm117_reading(0x10, {0: 0x00}, device)  # noqa: SLF001
+        assert [call.args[2] for call in dispatch.call_args_list if len(call.args) > 2] == []
+
+        dispatch.reset_mock()
+        api._publish_dm117_reading(0x10, {0: 0x01}, device)  # noqa: SLF001
+        api._publish_dm117_reading(0x10, {0: 0x03}, device)  # noqa: SLF001
+
+    edges = [call.args[2] for call in dispatch.call_args_list if len(call.args) > 2]
+    assert edges == [{(0, 0): [True]}, {(0, 1): [True]}]
+
+
+@pytest.mark.unit
+def test_dm117_output_slots_produce_no_edges(hass) -> None:
+    bus = FakeBus()
+    api = CasaITApi(hass, bus, "entry-test")
+    device = DM117(bus, 0x10)
+    device.last_port_types = {0: DeviceType.OUTPUT}
+    api.dm117[0x10] = device
+    api._dm_config = {0x10: {0: DeviceType.OUTPUT}}  # noqa: SLF001
+
+    with patch("custom_components.casait_smarthome.api.async_dispatcher_send") as dispatch:
+        api._publish_dm117_reading(0x10, {0: 0x00}, device)  # noqa: SLF001
+        api._publish_dm117_reading(0x10, {0: 0x03}, device)  # noqa: SLF001
+
+    assert [call.args[2] for call in dispatch.call_args_list if len(call.args) > 2] == []
+
+
+@pytest.mark.unit
+def test_dm117_edges_respect_the_module_debounce(hass) -> None:
+    """Readings inside the configured window must not each become an edge."""
+
+    bus = FakeBus()
+    api = CasaITApi(hass, bus, "entry-test", input_debounce_ms={"dm117": {0x10: 250}})
+    device = _dm117_input(api, bus, 0x10, slot=0)
+
+    with patch("custom_components.casait_smarthome.api.async_dispatcher_send") as dispatch:
+        api._publish_dm117_reading(0x10, {0: 0x00}, device)  # noqa: SLF001
+        dispatch.reset_mock()
+        # These land microseconds apart, far inside the 250 ms window.
+        api._publish_dm117_reading(0x10, {0: 0x01}, device)  # noqa: SLF001
+        api._publish_dm117_reading(0x10, {0: 0x00}, device)  # noqa: SLF001
+
+    assert [call.args[2] for call in dispatch.call_args_list if len(call.args) > 2] == []

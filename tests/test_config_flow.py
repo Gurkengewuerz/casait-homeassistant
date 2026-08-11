@@ -16,6 +16,8 @@ from custom_components.casait_smarthome.const import (
     INPUT_ROLE_UNUSED,
 )
 from custom_components.casait_smarthome.helpers import (
+    get_dm117_input_configuration,
+    get_dm117_slot_types,
     get_im117_port_configuration,
     get_input_module_settings,
     get_module_name,
@@ -177,3 +179,80 @@ async def test_im117_config_round_trips_the_input_model(hass) -> None:
     assert ports[7].role == INPUT_ROLE_UNUSED
     assert get_input_module_settings(result["data"], "im117")[0x38].debounce_ms == 65
     assert get_module_name(result["data"], "im117", 0x38, "fallback") == "Hallway"
+
+
+@pytest.mark.unit
+async def test_dm117_input_step_only_covers_input_slots(hass) -> None:
+    """Slots wired as outputs must not turn up in the input form."""
+
+    entry = MockConfigEntry(domain=DOMAIN, data={CONF_HOST: "bridge.local", CONF_PORT: 8555}, options={})
+    entry.runtime_data = SimpleNamespace(
+        im117_om117={},
+        dm117={0x10: object()},
+        sm117={},
+        ow_ids=set(),
+        ow_devices={},
+        scan_onewire=AsyncMock(),
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "dm117_select"})
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"selected_module": "16"})
+
+    slots = {"module_name": "Cellar", "slot_1": "binary_input", "slot_2": "switch"}
+    slots.update({f"slot_{index}": "none" for index in range(3, 9)})
+    result = await hass.config_entries.options.async_configure(result["flow_id"], slots)
+
+    assert result["step_id"] == "dm117_input_config"
+    fields = {str(key) for key in result["data_schema"].schema}
+    assert "slot_1_channel_a_role" in fields
+    assert "slot_1_channel_b_role" in fields
+    assert not any(field.startswith("slot_2_channel") for field in fields)
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            "debounce_ms": 30,
+            "slot_1_channel_a_role": INPUT_ROLE_BUTTON,
+            "slot_1_channel_a_invert": False,
+            "slot_1_channel_b_role": INPUT_ROLE_CONTACT,
+            "slot_1_channel_b_device_class": "door",
+            "slot_1_channel_b_invert": True,
+        },
+    )
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "save"})
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+
+    channels = get_dm117_input_configuration(result["data"])[0x10]
+    assert channels[0, 0].role == INPUT_ROLE_BUTTON
+    assert channels[0, 1].device_class == "door"
+    assert channels[0, 1].invert is True
+    assert get_input_module_settings(result["data"], "dm117")[0x10].debounce_ms == 30
+    # The slot types survive the extra step.
+    slot_types = get_dm117_slot_types(result["data"])[0x10]
+    assert (slot_types[0], slot_types[1]) == ("binary_input", "switch")
+
+
+@pytest.mark.unit
+async def test_dm117_without_inputs_skips_the_input_step(hass) -> None:
+    entry = MockConfigEntry(domain=DOMAIN, data={CONF_HOST: "bridge.local", CONF_PORT: 8555}, options={})
+    entry.runtime_data = SimpleNamespace(
+        im117_om117={},
+        dm117={0x10: object()},
+        sm117={},
+        ow_ids=set(),
+        ow_devices={},
+        scan_onewire=AsyncMock(),
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "dm117_select"})
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"selected_module": "16"})
+
+    slots = {"module_name": "Cellar", "slot_1": "switch"}
+    slots.update({f"slot_{index}": "none" for index in range(2, 9)})
+    result = await hass.config_entries.options.async_configure(result["flow_id"], slots)
+
+    assert result["type"] is FlowResultType.MENU
