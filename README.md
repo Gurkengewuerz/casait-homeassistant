@@ -306,8 +306,6 @@ automation:
 - **Module count is capped by the address ranges** listed under Supported devices —
   8 IM117, 8 OM117, 8 DM117, and 4 SM117 per bridge.
 - **One bridge per config entry.** Several bridges need several config entries.
-- **The bridge client is synchronous.** Bus I/O runs in the executor rather than on
-  asyncio, which is why the poll loop is deliberately kept in one place.
 - **A missing module is reported, never removed on its own.** That is intentional,
   but it means a module you removed on purpose leaves a repair issue until you
   answer it.
@@ -449,7 +447,7 @@ script/test
 script/hassfest
 ```
 
-The integration follows the flat architecture documented in `AGENTS.md`: entity platforms call `CasaITApi`, the API serializes hardware access, and synchronous drivers never access Home Assistant directly.
+The integration follows the flat architecture documented in `AGENTS.md`: entity platforms call `CasaITApi`, the API serializes hardware access, and the asyncio hardware drivers never access Home Assistant directly.
 
 ## License
 

@@ -67,13 +67,11 @@ rules:
 
   # Platinum
   async-dependency:
-    status: todo
+    status: done
     comment: >
-      Not exempt, even though the only external requirement (crccheck) is a pure
-      CRC calculation that does no I/O. The bus client in services/smbus_proxy.py
-      is a blocking socket driven through async_add_executor_job, so the executor
-      hop the rule is aimed at is really there. Satisfying this means porting that
-      client to asyncio streams.
+      The bus client in services/smbus_proxy.py speaks to the bridge over asyncio
+      streams and every driver is a coroutine, so no bus I/O goes through the
+      executor. The only external requirement, crccheck, does no I/O at all.
   inject-websession:
     status: exempt
     comment: >

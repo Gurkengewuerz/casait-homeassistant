@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 import logging
 import time
@@ -93,7 +94,7 @@ class PCF8574:
         self._needs_set_high = True
         return PCF8574Reading([], -1)
 
-    def read_ports(self, set_high: bool = True) -> PCF8574Reading:
+    async def read_ports(self, set_high: bool = True) -> PCF8574Reading:
         """Read all ports, debounce per bit and report the observed edges.
 
         Convenience wrapper for single-device access. The poll loop instead batches
@@ -101,11 +102,11 @@ class PCF8574:
         """
         try:
             if self.needs_rearm(set_high):
-                self.bus.write_byte(self.address, 0xFF)
-                time.sleep(0.005)  # 5ms delay for I2C bus to settle
+                await self.bus.write_byte(self.address, 0xFF)
+                await asyncio.sleep(0.005)  # 5ms delay for I2C bus to settle
                 self.note_rearmed()
 
-            value = self.bus.read_byte(self.address)
+            value = await self.bus.read_byte(self.address)
         except OSError:
             return self.note_read_error()
 
@@ -133,7 +134,7 @@ class PCF8574:
 
         return PCF8574Reading(list(self.port_states), self.last_value, edges)
 
-    def write_port(self, port: int, state: int, verify: bool = True) -> bool:
+    async def write_port(self, port: int, state: int, verify: bool = True) -> bool:
         """Write to specific port with optional verification."""
         if not 0 <= port <= 7:
             raise ValueError("Port must be 0-7")
@@ -147,9 +148,9 @@ class PCF8574:
                     self.address,
                     self.last_value,
                 )
-                self.bus.write_byte(self.address, 0xFF)
-                time.sleep(0.002)
-                self.last_value = self.bus.read_byte(self.address)
+                await self.bus.write_byte(self.address, 0xFF)
+                await asyncio.sleep(0.002)
+                self.last_value = await self.bus.read_byte(self.address)
                 _LOGGER.debug(
                     "PCF8574 0x%02X: read current state = 0x%02X",
                     self.address,
@@ -165,7 +166,7 @@ class PCF8574:
             new_value &= 0xFF  # Ensure valid byte range
 
             # Write the new value
-            self.bus.write_byte(self.address, new_value)
+            await self.bus.write_byte(self.address, new_value)
             # The latch no longer holds the all-high pattern the inputs are sampled
             # against, so the next read has to re-arm it.
             self._needs_set_high = True
@@ -174,8 +175,8 @@ class PCF8574:
             # electrical noise. Give more settling time before verification.
             if verify:
                 settle_time = 0.002
-                time.sleep(settle_time)
-                read_value = self.bus.read_byte(self.address)
+                await asyncio.sleep(settle_time)
+                read_value = await self.bus.read_byte(self.address)
                 if read_value != new_value:
                     _LOGGER.warning(
                         "PCF8574 write verification failed: expected 0x%02X, got 0x%02X",

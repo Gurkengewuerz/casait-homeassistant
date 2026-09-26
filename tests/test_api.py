@@ -25,7 +25,7 @@ class FakePCF:
         self.reading = reading
         self.read_count = 0
 
-    def read_ports(self, set_high: bool) -> PCF8574Reading:
+    async def read_ports(self, set_high: bool) -> PCF8574Reading:
         self.read_count += 1
         return self.reading
 

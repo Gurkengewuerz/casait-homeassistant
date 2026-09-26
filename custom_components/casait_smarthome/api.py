@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import asyncio
 from collections import defaultdict
-from collections.abc import AsyncIterator, Callable, Iterable, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Mapping
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
-from functools import partial
 import logging
 import time
 from typing import Any
@@ -66,12 +65,6 @@ class _PolledModule:
     result_count: int
     rearmed: bool = False
     is_input: bool = False
-
-
-def _detect_multisensor(bus: OneWireBus, *, device_id: str) -> MultisensorComponents:
-    """Probe the sensors behind one DS28E17."""
-
-    return bus.multisensor.detect(device_id)
 
 
 class CasaITApi:
@@ -330,7 +323,7 @@ class CasaITApi:
             for addr in range(start, end + 1):
                 try:
                     async with self._lock:
-                        await self.hass.async_add_executor_job(self.bus.write_quick, addr)
+                        await self.bus.write_quick(addr)
                 except SMBusProxyError, OSError:
                     continue
 
@@ -537,10 +530,9 @@ class CasaITApi:
         # smallest one configured. A module asking for more keeps the difference in
         # its driver below.
         debounce_ms = min(255, *(self.debounce_time("im117", address) for address in addresses))
-        config_job = partial(self.bus.scan_config, addresses, period_ms, debounce_ms)
         try:
             async with self._write_access():
-                accepted = await self.hass.async_add_executor_job(config_job)
+                accepted = await self.bus.scan_config(addresses, period_ms, debounce_ms)
         except Exception:
             _LOGGER.exception("Failed to configure the bridge input scanner")
             return
@@ -570,7 +562,7 @@ class CasaITApi:
 
         try:
             async with self._lock:
-                flags, entries = await self.hass.async_add_executor_job(self.bus.scan_fetch)
+                flags, entries = await self.bus.scan_fetch()
         except Exception as exc:  # noqa: BLE001
             for address in self._scan_addresses:
                 self._record_read_error("PCF8574", address, exc)
@@ -669,7 +661,7 @@ class CasaITApi:
 
         try:
             async with self._lock:
-                results = await self.hass.async_add_executor_job(self.bus.execute_batch, batch)
+                results = await self.bus.execute_batch(batch)
         except I2CBatchError as exc:
             await self._recover_failed_batch(modules, exc)
             return
@@ -787,7 +779,7 @@ class CasaITApi:
 
         try:
             async with self._lock:
-                reading = await self.hass.async_add_executor_job(device.read_ports, is_input)
+                reading = await device.read_ports(is_input)
         except Exception as exc:  # noqa: BLE001
             self._record_read_error("PCF8574", address, exc)
             self._drop_state(self._pcf_states, address)
@@ -823,7 +815,7 @@ class CasaITApi:
 
         try:
             async with self._lock:
-                port_states = await self.hass.async_add_executor_job(device.read_ports)
+                port_states = await device.read_ports()
         except Exception as exc:  # noqa: BLE001
             self._record_read_error("DM117", address, exc)
             self._drop_state(self._dm117_states, address)
@@ -1054,7 +1046,7 @@ class CasaITApi:
 
         for addr in found:
             if addr not in self.sm117:
-                self.sm117[addr] = await self.hass.async_add_executor_job(OneWireBus, self.bus, addr)
+                self.sm117[addr] = await OneWireBus.create(self.bus, addr)
 
         for addr in list(self.sm117):
             if addr not in found:
@@ -1078,7 +1070,7 @@ class CasaITApi:
         for addr, ow_bus in self.sm117.items():
             try:
                 async with self._lock:
-                    devices = await self.hass.async_add_executor_job(ow_bus.scan_devices, True)
+                    devices = await ow_bus.scan_devices(True)
             except Exception as exc:  # noqa: BLE001
                 _LOGGER.warning("Error scanning 1-Wire bus at 0x%02x: %s", addr, exc)
                 continue
@@ -1137,7 +1129,7 @@ class CasaITApi:
                 # or detection never ran: probe the sensors now.
                 try:
                     components = await self.async_onewire_job(
-                        device_id, partial(_detect_multisensor, device_id=device_id)
+                        device_id, lambda bus, rom=device_id: bus.multisensor.detect(rom)
                     )
                 except DS28E17Error as err:
                     _LOGGER.warning("Could not probe the sensors of %s: %s", device_id, err)
@@ -1159,11 +1151,11 @@ class CasaITApi:
     async def async_onewire_job[T](
         self,
         device_id: str,
-        func: Callable[[OneWireBus], T],
+        func: Callable[[OneWireBus], Awaitable[T]],
         *,
         write: bool = False,
     ) -> T:
-        """Run one synchronous transaction against the bus a 1-Wire chip sits on.
+        """Run one transaction against the bus a 1-Wire chip sits on.
 
         Writes take the priority lane, everything else waits for a gap between
         poll cycles like the other 1-Wire reads.
@@ -1175,7 +1167,7 @@ class CasaITApi:
 
         access = self._write_access() if write else self._background_access()
         async with access:
-            return await self.hass.async_add_executor_job(func, bus)
+            return await func(bus)
 
     def _apply_onewire_miss_tolerance(self, discovered: dict[str, dict[str, Any]], *, tolerate: bool) -> None:
         """Keep a known 1-Wire chip listed until it has been absent often enough.
@@ -1228,7 +1220,7 @@ class CasaITApi:
             if not device:
                 continue
 
-            await self.hass.async_add_executor_job(device.configure_ports, dict(config))
+            await device.configure_ports(dict(config))
 
     def _get_onewire_bus(self, device_id: str) -> OneWireBus | None:
         """Return the OneWire bus for a given device id."""
@@ -1247,7 +1239,7 @@ class CasaITApi:
             return False
 
         async with self._write_access():
-            pins = await self.hass.async_add_executor_job(bus.ds2413.set_state, device_id, channel, value)
+            pins = await bus.ds2413.set_state(device_id, channel, value)
         if pins is None:
             return False
         self.onewire.set_value(device_id, pins)
@@ -1260,9 +1252,8 @@ class CasaITApi:
         if not bus:
             return None
 
-        read_job = partial(bus.read_led_config, device_id, use_cache)
         async with self._background_access():
-            return await self.hass.async_add_executor_job(read_job)
+            return await bus.read_led_config(device_id, use_cache)
 
     async def write_led_config(self, device_id: str, config: LEDConfig) -> bool:
         """Write an LED controller configuration for a device."""
@@ -1271,9 +1262,8 @@ class CasaITApi:
         if not bus:
             return False
 
-        write_job = partial(bus.write_led_config, device_id, config)
         async with self._write_access():
-            written = await self.hass.async_add_executor_job(write_job)
+            written = await bus.write_led_config(device_id, config)
         if written:
             self.onewire.set_value(device_id, config)
         return written
@@ -1286,7 +1276,7 @@ class CasaITApi:
             return False
 
         async with self._write_access():
-            written = await self.hass.async_add_executor_job(device.write_port, port, state)
+            written = await device.write_port(port, state)
 
         if not written:
             return False
@@ -1307,7 +1297,7 @@ class CasaITApi:
             return False
 
         async with self._write_access():
-            written = await self.hass.async_add_executor_job(device.write_port, config)
+            written = await device.write_port(config)
 
         if not written:
             return False

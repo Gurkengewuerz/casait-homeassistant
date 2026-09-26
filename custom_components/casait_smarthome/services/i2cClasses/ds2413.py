@@ -44,18 +44,18 @@ class DS2413:
         """Initialize for one bus."""
         self.bus = bus_interface
 
-    def read_status(self, device_id: str) -> int | None:
+    async def read_status(self, device_id: str) -> int | None:
         """Read the PIO status byte, validated against its complement nibble.
 
         Bit 0 is the PIOA pin level, bit 1 the PIOA output latch, bits 2 and 3
         the same for PIOB. A latch bit of 1 means the output transistor is off.
         """
 
-        if not self.bus.select_device(device_id):
+        if not await self.bus.select_device(device_id):
             return None
-        if not self.bus.bridge.wire_write_byte(self.CMD_PIO_ACCESS_READ):
+        if not await self.bus.bridge.wire_write_byte(self.CMD_PIO_ACCESS_READ):
             return None
-        state = self.bus.bridge.wire_read_byte()
+        state = await self.bus.bridge.wire_read_byte()
         if state is None:
             return None
         if (state >> 4) != (~state & 0x0F):
@@ -63,15 +63,15 @@ class DS2413:
             return None
         return state
 
-    def read_ports(self, device_id: str) -> tuple[bool, bool] | None:
+    async def read_ports(self, device_id: str) -> tuple[bool, bool] | None:
         """Return the (A, B) pin levels, True meaning high."""
 
-        state = self.read_status(device_id)
+        state = await self.read_status(device_id)
         if state is None:
             return None
         return bool(state & 0x01), bool(state & 0x04)
 
-    def set_state(self, device_id: str, channel: int, value: bool) -> tuple[bool, bool] | None:
+    async def set_state(self, device_id: str, channel: int, value: bool) -> tuple[bool, bool] | None:
         """Switch one output channel on or off and return the resulting pin levels.
 
         On means the output transistor conducts, which pulls the pin low. The
@@ -79,7 +79,7 @@ class DS2413:
         pin levels, so an input channel is never driven by accident.
         """
 
-        state = self.read_status(device_id)
+        state = await self.read_status(device_id)
         if state is None:
             return None
         on = [not state & 0x02, not state & 0x08]
@@ -88,12 +88,12 @@ class DS2413:
         data = 0xFC | (0 if on[0] else 0x01) | (0 if on[1] else 0x02)
 
         for _ in range(2):
-            if not self.bus.select_device(device_id):
+            if not await self.bus.select_device(device_id):
                 return None
-            if not self.bus.bridge.wire_write_bytes([self.CMD_PIO_ACCESS_WRITE, data, ~data & 0xFF]):
+            if not await self.bus.bridge.wire_write_bytes([self.CMD_PIO_ACCESS_WRITE, data, ~data & 0xFF]):
                 continue
-            confirm = self.bus.bridge.wire_read_byte()
+            confirm = await self.bus.bridge.wire_read_byte()
             if confirm == 0xAA:
                 break
             _LOGGER.debug("DS2413 %s did not confirm the write: %s", device_id, confirm)
-        return self.read_ports(device_id)
+        return await self.read_ports(device_id)

@@ -1,18 +1,19 @@
-"""SMBus TCP Proxy Client.
+"""Asyncio client for the casaIT SMBus TCP bridge.
 
-A drop-in replacement for smbus2 that communicates with an I2C bridge.
-over TCP instead of directly accessing the hardware.
+The bridge is a network-connected microcontroller (for example an ESP32 with a
+W5500) that performs I2C operations on behalf of Home Assistant. Its method
+names follow smbus2 so the drivers read like ordinary I2C code, but every call
+is a coroutine on the event loop - there is no socket in an executor thread.
 
-This allows I2C operations to be performed remotely via a network-connected
-microcontroller (e.g., ESP32 with W5500) running the SMBus Bridge firmware.
+Only one frame is in flight at a time; the bridge answers strictly in order.
 """
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import logging
 import socket
-import threading
 import time
 
 _LOGGER = logging.getLogger(__name__)
@@ -72,7 +73,7 @@ SEND_INTERVAL_STEP = 0.001
 # Consecutive error-free frames required before the spacing is relaxed one step.
 SEND_INTERVAL_RECOVERY_FRAMES = 50
 # Pause between send attempts, indexed by the attempt that just failed. This runs
-# while the I/O lock is held, so it stalls every other caller including the input
+# while the I/O lock is held, so it delays every other caller including the input
 # poll loop; it exists to let the bridge settle, not to wait out an outage.
 RETRY_BACKOFF = (0.05, 0.15)
 # Pause after the bridge reports maintenance mode. Same constraint as above.
@@ -211,51 +212,29 @@ class I2CBatch:
 
 
 class SMBus:
-    """SMBus TCP Proxy - drop-in replacement for smbus2.SMBus.
+    """Connection to one casaIT SMBus bridge.
 
-    Connects to an I2C bridge server over TCP and translates SMBus
-    operations into the bridge protocol.
-
-    Usage:
-        # Environment variables:
-        # I2C_PROXY_HOST - IP address of the bridge (default: 192.168.1.100)
-        # I2C_PROXY_PORT - TCP port (default: 8555)
-        # I2C_PROXY_TIMEOUT - Socket timeout in seconds (default: 2.0)
-
-        bus = SMBus(1)  # bus number is ignored, uses TCP connection
-        value = bus.read_byte_data(0x20, 0x00)
-        bus.write_byte_data(0x20, 0x00, 0xFF)
-        bus.close()
-
-        # Or as context manager:
-        with SMBus(1) as bus:
-            value = bus.read_byte_data(0x20, 0x00)
+    Create it with ``await SMBus.connect(host, port, timeout)``; the constructor
+    itself does no I/O. A lost connection is re-established transparently on
+    the next call.
     """
 
     def __init__(
         self,
-        bus: int = 1,
         host: str = "192.168.1.100",
         port: int | None = None,
         timeout: float | None = None,
         max_send_interval: float = MAX_SEND_INTERVAL,
     ) -> None:
-        """Initialize SMBus proxy connection.
+        """Prepare a connection without opening it yet."""
 
-        Args:
-            bus: Bus number (ignored, kept for compatibility with smbus2)
-            host: Optional host override (default: from I2C_PROXY_HOST env)
-            port: Optional port override (default: from I2C_PROXY_PORT env)
-            timeout: Optional timeout override (default: from I2C_PROXY_TIMEOUT env)
-            max_send_interval: Maximum adaptive spacing between frames in seconds
-        """
-        self._bus = bus  # Kept for compatibility
         self.host = host
         self.port = port or DEFAULT_PORT
         self.timeout = timeout or DEFAULT_TIMEOUT
         self._max_send_interval = max(MIN_SEND_INTERVAL, max_send_interval)
-        self._sock: socket.socket | None = None
-        self._io_lock = threading.Lock()
+        self._reader: asyncio.StreamReader | None = None
+        self._writer: asyncio.StreamWriter | None = None
+        self._io_lock = asyncio.Lock()
         self._last_send: float = 0.0
         self._min_send_interval = MIN_SEND_INTERVAL
         self._consecutive_ok = 0
@@ -264,53 +243,41 @@ class SMBus:
         self._io_errors = 0
         self._frames = 0
         self._last_rtt = 0.0
-        _LOGGER.debug(
-            "Initializing SMBusProxy with host=%s, port=%s, timeout=%s",
-            self.host,
-            self.port,
-            self.timeout,
-        )
-        with self._io_lock:
-            self._connect()
 
-    def __enter__(self):
-        """Context manager entry."""
-        return self
+    @classmethod
+    async def connect(
+        cls,
+        host: str,
+        port: int | None = None,
+        timeout: float | None = None,
+        max_send_interval: float = MAX_SEND_INTERVAL,
+    ) -> SMBus:
+        """Open a connection to the bridge, raising SMBusProxyError if it fails."""
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Context manager exit."""
-        self.close()
-        return False
+        bus = cls(host, port, timeout, max_send_interval)
+        async with bus._io_lock:
+            await bus._connect()
+        return bus
 
-    def _connect(self):
-        """Establish TCP connection to the bridge.
+    async def _connect(self) -> None:
+        """Open the TCP connection. Must be called while holding ``_io_lock``."""
 
-        Must be called while holding ``_io_lock`` (or during __init__
-        before any other thread can access the instance).
-        """
-        if self._sock is not None:
-            return  # Already connected
-
+        if self._writer is not None:
+            return
         try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(self.timeout)
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-            sock.connect((self.host, self.port))
-            self._sock = sock
-            _LOGGER.info("Connected to SMBus bridge at %s:%s", self.host, self.port)
-        except OSError as e:
-            self._sock = None
-            _LOGGER.error("Failed to connect to SMBus bridge: %s", e)
-            raise SMBusProxyError(f"Failed to connect to SMBus bridge at {self.host}:{self.port}: {e}") from e
+            async with asyncio.timeout(self.timeout):
+                reader, writer = await asyncio.open_connection(self.host, self.port)
+        except (OSError, TimeoutError) as err:
+            _LOGGER.debug("Failed to connect to SMBus bridge %s:%s: %s", self.host, self.port, err)
+            raise SMBusProxyError(f"Failed to connect to SMBus bridge at {self.host}:{self.port}: {err}") from err
 
-    def _ensure_connected(self):
-        """Ensure we have an active connection, reconnect if needed.
-
-        Must be called while holding ``_io_lock``.
-        """
-        if self._sock is None:
-            self._connect()
+        # Frames are tiny and latency-bound; Nagle would hold every one back.
+        if (sock := writer.get_extra_info("socket")) is not None:
+            with contextlib.suppress(OSError):
+                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        self._reader, self._writer = reader, writer
+        _LOGGER.info("Connected to SMBus bridge at %s:%s", self.host, self.port)
 
     @staticmethod
     def _calc_crc8(data: bytes) -> int:
@@ -323,44 +290,36 @@ class SMBus:
                 crc = ((crc << 1) ^ 0x07) & 0xFF if crc & 0x80 else (crc << 1) & 0xFF
         return crc
 
-    def _recv_exact(self, size: int) -> bytes:
+    async def _recv_exact(self, size: int) -> bytes:
         """Receive exactly ``size`` bytes or raise."""
 
-        if self._sock is None:
-            raise SMBusProxyError("Socket is not connected")
+        if self._reader is None:
+            raise SMBusProxyError("Not connected")
+        try:
+            async with asyncio.timeout(self.timeout):
+                return await self._reader.readexactly(size)
+        except TimeoutError as err:
+            self._timeouts += 1
+            raise SMBusProxyError("Communication timeout") from err
+        except asyncio.IncompleteReadError as err:
+            raise SMBusProxyError("Communication error: connection closed") from err
 
-        chunks = bytearray()
-        while len(chunks) < size:
-            try:
-                chunk = self._sock.recv(size - len(chunks))
-            except TimeoutError as err:
-                self._timeouts += 1
-                raise SMBusProxyError("Communication timeout") from err
-            if not chunk:
-                raise SMBusProxyError("Communication error: empty response")
-            chunks.extend(chunk)
-        return bytes(chunks)
-
-    def _receive_frame(self) -> bytes:
+    async def _receive_frame(self) -> bytes:
         """Read a framed response [len][payload][crc8]."""
 
-        length_bytes = self._recv_exact(1)
+        length_bytes = await self._recv_exact(1)
         frame_len = length_bytes[0]
-        payload = self._recv_exact(frame_len) if frame_len else b""
-        crc_recv = self._recv_exact(1)[0]
+        payload = await self._recv_exact(frame_len) if frame_len else b""
+        crc_recv = (await self._recv_exact(1))[0]
 
         frame = length_bytes + payload
-        crc_expected = self._calc_crc8(frame)
-        if crc_recv != crc_expected:
+        if crc_recv != self._calc_crc8(frame):
             self._crc_errors += 1
             raise SMBusProxyError("CRC mismatch in bridge response")
         return payload
 
     def _note_success(self, rtt: float) -> None:
-        """Record a clean round trip and relax the spacing once it looks safe.
-
-        Must be called while holding ``_io_lock``.
-        """
+        """Record a clean round trip and relax the spacing once it looks safe."""
 
         self._frames += 1
         self._last_rtt = rtt
@@ -372,10 +331,7 @@ class SMBus:
             _LOGGER.debug("Relaxing SMBus send spacing to %.1f ms", self._min_send_interval * 1000)
 
     def _note_failure(self) -> None:
-        """Record a failed round trip and back the spacing off one step.
-
-        Must be called while holding ``_io_lock``.
-        """
+        """Record a failed round trip and back the spacing off one step."""
 
         self._consecutive_ok = 0
         if self._min_send_interval < self._max_send_interval:
@@ -394,102 +350,78 @@ class SMBus:
             "crc_errors": self._crc_errors,
             "timeouts": self._timeouts,
             "io_errors": self._io_errors,
-            "connected": self._sock is not None,
+            "connected": self._writer is not None,
         }
 
-    def _send_command(self, payload: bytes) -> bytes:
-        """Send a framed command and return payload of response."""
+    async def _send_command(self, payload: bytes) -> bytes:
+        """Send a framed command and return the payload of the response."""
 
-        with self._io_lock:
+        async with self._io_lock:
             for attempt in range(3):
-                self._ensure_connected()
-
                 try:
-                    if self._sock is None:
-                        raise SMBusProxyError("Socket connection failed")  # noqa: TRY301
+                    await self._connect()
+                    assert self._writer is not None
 
-                    now = time.monotonic()
-                    delta = now - self._last_send
+                    delta = time.monotonic() - self._last_send
                     if delta < self._min_send_interval:
-                        time.sleep(self._min_send_interval - delta)
+                        await asyncio.sleep(self._min_send_interval - delta)
                     send_start = time.monotonic()
                     self._last_send = send_start
 
                     frame = bytes([len(payload)]) + payload
-                    crc = self._calc_crc8(frame)
-                    self._sock.sendall(frame + bytes([crc]))
-                    response = self._receive_frame()
+                    self._writer.write(frame + bytes([self._calc_crc8(frame)]))
+                    await self._writer.drain()
+                    response = await self._receive_frame()
                     rtt = time.monotonic() - send_start
 
-                    # Bridge may signal maintenance; back off to avoid busy reconnect
-                    # loops. Kept short because this sleep holds the I/O lock and so
-                    # stalls the input poll loop along with everything else.
+                    # The bridge may signal maintenance; back off to avoid a busy
+                    # reconnect loop.
                     if len(response) >= 3 and response[:3] == b"\xff\xee\x01":
                         self._reset_socket()
-                        time.sleep(MAINTENANCE_BACKOFF)
+                        await asyncio.sleep(MAINTENANCE_BACKOFF)
                         raise SMBusProxyError("Bridge in maintenance mode")  # noqa: TRY301
-                except TimeoutError as e:
-                    self._timeouts += 1
+                except SMBusProxyError as err:
                     self._note_failure()
-                    _LOGGER.warning(
-                        "SMBus proxy communication timeout (attempt %d/%d)",
-                        attempt + 1,
-                        3,
-                    )
+                    _LOGGER.warning("SMBus proxy error (attempt %d/3): %s", attempt + 1, err)
                     self._reset_socket()
                     if attempt < 2:
-                        time.sleep(RETRY_BACKOFF[attempt])
-                        continue
-                    raise SMBusProxyError("Communication timeout") from e
-                except SMBusProxyError as e:
-                    self._note_failure()
-                    _LOGGER.warning(
-                        "SMBus proxy error (attempt %d/%d): %s",
-                        attempt + 1,
-                        3,
-                        e,
-                    )
-                    self._reset_socket()
-                    if attempt < 2:
-                        time.sleep(RETRY_BACKOFF[attempt])
+                        await asyncio.sleep(RETRY_BACKOFF[attempt])
                         continue
                     raise
-                except OSError as e:
+                except OSError as err:
                     self._io_errors += 1
                     self._note_failure()
-                    _LOGGER.warning(
-                        "SMBus proxy communication error (attempt %d/%d): %s",
-                        attempt + 1,
-                        3,
-                        e,
-                    )
+                    _LOGGER.warning("SMBus proxy communication error (attempt %d/3): %s", attempt + 1, err)
                     self._reset_socket()
                     if attempt < 2:
-                        time.sleep(RETRY_BACKOFF[attempt])
+                        await asyncio.sleep(RETRY_BACKOFF[attempt])
                         continue
-                    raise SMBusProxyError(f"Communication error: {e}") from e
+                    raise SMBusProxyError(f"Communication error: {err}") from err
                 else:
                     self._note_success(rtt)
                     return response
             return b""
 
     def _reset_socket(self) -> None:
-        """Close and clear the current socket so next call reconnects."""
+        """Drop the current connection so the next call reconnects."""
 
-        if self._sock:
+        if self._writer is not None:
             with contextlib.suppress(Exception):
-                self._sock.close()
-        self._sock = None
+                self._writer.close()
+        self._reader = None
+        self._writer = None
 
-    def close(self):
+    async def close(self) -> None:
         """Close the connection to the bridge."""
-        if self._sock:
+
+        writer = self._writer
+        self._reset_socket()
+        if writer is not None:
             with contextlib.suppress(Exception):
-                self._sock.close()
-            self._sock = None
+                await writer.wait_closed()
             _LOGGER.debug("SMBus proxy connection closed")
 
-    def write_quick(self, addr: int):
+    async def write_quick(self, addr: int):
         """Perform a quick write to probe device presence.
 
         This is implemented as a read_byte operation, which will
@@ -502,11 +434,11 @@ class SMBus:
             OSError: If device doesn't respond (matching smbus2 behavior)
         """
         try:
-            self.read_byte(addr)
+            await self.read_byte(addr)
         except SMBusProxyError as e:
             raise OSError(f"Device at address 0x{addr:02X} not responding") from e
 
-    def read_byte(self, addr: int) -> int:
+    async def read_byte(self, addr: int) -> int:
         """Read a single byte from device.
 
         Args:
@@ -519,14 +451,14 @@ class SMBus:
             OSError: If read fails (matching smbus2 behavior)
         """
         try:
-            response = self._send_command(bytes([CMD_READ_BYTE, addr]))
+            response = await self._send_command(bytes([CMD_READ_BYTE, addr]))
             if len(response) >= 1 and response[0] == 0x00 and len(response) >= 2:
                 return response[1]
             raise OSError(f"Read byte failed for address 0x{addr:02X}")
         except SMBusProxyError as e:
             raise OSError(str(e)) from e
 
-    def write_byte(self, addr: int, value: int):
+    async def write_byte(self, addr: int, value: int):
         """Write a single byte to device.
 
         Args:
@@ -537,14 +469,14 @@ class SMBus:
             OSError: If write fails (matching smbus2 behavior)
         """
         try:
-            response = self._send_command(bytes([CMD_WRITE_BYTE, addr, value]))
+            response = await self._send_command(bytes([CMD_WRITE_BYTE, addr, value]))
             if len(response) >= 1 and response[0] == 0x00:
                 return
             raise OSError(f"Write byte failed for address 0x{addr:02X}")
         except SMBusProxyError as e:
             raise OSError(str(e)) from e
 
-    def read_byte_data(self, addr: int, reg: int) -> int:
+    async def read_byte_data(self, addr: int, reg: int) -> int:
         """Read a byte from a specific register.
 
         Args:
@@ -558,14 +490,14 @@ class SMBus:
             OSError: If read fails (matching smbus2 behavior)
         """
         try:
-            response = self._send_command(bytes([CMD_READ_BYTE_DATA, addr, reg]))
+            response = await self._send_command(bytes([CMD_READ_BYTE_DATA, addr, reg]))
             if len(response) >= 1 and response[0] == 0x00 and len(response) >= 2:
                 return response[1]
             raise OSError(f"Read byte data failed for address 0x{addr:02X} register 0x{reg:02X}")
         except SMBusProxyError as e:
             raise OSError(str(e)) from e
 
-    def write_byte_data(self, addr: int, reg: int, value: int):
+    async def write_byte_data(self, addr: int, reg: int, value: int):
         """Write a byte to a specific register.
 
         Args:
@@ -577,7 +509,7 @@ class SMBus:
             OSError: If write fails (matching smbus2 behavior)
         """
         try:
-            response = self._send_command(bytes([CMD_WRITE_BYTE_DATA, addr, reg, value]))
+            response = await self._send_command(bytes([CMD_WRITE_BYTE_DATA, addr, reg, value]))
             if len(response) >= 1 and response[0] == 0x00:
                 return
             raise OSError(f"Write byte data failed for address 0x{addr:02X} register 0x{reg:02X}")
@@ -593,7 +525,7 @@ class SMBus:
 
         return I2CBatch()
 
-    def execute_batch(self, batch: I2CBatch) -> list[int]:
+    async def execute_batch(self, batch: I2CBatch) -> list[int]:
         """Run a batch on the bridge and return its result bytes in order.
 
         Args:
@@ -609,7 +541,7 @@ class SMBus:
             return []
 
         try:
-            response = self._send_command(bytes(batch))
+            response = await self._send_command(bytes(batch))
         except SMBusProxyError as e:
             raise OSError(str(e)) from e
 
@@ -619,7 +551,7 @@ class SMBus:
             raise I2CBatchError(f"I2C batch failed at operation {response[1]} of {len(batch)}", response[1])
         raise I2CBatchError("I2C batch returned a malformed response")
 
-    def read_i2c_block(self, addr: int, count: int) -> list[int]:
+    async def read_i2c_block(self, addr: int, count: int) -> list[int]:
         """Read ``count`` bytes from a device in a single I2C transaction.
 
         This has no smbus2 counterpart because SMBus block reads carry a register
@@ -642,14 +574,14 @@ class SMBus:
             raise ValueError(f"Block read count must be between 1 and {MAX_BLOCK_READ}, got {count}")
 
         try:
-            response = self._send_command(bytes([CMD_READ_I2C_BLOCK, addr, count]))
+            response = await self._send_command(bytes([CMD_READ_I2C_BLOCK, addr, count]))
             if len(response) >= count + 1 and response[0] == 0x00:
                 return list(response[1 : count + 1])
             raise OSError(f"Read i2c block failed for address 0x{addr:02X}")
         except SMBusProxyError as e:
             raise OSError(str(e)) from e
 
-    def write_i2c_block_data(self, i2c_addr: int, register: int, data: list):
+    async def write_i2c_block_data(self, i2c_addr: int, register: int, data: list):
         """Write a block of byte data to a given register.
 
         Args:
@@ -664,17 +596,17 @@ class SMBus:
         try:
             # Protocol: [CMD, ADDR, REG, DATA0, DATA1, ...]
             packet = bytes([CMD_WRITE_I2C_BLOCK_DATA, i2c_addr, register]) + bytes(data)
-            response = self._send_command(packet)
+            response = await self._send_command(packet)
             if len(response) >= 1 and response[0] == 0x00:
                 # Block writes (especially to dimmers) cause hardware transitions
                 # that generate electrical noise. Add settling time.
-                time.sleep(0.001)
+                await asyncio.sleep(0.001)
                 return
             raise OSError(f"Write i2c block data failed for address 0x{i2c_addr:02X} register 0x{register:02X}")
         except SMBusProxyError as e:
             raise OSError(str(e)) from e
 
-    def scan_config(self, addresses: list[int], period_ms: int, debounce_ms: int) -> bool:
+    async def scan_config(self, addresses: list[int], period_ms: int, debounce_ms: int) -> bool:
         """Hand the bridge the input addresses to sample on its own.
 
         Returns False when the bridge does not implement the scanner, which is the
@@ -698,13 +630,13 @@ class SMBus:
 
         payload = bytes([CMD_SCAN_CONFIG, period_ms & 0xFF, debounce_ms & 0xFF, len(addresses), *addresses])
         try:
-            response = self._send_command(payload)
+            response = await self._send_command(payload)
         except SMBusProxyError:
             _LOGGER.info("Bridge does not support autonomous input scanning; polling inputs from Home Assistant")
             return False
         return bool(response) and response[0] == 0x00
 
-    def scan_fetch(self) -> tuple[int, list[tuple[int, int]]]:
+    async def scan_fetch(self) -> tuple[int, list[tuple[int, int]]]:
         """Collect the transitions the bridge latched since the last fetch.
 
         Returns:
@@ -717,7 +649,7 @@ class SMBus:
         """
 
         try:
-            response = self._send_command(bytes([CMD_SCAN_FETCH]))
+            response = await self._send_command(bytes([CMD_SCAN_FETCH]))
         except SMBusProxyError as e:
             raise OSError(str(e)) from e
 
@@ -732,11 +664,11 @@ class SMBus:
         entries = response[3 : 3 + count * 2]
         return flags, [(entries[index], entries[index + 1]) for index in range(0, count * 2, 2)]
 
-    def ping(self) -> bool:
+    async def ping(self) -> bool:
         """Send a keep-alive ping to the bridge."""
 
         try:
-            response = self._send_command(bytes([CMD_PING]))
+            response = await self._send_command(bytes([CMD_PING]))
             return len(response) >= 3 and response[0] == 0x00 and response[1] == CMD_PING
         except SMBusProxyError:
             return False

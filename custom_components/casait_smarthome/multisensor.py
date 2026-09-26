@@ -20,7 +20,7 @@ released, so an input edge never waits behind a 30 ms VOC measurement.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 import logging
 import time
 from typing import TYPE_CHECKING, Any
@@ -541,7 +541,7 @@ class CasaITMultisensorManager:
     # Bus access
     # ------------------------------------------------------------------
 
-    async def _job[T](self, device_id: str, func: Callable[[Multisensor], T], *, write: bool = False) -> T:
+    async def _job[T](self, device_id: str, func: Callable[[Multisensor], Awaitable[T]], *, write: bool = False) -> T:
         """Run one transaction against the board's bus."""
 
         return await self._api.async_onewire_job(device_id, lambda bus: func(bus.multisensor), write=write)

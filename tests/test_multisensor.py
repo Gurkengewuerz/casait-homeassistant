@@ -12,7 +12,6 @@ from custom_components.casait_smarthome.multisensor import (
     CasaITMultisensorManager,
     MultisensorCommandError,
 )
-from custom_components.casait_smarthome.services.i2cClasses import multisensor as ms_module
 from custom_components.casait_smarthome.services.i2cClasses.ds28e17 import DS28E17, DS28E17Nack
 from custom_components.casait_smarthome.services.i2cClasses.gas_index import VocGasIndexAlgorithm
 from custom_components.casait_smarthome.services.i2cClasses.multisensor import (
@@ -122,7 +121,7 @@ class FakeBridge:
         self.responses: list[int] = []
         self.transactions = 0
 
-    def wire_write_bytes(self, data: list[int]) -> bool:
+    async def wire_write_bytes(self, data: list[int]) -> bool:
         packet = bytes(data)
         body, crc = packet[:-2], packet[-2] | (packet[-1] << 8)
         self.transactions += 1
@@ -152,10 +151,10 @@ class FakeBridge:
                 self.responses = [0x02, 0x00] if answer is None else [0x00, 0x00, *answer]
         return True
 
-    def wire_single_bit(self, bit: bool) -> bool:
+    async def wire_single_bit(self, bit: bool) -> bool:
         return False  # never busy
 
-    def wire_read_bytes(self, count: int) -> list[int] | None:
+    async def wire_read_bytes(self, count: int) -> list[int] | None:
         out, self.responses = self.responses[:count], self.responses[count:]
         return out if len(out) == count else None
 
@@ -169,13 +168,8 @@ class FakeOneWireBus:
     def calc_crc16(data: bytes) -> int:
         return crc16(data)
 
-    def select_device(self, device_id: str) -> bool:
+    async def select_device(self, device_id: str) -> bool:
         return device_id == DEVICE
-
-
-@pytest.fixture(autouse=True)
-def no_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(ms_module.time, "sleep", lambda _: None)
 
 
 def _full_board() -> dict[int, Slave]:
@@ -227,41 +221,41 @@ def test_lux_scales_with_gain_and_integration_time() -> None:
 
 
 @pytest.mark.unit
-def test_detect_finds_exactly_the_fitted_chips() -> None:
+async def test_detect_finds_exactly_the_fitted_chips() -> None:
     bus = FakeOneWireBus({SHT41_ADDRESS: SHT41(0, 0), VEML7700_ADDRESS: VEML7700(0)})
 
-    components = bus.multisensor.detect(DEVICE)
+    components = await bus.multisensor.detect(DEVICE)
 
     assert components == MultisensorComponents(sht41=True, veml7700=True)
-    assert not bus.multisensor.is_led_controller(DEVICE)
+    assert not await bus.multisensor.is_led_controller(DEVICE)
 
 
 @pytest.mark.unit
-def test_detect_finds_the_co2_sensor_on_its_alternate_address() -> None:
+async def test_detect_finds_the_co2_sensor_on_its_alternate_address() -> None:
     bus = FakeOneWireBus({0x65: STCC4()})
 
-    assert bus.multisensor.detect(DEVICE).stcc4_address == 0x65
+    assert (await bus.multisensor.detect(DEVICE)).stcc4_address == 0x65
 
 
 @pytest.mark.unit
-def test_led_controller_is_told_apart_from_a_multisensor() -> None:
+async def test_led_controller_is_told_apart_from_a_multisensor() -> None:
     led = Slave()
     led.pending = b"\x1e"
     bus = FakeOneWireBus({LED_CONTROLLER_ADDRESS: led})
 
-    assert bus.multisensor.is_led_controller(DEVICE)
+    assert await bus.multisensor.is_led_controller(DEVICE)
 
 
 @pytest.mark.unit
-def test_a_nack_is_distinguished_from_a_bus_fault() -> None:
+async def test_a_nack_is_distinguished_from_a_bus_fault() -> None:
     bus = FakeOneWireBus({})
     bridge = bus.multisensor.bridge
 
     with pytest.raises(DS28E17Nack):
-        bridge.write(DEVICE, SHT41_ADDRESS, b"\xfd")
-    assert bridge.probe(DEVICE, SHT41_ADDRESS, b"\xfd") is False
+        await bridge.write(DEVICE, SHT41_ADDRESS, b"\xfd")
+    assert await bridge.probe(DEVICE, SHT41_ADDRESS, b"\xfd") is False
     with pytest.raises(Exception, match="select"):
-        bridge.write("2800000000000000", SHT41_ADDRESS, b"\xfd")
+        await bridge.write("2800000000000000", SHT41_ADDRESS, b"\xfd")
 
 
 # ---------------------------------------------------------------------------
@@ -270,15 +264,15 @@ def test_a_nack_is_distinguished_from_a_bus_fault() -> None:
 
 
 @pytest.mark.unit
-def test_sht41_values_compensate_the_voc_sensor() -> None:
+async def test_sht41_values_compensate_the_voc_sensor() -> None:
     slaves = _full_board()
     bus = FakeOneWireBus(slaves)
     state = _state(MultisensorComponents(sht41=True, sgp40=True))
 
-    bus.multisensor.sht41_trigger(DEVICE)
-    bus.multisensor.sht41_fetch(DEVICE, state)
-    bus.multisensor.sgp40_trigger(DEVICE, state)
-    bus.multisensor.sgp40_fetch(DEVICE, state)
+    await bus.multisensor.sht41_trigger(DEVICE)
+    await bus.multisensor.sht41_fetch(DEVICE, state)
+    await bus.multisensor.sgp40_trigger(DEVICE, state)
+    await bus.multisensor.sgp40_fetch(DEVICE, state)
 
     assert state.reading.temperature == pytest.approx(25.0, abs=0.01)
     assert state.reading.humidity == pytest.approx(50.2, abs=0.1)
@@ -290,17 +284,17 @@ def test_sht41_values_compensate_the_voc_sensor() -> None:
 
 
 @pytest.mark.unit
-def test_stcc4_is_started_once_and_then_read_with_compensation() -> None:
+async def test_stcc4_is_started_once_and_then_read_with_compensation() -> None:
     slaves = _full_board()
     bus = FakeOneWireBus(slaves)
     state = _state(MultisensorComponents(sht41=True, stcc4_address=0x64))
     state.t_ticks, state.rh_ticks = 0x6666, 0x7333
 
-    bus.multisensor.stcc4_sample(DEVICE, state)
+    await bus.multisensor.stcc4_sample(DEVICE, state)
     assert state.stcc4_running
     assert state.reading.co2 is None
 
-    bus.multisensor.stcc4_sample(DEVICE, state)
+    await bus.multisensor.stcc4_sample(DEVICE, state)
     assert state.reading.co2 == 612
     stcc4 = slaves[0x64]
     assert stcc4.writes[1] == bytes([0xE0, 0x00]) + encode_words(0x6666, 0x7333)
@@ -308,7 +302,7 @@ def test_stcc4_is_started_once_and_then_read_with_compensation() -> None:
 
 
 @pytest.mark.unit
-def test_veml7700_ranges_down_in_bright_light() -> None:
+async def test_veml7700_ranges_down_in_bright_light() -> None:
     slaves = _full_board()
     veml = slaves[VEML7700_ADDRESS]
     assert isinstance(veml, VEML7700)
@@ -316,11 +310,11 @@ def test_veml7700_ranges_down_in_bright_light() -> None:
     bus = FakeOneWireBus(slaves)
     state = _state(MultisensorComponents(veml7700=True))
 
-    bus.multisensor.veml7700_sample(DEVICE, state)  # configures only
+    await bus.multisensor.veml7700_sample(DEVICE, state)  # configures only
     assert veml.config == veml7700_config(state.veml_range)
     start = state.veml_range
 
-    bus.multisensor.veml7700_sample(DEVICE, state)
+    await bus.multisensor.veml7700_sample(DEVICE, state)
 
     assert state.reading.illuminance is not None
     assert state.veml_range == start + 1
@@ -334,7 +328,7 @@ def test_veml7700_ranges_down_in_bright_light() -> None:
 
 def _manager(hass, bus: FakeOneWireBus) -> CasaITMultisensorManager:
     async def job(device_id: str, func: Callable, *, write: bool = False):
-        return func(bus)
+        return await func(bus)
 
     api = SimpleNamespace(
         hass=hass, state_update_signal="casait_test", async_onewire_job=job, entry_id="entry", ow_devices={}

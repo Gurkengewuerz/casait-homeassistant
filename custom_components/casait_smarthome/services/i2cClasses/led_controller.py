@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 import enum
 import logging
@@ -123,7 +124,7 @@ class LEDController:
         self.bus = bus_interface
         self._config_cache: dict[str, CachedConfig] = {}
 
-    def write_config(self, device_id: str, config: LEDConfig, custom_cache: int | None = None) -> bool:
+    async def write_config(self, device_id: str, config: LEDConfig, custom_cache: int | None = None) -> bool:
         """Write LED configuration."""
         if not config.validate():
             _LOGGER.error("Invalid LED configuration")
@@ -148,7 +149,7 @@ class LEDController:
 
             retries = 4
             while retries > 0:
-                if self.bridge.write_data(device_id, self.I2C_ADDRESS, bytes(data)):
+                if await self.bridge.write_data(device_id, self.I2C_ADDRESS, bytes(data)):
                     break
 
                 retries -= 1
@@ -156,7 +157,7 @@ class LEDController:
                     "Failed to write LED configuration; retries remaining: %s",
                     retries,
                 )
-                time.sleep(0.2)
+                await asyncio.sleep(0.2)
 
             if retries == 0:
                 _LOGGER.error("Failed to write LED configuration")
@@ -176,7 +177,9 @@ class LEDController:
             return False
         return True
 
-    def read_config(self, device_id: str, custom_cache: int | None = None, use_cache: bool = True) -> LEDConfig | None:
+    async def read_config(
+        self, device_id: str, custom_cache: int | None = None, use_cache: bool = True
+    ) -> LEDConfig | None:
         """Read current LED configuration."""
         try:
             # Check cache first if requested
@@ -192,7 +195,7 @@ class LEDController:
             total_bytes = 20
 
             # Read data through bridge
-            data = self.bridge.read_data(device_id, self.I2C_ADDRESS, total_bytes)
+            data = await self.bridge.read_data(device_id, self.I2C_ADDRESS, total_bytes)
             if not data or len(data) != total_bytes:
                 _LOGGER.error("Failed to read configuration data")
                 return None

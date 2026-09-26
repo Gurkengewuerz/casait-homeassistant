@@ -10,7 +10,7 @@ applyTo: "custom_components/**/binary_sensor.py, custom_components/**/cover.py, 
 - Entities communicate only through `CasaITApi`.
 - Dispatcher-driven I2C entities read API caches and use `async_write_ha_state()` on updates.
 - Polling 1-Wire entities call async API methods and update availability from the result.
-- Do not introduce `DataUpdateCoordinator` or access synchronous drivers from an entity.
+- Do not introduce `DataUpdateCoordinator` or access hardware drivers from an entity.
 
 ## Identity and Devices
 

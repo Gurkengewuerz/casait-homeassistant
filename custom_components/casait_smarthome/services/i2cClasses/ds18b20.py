@@ -50,7 +50,7 @@ class DS18B20:
         """Initialize for one bus."""
         self.bus = bus_interface
 
-    def start_conversion(self) -> bool:
+    async def start_conversion(self) -> bool:
         """Start a conversion in every sensor on the strand at once.
 
         CONVERT T after SKIP ROM reaches all DS18B20s simultaneously and they all
@@ -58,18 +58,18 @@ class DS18B20:
         once per sensor for nothing.
         """
 
-        if not self.bus.bridge.wire_reset():
+        if not await self.bus.bridge.wire_reset():
             _LOGGER.debug("1-Wire reset failed before a DS18B20 conversion")
             return False
-        return bool(self.bus.bridge.wire_write_bytes([self.CMD_SKIP_ROM, self.CMD_CONVERT_T]))
+        return bool(await self.bus.bridge.wire_write_bytes([self.CMD_SKIP_ROM, self.CMD_CONVERT_T]))
 
-    def read_temperature(self, device_id: str) -> float | None:
+    async def read_temperature(self, device_id: str) -> float | None:
         """Read temperature from scratchpad. Returns temperature in °C or None on error."""
-        if not self.bus.select_device(device_id):
+        if not await self.bus.select_device(device_id):
             return None
 
-        self.bus.bridge.wire_write_byte(self.CMD_READ_SCRATCHPAD)
-        scratchpad = self.bus.bridge.wire_read_bytes(9)
+        await self.bus.bridge.wire_write_byte(self.CMD_READ_SCRATCHPAD)
+        scratchpad = await self.bus.bridge.wire_read_bytes(9)
         if scratchpad is None:
             return None
 

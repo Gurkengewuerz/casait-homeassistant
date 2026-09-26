@@ -21,8 +21,8 @@ References:
 
 from __future__ import annotations
 
+import asyncio
 import logging
-import time
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -68,37 +68,37 @@ class DS28E17:
     # Raising API
     # ------------------------------------------------------------------
 
-    def write(self, device_id: str, address: int, data: bytes) -> None:
+    async def write(self, device_id: str, address: int, data: bytes) -> None:
         """Write bytes to an I2C slave, ending with a stop condition."""
 
         _check_address(address)
         _check_length(len(data))
         packet = bytes([self.CMD_WRITE_DATA, address << 1, len(data)]) + data
-        (status, write_status), _ = self._transact(device_id, packet, status_bytes=2)
+        (status, write_status), _ = await self._transact(device_id, packet, status_bytes=2)
         _raise_for_status(status, address, write_status)
 
-    def read(self, device_id: str, address: int, count: int) -> bytes:
+    async def read(self, device_id: str, address: int, count: int) -> bytes:
         """Read bytes from an I2C slave, ending with a stop condition."""
 
         _check_address(address)
         _check_length(count)
         packet = bytes([self.CMD_READ_DATA, (address << 1) | 0x01, count])
-        (status,), data = self._transact(device_id, packet, status_bytes=1, read_count=count)
+        (status,), data = await self._transact(device_id, packet, status_bytes=1, read_count=count)
         _raise_for_status(status, address)
         return data
 
-    def write_read(self, device_id: str, address: int, data: bytes, count: int) -> bytes:
+    async def write_read(self, device_id: str, address: int, data: bytes, count: int) -> bytes:
         """Write bytes, issue a repeated start and read the answer."""
 
         _check_address(address)
         _check_length(len(data))
         _check_length(count)
         packet = bytes([self.CMD_WRITE_READ_DATA, address << 1, len(data)]) + data + bytes([count])
-        (status, write_status), result = self._transact(device_id, packet, status_bytes=2, read_count=count)
+        (status, write_status), result = await self._transact(device_id, packet, status_bytes=2, read_count=count)
         _raise_for_status(status, address, write_status)
         return result
 
-    def probe(self, device_id: str, address: int, data: bytes) -> bool:
+    async def probe(self, device_id: str, address: int, data: bytes) -> bool:
         """Return whether a slave acknowledges a write of ``data``.
 
         A NACK means no chip answers at that address. Any other failure is
@@ -106,7 +106,7 @@ class DS28E17:
         """
 
         try:
-            self.write(device_id, address, data)
+            await self.write(device_id, address, data)
         except DS28E17Nack:
             return False
         return True
@@ -115,21 +115,21 @@ class DS28E17:
     # Boolean API kept for the LED controller
     # ------------------------------------------------------------------
 
-    def write_data(self, device_id: str, address: int, data: bytes) -> bool:
+    async def write_data(self, device_id: str, address: int, data: bytes) -> bool:
         """Write data to an I2C device, returning success instead of raising."""
 
         try:
-            self.write(device_id, address, data)
+            await self.write(device_id, address, data)
         except DS28E17Error as err:
             _LOGGER.debug("DS28E17 %s write to 0x%02X failed: %s", device_id, address, err)
             return False
         return True
 
-    def read_data(self, device_id: str, address: int, num_bytes: int) -> bytes | None:
+    async def read_data(self, device_id: str, address: int, num_bytes: int) -> bytes | None:
         """Read data from an I2C device, returning None instead of raising."""
 
         try:
-            return self.read(device_id, address, num_bytes)
+            return await self.read(device_id, address, num_bytes)
         except DS28E17Error as err:
             _LOGGER.debug("DS28E17 %s read from 0x%02X failed: %s", device_id, address, err)
             return None
@@ -138,7 +138,7 @@ class DS28E17:
     # Transport
     # ------------------------------------------------------------------
 
-    def _transact(
+    async def _transact(
         self,
         device_id: str,
         packet: bytes,
@@ -152,22 +152,22 @@ class DS28E17:
         framed = packet + bytes([crc & 0xFF, crc >> 8])
 
         # select_device resets the bus itself before addressing the chip.
-        if not self.bus.select_device(device_id):
+        if not await self.bus.select_device(device_id):
             raise DS28E17Error(f"cannot select {device_id}")
-        if not self.bus.bridge.wire_write_bytes(list(framed)):
+        if not await self.bus.bridge.wire_write_bytes(list(framed)):
             raise DS28E17Error("command packet not sent")
 
         for _ in range(MAX_BUSY_POLLS):
-            busy = self.bus.bridge.wire_single_bit(True)
+            busy = await self.bus.bridge.wire_single_bit(True)
             if busy is None:
                 raise DS28E17Error("busy poll failed")
             if not busy:
                 break
-            time.sleep(BUSY_POLL_DELAY)
+            await asyncio.sleep(BUSY_POLL_DELAY)
         else:
             raise DS28E17Error("I2C transfer did not finish")
 
-        status = self.bus.bridge.wire_read_bytes(status_bytes)
+        status = await self.bus.bridge.wire_read_bytes(status_bytes)
         if status is None or len(status) != status_bytes:
             raise DS28E17Error("status not received")
 
@@ -181,7 +181,7 @@ class DS28E17:
         if status_bytes > 1 and status[1]:
             return tuple(status), b""
 
-        values = self.bus.bridge.wire_read_bytes(read_count)
+        values = await self.bus.bridge.wire_read_bytes(read_count)
         if values is None or len(values) != read_count:
             raise DS28E17Error(f"expected {read_count} data bytes")
         return tuple(status), bytes(values)

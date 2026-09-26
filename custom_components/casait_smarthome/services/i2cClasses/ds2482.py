@@ -61,7 +61,6 @@ class DS2482:
         self.bus = bus
         self.address = address
         self._last_status = 0
-        self.reset()
 
     @property
     def last_status(self) -> int:
@@ -74,7 +73,7 @@ class DS2482:
 
         return batch.wait_status(self.address, self.STATUS_1WB, 0x00, timeout_ms)
 
-    def reset(self) -> bool:
+    async def reset(self) -> bool:
         """Reset the DS2482 device."""
         # The part wants the upper nibble to be the complement of the config bits,
         # and reads back only the lower nibble.
@@ -91,7 +90,7 @@ class DS2482:
                 .write_byte_data(self.address, self.CMD_SET_READ_PTR, self.REG_CONFIG)
                 .read_byte(self.address)
             )
-            status, read_config = self.bus.execute_batch(batch)
+            status, read_config = await self.bus.execute_batch(batch)
         except OSError:
             _LOGGER.exception("DS2482 reset error at 0x%02X", self.address)
             return False
@@ -100,14 +99,14 @@ class DS2482:
             return False
         return (read_config & 0x0F) == (config & 0x0F)
 
-    def wire_reset(self) -> bool:
+    async def wire_reset(self) -> bool:
         """Reset the 1-Wire bus and check for presence pulse."""
         try:
             batch = self._wait_idle(
                 self.bus.new_batch().write_byte(self.address, self.CMD_1WIRE_RESET),
                 self.RESET_TIMEOUT_MS,
             )
-            (self._last_status,) = self.bus.execute_batch(batch)
+            (self._last_status,) = await self.bus.execute_batch(batch)
         except OSError:
             _LOGGER.exception("1-Wire reset error at 0x%02X", self.address)
             return False
@@ -117,12 +116,12 @@ class DS2482:
             return False
         return True
 
-    def wire_write_byte(self, byte: int) -> bool:
+    async def wire_write_byte(self, byte: int) -> bool:
         """Write a byte to the 1-Wire bus."""
 
-        return self.wire_write_bytes([byte])
+        return await self.wire_write_bytes([byte])
 
-    def wire_write_bytes(self, data: list[int]) -> bool:
+    async def wire_write_bytes(self, data: list[int]) -> bool:
         """Write several bytes to the 1-Wire bus, packing them into few round trips."""
         if not data:
             return True
@@ -132,20 +131,20 @@ class DS2482:
                 batch = self.bus.new_batch()
                 for byte in chunk:
                     self._wait_idle(batch.write_byte_data(self.address, self.CMD_1WIRE_WRITE_BYTE, byte))
-                statuses = self.bus.execute_batch(batch)
+                statuses = await self.bus.execute_batch(batch)
                 self._last_status = statuses[-1]
         except OSError:
             _LOGGER.exception("1-Wire write error at 0x%02X", self.address)
             return False
         return True
 
-    def wire_read_byte(self) -> int | None:
+    async def wire_read_byte(self) -> int | None:
         """Read a byte from the 1-Wire bus."""
 
-        result = self.wire_read_bytes(1)
+        result = await self.wire_read_bytes(1)
         return None if result is None else result[0]
 
-    def wire_read_bytes(self, count: int) -> list[int] | None:
+    async def wire_read_bytes(self, count: int) -> list[int] | None:
         """Read several bytes from the 1-Wire bus, packing them into few round trips.
 
         The read pointer returns to the status register after every 1-Wire read, so
@@ -164,7 +163,7 @@ class DS2482:
                     batch.write_byte_data(self.address, self.CMD_SET_READ_PTR, self.REG_DATA)
                     batch.read_byte(self.address)
 
-                results = self.bus.execute_batch(batch)
+                results = await self.bus.execute_batch(batch)
                 # Each byte contributes a status then its data byte
                 self._last_status = results[-2]
                 values.extend(results[1::2])
@@ -173,19 +172,19 @@ class DS2482:
             return None
         return values
 
-    def wire_single_bit(self, bit: bool) -> bool | None:
+    async def wire_single_bit(self, bit: bool) -> bool | None:
         """Write and read a single bit on the 1-Wire bus."""
         try:
             batch = self._wait_idle(
                 self.bus.new_batch().write_byte_data(self.address, self.CMD_1WIRE_SINGLE_BIT, 0x80 if bit else 0x00)
             )
-            (self._last_status,) = self.bus.execute_batch(batch)
+            (self._last_status,) = await self.bus.execute_batch(batch)
         except OSError:
             _LOGGER.exception("1-Wire single bit error at 0x%02X", self.address)
             return None
         return bool(self._last_status & self.STATUS_SBR)
 
-    def wire_triplets(self, directions: list[bool]) -> list[int] | None:
+    async def wire_triplets(self, directions: list[bool]) -> list[int] | None:
         """Run a sequence of ROM search triplets, returning one status byte each.
 
         The part performs the two read bits and the direction write in hardware,
@@ -207,7 +206,7 @@ class DS2482:
                     self._wait_idle(
                         batch.write_byte_data(self.address, self.CMD_1WIRE_TRIPLET, 0x80 if direction else 0x00)
                     )
-                statuses.extend(self.bus.execute_batch(batch))
+                statuses.extend(await self.bus.execute_batch(batch))
         except OSError:
             _LOGGER.exception("1-Wire triplet error at 0x%02X", self.address)
             return None

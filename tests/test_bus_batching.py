@@ -38,16 +38,16 @@ class FakeBus:
     def new_batch(self) -> I2CBatch:
         return I2CBatch()
 
-    def execute_batch(self, batch: I2CBatch) -> list[int]:
+    async def execute_batch(self, batch: I2CBatch) -> list[int]:
         self.executed.append(batch)
         if self.error is not None:
             raise self.error
         return self.results[: batch.result_count]
 
-    def write_byte(self, addr: int, value: int) -> None:
+    async def write_byte(self, addr: int, value: int) -> None:
         return
 
-    def read_byte(self, addr: int) -> int:
+    async def read_byte(self, addr: int) -> int:
         self.reads.append(addr)
         return 0xFF
 
@@ -106,58 +106,66 @@ def test_capacity_reaches_zero_before_the_result_limit() -> None:
 
 
 def _bus(monkeypatch) -> SMBus:
-    monkeypatch.setattr(SMBus, "_connect", lambda self: None)
     return SMBus()
 
 
+def _respond(payload: bytes):
+    """Return a stand-in for _send_command that answers with ``payload``."""
+
+    async def send(_payload: bytes) -> bytes:
+        return payload
+
+    return send
+
+
 @pytest.mark.unit
-def test_execute_batch_slices_results_in_order(monkeypatch) -> None:
+async def test_execute_batch_slices_results_in_order(monkeypatch) -> None:
     bus = _bus(monkeypatch)
     batch = bus.new_batch().read_byte(0x38).read_block(0x10, 3)
-    monkeypatch.setattr(bus, "_send_command", lambda _payload: b"\x00\xaa\x01\x02\x03")
+    monkeypatch.setattr(bus, "_send_command", _respond(b"\x00\xaa\x01\x02\x03"))
 
-    assert bus.execute_batch(batch) == [0xAA, 0x01, 0x02, 0x03]
+    assert await bus.execute_batch(batch) == [0xAA, 0x01, 0x02, 0x03]
 
 
 @pytest.mark.unit
-def test_execute_batch_reports_the_failing_operation_index(monkeypatch) -> None:
+async def test_execute_batch_reports_the_failing_operation_index(monkeypatch) -> None:
     bus = _bus(monkeypatch)
     batch = bus.new_batch().read_byte(0x38).read_byte(0x39)
-    monkeypatch.setattr(bus, "_send_command", lambda _payload: b"\xff\x01")
+    monkeypatch.setattr(bus, "_send_command", _respond(b"\xff\x01"))
 
     with pytest.raises(I2CBatchError) as err:
-        bus.execute_batch(batch)
+        await bus.execute_batch(batch)
 
     assert err.value.op_index == 1
 
 
 @pytest.mark.unit
-def test_execute_batch_rejects_a_short_response(monkeypatch) -> None:
+async def test_execute_batch_rejects_a_short_response(monkeypatch) -> None:
     bus = _bus(monkeypatch)
     batch = bus.new_batch().read_block(0x10, 4)
-    monkeypatch.setattr(bus, "_send_command", lambda _payload: b"\x00\x01\x02")
+    monkeypatch.setattr(bus, "_send_command", _respond(b"\x00\x01\x02"))
 
     with pytest.raises(I2CBatchError):
-        bus.execute_batch(batch)
+        await bus.execute_batch(batch)
 
 
 @pytest.mark.unit
-def test_empty_batch_does_not_reach_the_wire(monkeypatch) -> None:
+async def test_empty_batch_does_not_reach_the_wire(monkeypatch) -> None:
     bus = _bus(monkeypatch)
 
-    def fail(_payload: bytes) -> bytes:
+    async def fail(_payload: bytes) -> bytes:
         raise AssertionError("empty batch must not be sent")
 
     monkeypatch.setattr(bus, "_send_command", fail)
-    assert bus.execute_batch(bus.new_batch()) == []
+    assert await bus.execute_batch(bus.new_batch()) == []
 
 
 @pytest.mark.unit
-def test_scan_fetch_parses_entries_and_flags(monkeypatch) -> None:
+async def test_scan_fetch_parses_entries_and_flags(monkeypatch) -> None:
     bus = _bus(monkeypatch)
-    monkeypatch.setattr(bus, "_send_command", lambda _payload: b"\x00\x01\x02\x00\xfe\x01\xff")
+    monkeypatch.setattr(bus, "_send_command", _respond(b"\x00\x01\x02\x00\xfe\x01\xff"))
 
-    flags, entries = bus.scan_fetch()
+    flags, entries = await bus.scan_fetch()
 
     assert flags & SCAN_FLAG_OVERFLOW
     assert entries == [(0, 0xFE), (1, 0xFF)]
@@ -181,52 +189,52 @@ def test_scan_limits_match_the_firmware() -> None:
 
 
 @pytest.mark.unit
-def test_scan_fetch_accepts_a_full_queue(monkeypatch) -> None:
+async def test_scan_fetch_accepts_a_full_queue(monkeypatch) -> None:
     bus = _bus(monkeypatch)
     entries = bytes(range(MAX_SCAN_ENTRIES)) + bytes(MAX_SCAN_ENTRIES)
     payload = bytes([0x00, 0x00, MAX_SCAN_ENTRIES]) + bytes(
         byte for index in range(MAX_SCAN_ENTRIES) for byte in (entries[index], 0xAA)
     )
     assert len(payload) <= MAX_FRAME_PAYLOAD
-    monkeypatch.setattr(bus, "_send_command", lambda _payload: payload)
+    monkeypatch.setattr(bus, "_send_command", _respond(payload))
 
-    flags, parsed = bus.scan_fetch()
+    flags, parsed = await bus.scan_fetch()
 
     assert flags == 0
     assert len(parsed) == MAX_SCAN_ENTRIES
 
 
 @pytest.mark.unit
-def test_scan_config_refuses_more_addresses_than_the_bridge_holds(monkeypatch) -> None:
+async def test_scan_config_refuses_more_addresses_than_the_bridge_holds(monkeypatch) -> None:
     bus = _bus(monkeypatch)
-    monkeypatch.setattr(bus, "_send_command", lambda _payload: b"\x00")
+    monkeypatch.setattr(bus, "_send_command", _respond(b"\x00"))
 
     with pytest.raises(ValueError, match="scan addresses"):
-        bus.scan_config(list(range(MAX_SCAN_ADDRESSES + 1)), 20, 40)
+        await bus.scan_config(list(range(MAX_SCAN_ADDRESSES + 1)), 20, 40)
 
 
 @pytest.mark.unit
-def test_scan_config_frames_the_request_the_bridge_expects(monkeypatch) -> None:
+async def test_scan_config_frames_the_request_the_bridge_expects(monkeypatch) -> None:
     bus = _bus(monkeypatch)
     sent: list[bytes] = []
 
-    def capture(payload: bytes) -> bytes:
+    async def capture(payload: bytes) -> bytes:
         sent.append(payload)
         return b"\x00"
 
     monkeypatch.setattr(bus, "_send_command", capture)
 
-    assert bus.scan_config([0x38, 0x39], 20, 40)
+    assert await bus.scan_config([0x38, 0x39], 20, 40)
     assert sent == [bytes([CMD_SCAN_CONFIG, 20, 40, 2, 0x38, 0x39])]
 
 
 @pytest.mark.unit
-def test_scan_fetch_rejects_a_truncated_entry_list(monkeypatch) -> None:
+async def test_scan_fetch_rejects_a_truncated_entry_list(monkeypatch) -> None:
     bus = _bus(monkeypatch)
-    monkeypatch.setattr(bus, "_send_command", lambda _payload: b"\x00\x00\x04\x00\xfe")
+    monkeypatch.setattr(bus, "_send_command", _respond(b"\x00\x00\x04\x00\xfe"))
 
     with pytest.raises(OSError, match="truncated"):
-        bus.scan_fetch()
+        await bus.scan_fetch()
 
 
 # ---------------------------------------------------------------------------
@@ -393,11 +401,11 @@ class ScanBus(FakeBus):
         self.accept = accept
         self.fetch = fetch or (0, [])
 
-    def scan_config(self, addresses: list[int], period_ms: int, debounce_ms: int) -> bool:
+    async def scan_config(self, addresses: list[int], period_ms: int, debounce_ms: int) -> bool:
         self.configured = (list(addresses), period_ms, debounce_ms)
         return self.accept
 
-    def scan_fetch(self) -> tuple[int, list[tuple[int, int]]]:
+    async def scan_fetch(self) -> tuple[int, list[tuple[int, int]]]:
         return self.fetch
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 import enum
 import logging
@@ -60,7 +61,7 @@ class DM117:
         self._read_interval = 0.01  # 10ms minimum between reads
         self._force_full_read = True
 
-    def configure_ports(self, config: dict[int, DeviceType], commit: bool = True) -> bool:
+    async def configure_ports(self, config: dict[int, DeviceType], commit: bool = True) -> bool:
         """Configure module ports."""
         if not config:
             _LOGGER.warning("No ports configured")
@@ -90,7 +91,7 @@ class DM117:
             data.append(Crc8Smbus.calc(data))
 
             # Send configuration
-            self.bus.write_i2c_block_data(self.address, data[0], data[1:])
+            await self.bus.write_i2c_block_data(self.address, data[0], data[1:])
 
             _LOGGER.debug(
                 "Configured DM117 at address %02X with %s ports %s",
@@ -103,26 +104,26 @@ class DM117:
             self.port_config = dict(config)
 
             if commit:
-                return self.commit_config()
+                return await self.commit_config()
 
         except OSError:
             _LOGGER.exception("Error configuring DM117")
             return False
         return True
 
-    def commit_config(self) -> bool:
+    async def commit_config(self) -> bool:
         """Commit the current configuration to the device."""
         try:
             data = bytearray([self.CMD_COMMIT])
             data.append(Crc8Smbus.calc(data))
-            self.bus.write_i2c_block_data(self.address, data[0], data[1:])
+            await self.bus.write_i2c_block_data(self.address, data[0], data[1:])
             _LOGGER.debug("Committed DM117 configuration at address %02X", self.address)
         except OSError:
             _LOGGER.exception("Error committing DM117 configuration")
             return False
         return True
 
-    def write_port(self, config: DM117PortConfig) -> bool:
+    async def write_port(self, config: DM117PortConfig) -> bool:
         """Write value to port."""
         try:
             port = config.port
@@ -152,7 +153,7 @@ class DM117:
             )
             data.append(Crc8Smbus.calc(data))
 
-            self.bus.write_i2c_block_data(self.address, data[0], data[1:])
+            await self.bus.write_i2c_block_data(self.address, data[0], data[1:])
 
             self.last_values[port] = value
 
@@ -194,7 +195,7 @@ class DM117:
             return self.last_values
         return None
 
-    def read_ports(self) -> dict[int, int] | None:
+    async def read_ports(self) -> dict[int, int] | None:
         """Read all port values; returns dict of port→raw-value or None on error.
 
         Convenience wrapper for single-device access. The poll loop instead batches
@@ -206,13 +207,13 @@ class DM117:
 
             # Locking must be handled by the caller. This method only prepares
             # and sends the payload.
-            self.bus.write_byte(self.address, self.CMD_READ)
-            time.sleep(0.001)
+            await self.bus.write_byte(self.address, self.CMD_READ)
+            await asyncio.sleep(0.001)
 
             # The slave streams its whole prepared buffer from a single transaction
             # and answers 0xFF once it runs out, so reading the worst-case length in
             # one go is safe and costs one round trip instead of up to 26.
-            block = self.bus.read_i2c_block(self.address, self.expected_response_size())
+            block = await self.bus.read_i2c_block(self.address, self.expected_response_size())
         except OSError:
             return None
         return self.decode_response(block)

@@ -73,24 +73,24 @@ class DS2438:
         """Initialize for one bus."""
         self.bus = bus_interface
 
-    def start(self, device_id: str, *, vdd: bool, temperature: bool = False) -> bool:
+    async def start(self, device_id: str, *, vdd: bool, temperature: bool = False) -> bool:
         """Select the voltage input and start the conversions."""
 
         # Configuration bit 3 (AD) selects VDD instead of VAD.
-        if not self._command(device_id, [self.CMD_WRITE_SCRATCHPAD, 0x00, 0x08 if vdd else 0x00]):
+        if not await self._command(device_id, [self.CMD_WRITE_SCRATCHPAD, 0x00, 0x08 if vdd else 0x00]):
             return False
-        if not self._command(device_id, [self.CMD_CONVERT_VOLTAGE]):
+        if not await self._command(device_id, [self.CMD_CONVERT_VOLTAGE]):
             return False
-        return not temperature or self._command(device_id, [self.CMD_CONVERT_TEMP])
+        return not temperature or await self._command(device_id, [self.CMD_CONVERT_TEMP])
 
-    def read_page(self, device_id: str) -> DS2438Page | None:
+    async def read_page(self, device_id: str) -> DS2438Page | None:
         """Recall page 0 into the scratchpad and read it."""
 
-        if not self._command(device_id, [self.CMD_RECALL_MEMORY, 0x00]):
+        if not await self._command(device_id, [self.CMD_RECALL_MEMORY, 0x00]):
             return None
-        if not self._command(device_id, [self.CMD_READ_SCRATCHPAD, 0x00]):
+        if not await self._command(device_id, [self.CMD_READ_SCRATCHPAD, 0x00]):
             return None
-        scratchpad = self.bus.bridge.wire_read_bytes(9)
+        scratchpad = await self.bus.bridge.wire_read_bytes(9)
         if scratchpad is None:
             return None
         if self.bus.calc_crc8(bytes(scratchpad[:-1])) != scratchpad[-1]:
@@ -105,8 +105,8 @@ class DS2438:
             current_voltage=_int16(scratchpad[6] << 8 | scratchpad[5]) * 0.2441 / 1000.0,
         )
 
-    def _command(self, device_id: str, data: list[int]) -> bool:
-        return self.bus.select_device(device_id) and bool(self.bus.bridge.wire_write_bytes(data))
+    async def _command(self, device_id: str, data: list[int]) -> bool:
+        return await self.bus.select_device(device_id) and bool(await self.bus.bridge.wire_write_bytes(data))
 
 
 def _int16(word: int) -> int:

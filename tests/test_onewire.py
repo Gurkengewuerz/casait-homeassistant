@@ -12,6 +12,7 @@ from custom_components.casait_smarthome import onewire as onewire_module
 from custom_components.casait_smarthome.onewire import MAX_FAILURES, CasaITOneWireScheduler
 from custom_components.casait_smarthome.services.i2cClasses.ds2413 import DS2413
 from custom_components.casait_smarthome.services.i2cClasses.ds2438 import DS2438, DS2438Page, DS2438Reading
+from homeassistant.core import callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 
@@ -31,21 +32,21 @@ class Wire:
         self.written: list[list[int]] = []
         self.reads = list(reads or [])
 
-    def wire_reset(self) -> bool:
+    async def wire_reset(self) -> bool:
         return True
 
-    def wire_write_byte(self, byte: int) -> bool:
+    async def wire_write_byte(self, byte: int) -> bool:
         self.written.append([byte])
         return True
 
-    def wire_write_bytes(self, data: list[int]) -> bool:
+    async def wire_write_bytes(self, data: list[int]) -> bool:
         self.written.append(list(data))
         return True
 
-    def wire_read_byte(self) -> int | None:
+    async def wire_read_byte(self) -> int | None:
         return self.reads.pop(0) if self.reads else None
 
-    def wire_read_bytes(self, count: int) -> list[int] | None:
+    async def wire_read_bytes(self, count: int) -> list[int] | None:
         out, self.reads = self.reads[:count], self.reads[count:]
         return out if len(out) == count else None
 
@@ -54,7 +55,7 @@ class Bus:
     def __init__(self, reads: list[int] | None = None) -> None:
         self.bridge = Wire(reads)
 
-    def select_device(self, device_id: str) -> bool:
+    async def select_device(self, device_id: str) -> bool:
         return True
 
     @staticmethod
@@ -73,13 +74,13 @@ def _status(pin_a: bool, latch_a: bool, pin_b: bool, latch_b: bool) -> int:
 
 
 @pytest.mark.unit
-def test_ds2413_writes_channel_b_to_bit_one_and_keeps_the_other_latch() -> None:
+async def test_ds2413_writes_channel_b_to_bit_one_and_keeps_the_other_latch() -> None:
     # A is an input (latch off, pin pulled up), B is an output that is off.
     before = _status(True, True, True, True)
     after = _status(True, True, False, False)
     bus = Bus([before, 0xAA, after])
 
-    pins = DS2413(bus).set_state("3a", 1, True)
+    pins = await DS2413(bus).set_state("3a", 1, True)
 
     # Bit 0 (A latch) stays 1 so the input is not driven, bit 1 (B) goes to 0.
     data = 0xFC | 0x01
@@ -88,8 +89,8 @@ def test_ds2413_writes_channel_b_to_bit_one_and_keeps_the_other_latch() -> None:
 
 
 @pytest.mark.unit
-def test_ds2413_rejects_a_status_that_fails_its_complement_check() -> None:
-    assert DS2413(Bus([0xFF])).read_ports("3a") is None
+async def test_ds2413_rejects_a_status_that_fails_its_complement_check() -> None:
+    assert await DS2413(Bus([0xFF])).read_ports("3a") is None
 
 
 # ---------------------------------------------------------------------------
@@ -98,12 +99,12 @@ def test_ds2413_rejects_a_status_that_fails_its_complement_check() -> None:
 
 
 @pytest.mark.unit
-def test_ds2438_page_decodes_signed_values() -> None:
+async def test_ds2438_page_decodes_signed_values() -> None:
     # status VDD, -0.5 °C, 5.00 V, a negative current sense voltage
     page = [0x08, 0x80, 0xFF, 0xF4, 0x01, 0xF6, 0xFF, 0x00]
     bus = Bus([*page, crc8(bytes(page))])
 
-    result = DS2438(bus).read_page("26")
+    result = await DS2438(bus).read_page("26")
 
     assert result == DS2438Page(status=0x08, temperature=-0.5, voltage=5.0, current_voltage=pytest.approx(-0.002441))
 
@@ -132,9 +133,9 @@ class FakeApi:
             ),
             ds2413=SimpleNamespace(read_ports=lambda rom: self._call("pins", rom)),
         )
-        return func(bus)
+        return await func(bus)
 
-    def _call(self, kind: str, device_id: str) -> Any:
+    async def _call(self, kind: str, device_id: str) -> Any:
         self.calls.append((kind, device_id))
         return self._answers[kind](device_id)
 
@@ -175,7 +176,12 @@ async def test_a_device_turns_unavailable_only_after_repeated_failures(hass) -> 
     scheduler.configure({"3a": "ds2413"}, {})
     job = scheduler._jobs["ds2413/3a"]  # noqa: SLF001
     updates: list[Any] = []
-    async_dispatcher_connect(hass, scheduler.signal("3a"), lambda: updates.append(scheduler.value("3a")))
+
+    @callback
+    def record() -> None:
+        updates.append(scheduler.value("3a"))
+
+    async_dispatcher_connect(hass, scheduler.signal("3a"), record)
 
     await job.run()
     assert scheduler.value("3a") == (True, False)

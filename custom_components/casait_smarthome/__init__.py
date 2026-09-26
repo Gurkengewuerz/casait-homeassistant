@@ -312,9 +312,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> bo
     """Set up casaIT : Smart Home from a config entry."""
     polling_settings = get_polling_settings(entry.options)
     try:
-        bus = await hass.async_add_executor_job(
-            SMBus,
-            1,
+        bus = await SMBus.connect(
             entry.data[CONF_HOST],
             entry.data[CONF_PORT],
             entry.data.get(CONF_TIMEOUT),
@@ -325,13 +323,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> bo
         raise ConfigEntryNotReady(f"Failed to connect to SMBus proxy: {err}") from err
 
     try:
-        responded = await hass.async_add_executor_job(bus.ping)
+        responded = await bus.ping()
     except (SMBusProxyError, OSError) as err:
-        await hass.async_add_executor_job(bus.close)
+        await bus.close()
         _record_bridge_setup_failure(hass, entry)
         raise ConfigEntryNotReady(f"Failed to ping SMBus proxy: {err}") from err
     if not responded:
-        await hass.async_add_executor_job(bus.close)
+        await bus.close()
         _record_bridge_setup_failure(hass, entry)
         raise ConfigEntryNotReady("SMBus proxy did not respond to ping")
 
@@ -368,7 +366,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> bo
 
     await api.async_wait_initialized()
     if api.initialization_error is not None:
-        await hass.async_add_executor_job(api.bus.close)
+        await api.bus.close()
         message = f"Failed to initialize casaIT devices: {api.initialization_error}"
         raise ConfigEntryNotReady(message) from api.initialization_error
 
@@ -409,7 +407,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> b
         except TimeoutError:
             _LOGGER.warning("Timeout waiting for casaIT initialization during unload; proceeding")
         await api.stop_polling()
-        await hass.async_add_executor_job(api.bus.close)
+        await api.bus.close()
 
     return unload_ok
 

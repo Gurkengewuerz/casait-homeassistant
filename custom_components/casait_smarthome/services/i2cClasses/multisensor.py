@@ -22,6 +22,7 @@ References:
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 import logging
@@ -316,16 +317,16 @@ class Multisensor:
     # Discovery
     # ------------------------------------------------------------------
 
-    def is_led_controller(self, device_id: str) -> bool:
+    async def is_led_controller(self, device_id: str) -> bool:
         """Return whether the LED controller firmware answers behind this bridge."""
 
         try:
-            self.bridge.read(device_id, LED_CONTROLLER_ADDRESS, 1)
+            await self.bridge.read(device_id, LED_CONTROLLER_ADDRESS, 1)
         except DS28E17Nack:
             return False
         return True
 
-    def detect(self, device_id: str) -> MultisensorComponents:
+    async def detect(self, device_id: str) -> MultisensorComponents:
         """Probe every chip the board may carry.
 
         Raises DS28E17Error when the bridge itself does not answer, so that a
@@ -334,66 +335,69 @@ class Multisensor:
 
         # Writing the VEML7700 configuration doubles as its probe and powers it up.
         return MultisensorComponents(
-            sht41=self.probe_chip(device_id, CHIP_SHT41) is not None,
-            sgp40=self.probe_chip(device_id, CHIP_SGP40) is not None,
-            stcc4_address=self.probe_chip(device_id, CHIP_STCC4),
-            veml7700=self.probe_chip(device_id, CHIP_VEML7700) is not None,
+            sht41=await self.probe_chip(device_id, CHIP_SHT41) is not None,
+            sgp40=await self.probe_chip(device_id, CHIP_SGP40) is not None,
+            stcc4_address=await self.probe_chip(device_id, CHIP_STCC4),
+            veml7700=await self.probe_chip(device_id, CHIP_VEML7700) is not None,
         )
 
-    def probe_chip(self, device_id: str, chip: str) -> int | None:
+    async def probe_chip(self, device_id: str, chip: str) -> int | None:
         """Probe one chip; return its I2C address when it answers, else None."""
 
         if chip == CHIP_SHT41:
-            return SHT41_ADDRESS if self._probe_sht41(device_id) else None
+            return SHT41_ADDRESS if await self._probe_sht41(device_id) else None
         if chip == CHIP_SGP40:
-            return SGP40_ADDRESS if self._probe_sgp40(device_id) else None
+            return SGP40_ADDRESS if await self._probe_sgp40(device_id) else None
         if chip == CHIP_STCC4:
-            return next((address for address in STCC4_ADDRESSES if self._probe_stcc4(device_id, address)), None)
+            for address in STCC4_ADDRESSES:
+                if await self._probe_stcc4(device_id, address):
+                    return address
+            return None
         if chip == CHIP_VEML7700:
             config = bytes([VEML7700_REG_ALS_CONF]) + veml7700_config(VEML7700_DEFAULT_RANGE).to_bytes(2, "little")
-            return VEML7700_ADDRESS if self.bridge.probe(device_id, VEML7700_ADDRESS, config) else None
+            return VEML7700_ADDRESS if await self.bridge.probe(device_id, VEML7700_ADDRESS, config) else None
         raise ValueError(f"unknown chip {chip}")
 
-    def _probe_sht41(self, device_id: str) -> bool:
-        if not self.bridge.probe(device_id, SHT41_ADDRESS, bytes([SHT41_CMD_SERIAL])):
+    async def _probe_sht41(self, device_id: str) -> bool:
+        if not await self.bridge.probe(device_id, SHT41_ADDRESS, bytes([SHT41_CMD_SERIAL])):
             return False
-        time.sleep(SHT41_MEASURE_TIME)
+        await asyncio.sleep(SHT41_MEASURE_TIME)
         # Reading the serial back proves it is really an SHT4x.
         try:
-            decode_words(self.bridge.read(device_id, SHT41_ADDRESS, 6))
+            decode_words(await self.bridge.read(device_id, SHT41_ADDRESS, 6))
         except DS28E17Nack:
             return False
         return True
 
-    def _probe_sgp40(self, device_id: str) -> bool:
-        if not self.bridge.probe(device_id, SGP40_ADDRESS, bytes(SGP40_CMD_SERIAL)):
+    async def _probe_sgp40(self, device_id: str) -> bool:
+        if not await self.bridge.probe(device_id, SGP40_ADDRESS, bytes(SGP40_CMD_SERIAL)):
             return False
-        time.sleep(0.001)
+        await asyncio.sleep(0.001)
         try:
-            decode_words(self.bridge.read(device_id, SGP40_ADDRESS, 9))
+            decode_words(await self.bridge.read(device_id, SGP40_ADDRESS, 9))
         except DS28E17Nack:
             return False
         return True
 
-    def _probe_stcc4(self, device_id: str, address: int) -> bool:
+    async def _probe_stcc4(self, device_id: str, address: int) -> bool:
         # Stopping is the one command the chip accepts in every state, so it is
         # both the probe and the reset into a known state. The caller has to
         # leave the chip alone for STCC4_STOP_TIME afterwards.
-        return self.bridge.probe(device_id, address, command(STCC4_CMD_STOP_CONTINUOUS))
+        return await self.bridge.probe(device_id, address, command(STCC4_CMD_STOP_CONTINUOUS))
 
     # ------------------------------------------------------------------
     # SHT41
     # ------------------------------------------------------------------
 
-    def sht41_trigger(self, device_id: str) -> None:
+    async def sht41_trigger(self, device_id: str) -> None:
         """Start a high-precision temperature and humidity measurement."""
 
-        self.bridge.write(device_id, SHT41_ADDRESS, bytes([SHT41_CMD_MEASURE_HIGH]))
+        await self.bridge.write(device_id, SHT41_ADDRESS, bytes([SHT41_CMD_MEASURE_HIGH]))
 
-    def sht41_fetch(self, device_id: str, state: MultisensorState) -> None:
+    async def sht41_fetch(self, device_id: str, state: MultisensorState) -> None:
         """Collect the measurement started by sht41_trigger."""
 
-        t_ticks, rh_ticks = decode_words(self.bridge.read(device_id, SHT41_ADDRESS, 6))
+        t_ticks, rh_ticks = decode_words(await self.bridge.read(device_id, SHT41_ADDRESS, 6))
         state.t_ticks, state.rh_ticks = t_ticks, rh_ticks
         state.reading.temperature = round(sht_temperature(t_ticks), 2)
         state.reading.humidity = round(sht_humidity(rh_ticks), 2)
@@ -402,18 +406,18 @@ class Multisensor:
     # SGP40
     # ------------------------------------------------------------------
 
-    def sgp40_trigger(self, device_id: str, state: MultisensorState) -> None:
+    async def sgp40_trigger(self, device_id: str, state: MultisensorState) -> None:
         """Start a raw VOC measurement, compensated with the SHT41 values if known."""
 
         rh_ticks = state.rh_ticks if state.rh_ticks is not None else SGP40_DEFAULT_RH_TICKS
         t_ticks = state.t_ticks if state.t_ticks is not None else SGP40_DEFAULT_T_TICKS
         payload = bytes(SGP40_CMD_MEASURE_RAW) + encode_words(rh_ticks, t_ticks)
-        self.bridge.write(device_id, SGP40_ADDRESS, payload)
+        await self.bridge.write(device_id, SGP40_ADDRESS, payload)
 
-    def sgp40_fetch(self, device_id: str, state: MultisensorState) -> None:
+    async def sgp40_fetch(self, device_id: str, state: MultisensorState) -> None:
         """Collect the raw signal and advance the VOC index algorithm."""
 
-        (sraw,) = decode_words(self.bridge.read(device_id, SGP40_ADDRESS, 3))
+        (sraw,) = decode_words(await self.bridge.read(device_id, SGP40_ADDRESS, 3))
         state.reading.voc_raw = sraw
         index = state.voc.process(sraw)
         # The algorithm reports 0 while it is still in its initial blackout.
@@ -423,7 +427,7 @@ class Multisensor:
     # VEML7700
     # ------------------------------------------------------------------
 
-    def veml7700_sample(self, device_id: str, state: MultisensorState) -> None:
+    async def veml7700_sample(self, device_id: str, state: MultisensorState) -> None:
         """Read the ambient light and adjust the range for the next sample.
 
         The range is changed after a reading, never before it: the new setting
@@ -432,10 +436,10 @@ class Multisensor:
         """
 
         if not state.veml_configured:
-            self._veml7700_write_config(device_id, state)
+            await self._veml7700_write_config(device_id, state)
             return
 
-        data = self.bridge.write_read(device_id, VEML7700_ADDRESS, bytes([VEML7700_REG_ALS]), 2)
+        data = await self.bridge.write_read(device_id, VEML7700_ADDRESS, bytes([VEML7700_REG_ALS]), 2)
         raw = int.from_bytes(data, "little")
         gain, integration_ms = VEML7700_RANGES[state.veml_range]
 
@@ -449,18 +453,20 @@ class Multisensor:
             new_range -= 1
         if new_range != state.veml_range:
             state.veml_range = new_range
-            self._veml7700_write_config(device_id, state)
+            await self._veml7700_write_config(device_id, state)
 
-    def _veml7700_write_config(self, device_id: str, state: MultisensorState) -> None:
+    async def _veml7700_write_config(self, device_id: str, state: MultisensorState) -> None:
         value = veml7700_config(state.veml_range)
-        self.bridge.write(device_id, VEML7700_ADDRESS, bytes([VEML7700_REG_ALS_CONF]) + value.to_bytes(2, "little"))
+        await self.bridge.write(
+            device_id, VEML7700_ADDRESS, bytes([VEML7700_REG_ALS_CONF]) + value.to_bytes(2, "little")
+        )
         state.veml_configured = True
 
     # ------------------------------------------------------------------
     # STCC4
     # ------------------------------------------------------------------
 
-    def stcc4_sample(self, device_id: str, state: MultisensorState) -> None:
+    async def stcc4_sample(self, device_id: str, state: MultisensorState) -> None:
         """Hand over compensation values and collect the latest CO2 reading.
 
         Runs the chip in continuous mode, which measures once a second on its
@@ -476,21 +482,21 @@ class Multisensor:
         if not state.stcc4_running:
             if time.monotonic() < state.stcc4_ready_at:
                 return
-            self.bridge.write(device_id, address, command(STCC4_CMD_START_CONTINUOUS))
+            await self.bridge.write(device_id, address, command(STCC4_CMD_START_CONTINUOUS))
             state.stcc4_running = True
             # The first result arrives about a second from now.
             return
 
         if state.t_ticks is not None and state.rh_ticks is not None:
-            self.bridge.write(
+            await self.bridge.write(
                 device_id, address, command(STCC4_CMD_SET_RHT_COMPENSATION, state.t_ticks, state.rh_ticks)
             )
-            time.sleep(STCC4_COMMAND_TIME)
+            await asyncio.sleep(STCC4_COMMAND_TIME)
 
-        self.bridge.write(device_id, address, command(STCC4_CMD_READ_MEASUREMENT))
-        time.sleep(STCC4_COMMAND_TIME)
+        await self.bridge.write(device_id, address, command(STCC4_CMD_READ_MEASUREMENT))
+        await asyncio.sleep(STCC4_COMMAND_TIME)
         try:
-            data = self.bridge.read(device_id, address, 12)
+            data = await self.bridge.read(device_id, address, 12)
         except DS28E17Nack:
             # No new result since the last read; keep the previous value.
             return
@@ -498,23 +504,23 @@ class Multisensor:
         co2 = to_int16(co2_raw)
         state.reading.co2 = co2 if co2 >= 0 else None
 
-    def stcc4_stop(self, device_id: str, state: MultisensorState) -> None:
+    async def stcc4_stop(self, device_id: str, state: MultisensorState) -> None:
         """Stop continuous measurement. Leave the chip alone for STCC4_STOP_TIME after."""
 
         address = self._stcc4_address(state)
-        self.bridge.write(device_id, address, command(STCC4_CMD_STOP_CONTINUOUS))
+        await self.bridge.write(device_id, address, command(STCC4_CMD_STOP_CONTINUOUS))
         state.stcc4_running = False
         state.stcc4_ready_at = time.monotonic() + STCC4_STOP_TIME
 
-    def stcc4_send(self, device_id: str, state: MultisensorState, code: int, *words: int) -> None:
+    async def stcc4_send(self, device_id: str, state: MultisensorState, code: int, *words: int) -> None:
         """Send one maintenance command to a stopped STCC4."""
 
-        self.bridge.write(device_id, self._stcc4_address(state), command(code, *words))
+        await self.bridge.write(device_id, self._stcc4_address(state), command(code, *words))
 
-    def stcc4_fetch_word(self, device_id: str, state: MultisensorState) -> int:
+    async def stcc4_fetch_word(self, device_id: str, state: MultisensorState) -> int:
         """Read the one-word answer of a maintenance command."""
 
-        (word,) = decode_words(self.bridge.read(device_id, self._stcc4_address(state), 3))
+        (word,) = decode_words(await self.bridge.read(device_id, self._stcc4_address(state), 3))
         return word
 
     @staticmethod

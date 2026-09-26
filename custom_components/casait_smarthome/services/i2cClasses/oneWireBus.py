@@ -46,11 +46,7 @@ class OneWireBus:
     CMD_READ_DATA_STOP = 0x87  # Read data with stop
 
     def __init__(self, bus, bridge_address: int) -> None:
-        """Initialize 1-Wire bus with DS2482 bridge."""
-        _LOGGER.info(
-            "Initializing 1-Wire bus with DS2482 at address %02x",
-            bridge_address,
-        )
+        """Prepare a 1-Wire bus without touching it; ``create`` also initializes it."""
         self.bridge = DS2482(bus, bridge_address)
         self.devices: dict[str, dict[str, Any]] = {}
         self.ds2438 = DS2438(self)
@@ -61,9 +57,19 @@ class OneWireBus:
         self.multisensor = Multisensor(self.ds28e17)
         self.last_scan_time = 0
         self._timeout_cache: dict[str, tuple[float, int]] = {}
-        self._scan_bus()
 
-    def scan_devices(self, force: bool = False) -> dict:
+    @classmethod
+    async def create(cls, bus, bridge_address: int) -> OneWireBus:
+        """Reset the DS2482 and enumerate the chips on its bus."""
+
+        _LOGGER.info("Initializing 1-Wire bus with DS2482 at address %02x", bridge_address)
+        one_wire = cls(bus, bridge_address)
+        if not await one_wire.bridge.reset():
+            _LOGGER.warning("DS2482 at 0x%02X did not confirm its reset", bridge_address)
+        await one_wire._scan_bus()
+        return one_wire
+
+    async def scan_devices(self, force: bool = False) -> dict:
         """Scan 1-Wire bus for devices with optional force refresh."""
         current_time = time.time()
 
@@ -71,11 +77,11 @@ class OneWireBus:
         if not force and (current_time - self.last_scan_time) < 60:
             return self.devices
 
-        self._scan_bus()
+        await self._scan_bus()
         self.last_scan_time = current_time
         return self.devices
 
-    def _scan_bus(self):
+    async def _scan_bus(self):
         """Scan the 1-Wire bus for devices using the DS2482 search triplet.
 
         The bridge resolves each bit position in hardware, and the direction a pass
@@ -92,12 +98,12 @@ class OneWireBus:
         last_discrepancy = 0
 
         for _ in range(MAX_SEARCH_PASSES):
-            if not self.bridge.wire_reset():
+            if not await self.bridge.wire_reset():
                 return devices
-            if not self.bridge.wire_write_byte(self.CMD_SEARCH_ROM):
+            if not await self.bridge.wire_write_byte(self.CMD_SEARCH_ROM):
                 return devices
 
-            statuses = self.bridge.wire_triplets(self._search_directions(rom_no, last_discrepancy))
+            statuses = await self.bridge.wire_triplets(self._search_directions(rom_no, last_discrepancy))
             if statuses is None or len(statuses) != ROM_BITS:
                 return devices
 
@@ -210,7 +216,7 @@ class OneWireBus:
                     crc >>= 1
         return crc
 
-    def select_device(self, device_id: str, use_lock: bool = True) -> bool:
+    async def select_device(self, device_id: str, use_lock: bool = True) -> bool:
         """Select a device on the bus."""
         # output as error which device could not be selected
         # if the device couldn't be selected multiple times create a timeout cache for the device
@@ -218,7 +224,7 @@ class OneWireBus:
         # this should prevent _scan_bus from being called multiple times and block the bus for a long noticeable time
         if device_id not in self.devices:
             _LOGGER.warning("Device %s not found in cache, rescanning bus", device_id)
-            self._scan_bus()
+            await self._scan_bus()
             if device_id not in self.devices:
                 _LOGGER.error("Device %s not found after bus scan", device_id)
                 return False
@@ -233,14 +239,14 @@ class OneWireBus:
             if current_time - timestamp >= TIMEOUT_DURATION:
                 del self._timeout_cache[device_id]
 
-        if not self.bridge.wire_reset():
+        if not await self.bridge.wire_reset():
             _LOGGER.error("Wire reset failed for device %s", device_id)
             self._increment_failures(device_id)
             return False
 
         # Command plus the eight ROM bytes go out as one batch, so selecting a
         # device costs one round trip instead of nine.
-        if not self.bridge.wire_write_bytes([self.CMD_MATCH_ROM, *self.devices[device_id]["rom"]]):
+        if not await self.bridge.wire_write_bytes([self.CMD_MATCH_ROM, *self.devices[device_id]["rom"]]):
             _LOGGER.error("Failed to address device %s", device_id)
             self._increment_failures(device_id)
             return False
@@ -250,10 +256,10 @@ class OneWireBus:
         _, count = self._timeout_cache.get(device_id, (time.time(), 0))
         self._timeout_cache[device_id] = (time.time(), count + 1)
 
-    def write_led_config(self, device_id: str, config: LEDConfig) -> bool:
+    async def write_led_config(self, device_id: str, config: LEDConfig) -> bool:
         """Write LED configuration to device."""
-        return self.led_controller.write_config(device_id, config)
+        return await self.led_controller.write_config(device_id, config)
 
-    def read_led_config(self, device_id: str, use_cache: bool = True) -> LEDConfig | None:
+    async def read_led_config(self, device_id: str, use_cache: bool = True) -> LEDConfig | None:
         """Read LED configuration from device."""
-        return self.led_controller.read_config(device_id, use_cache=use_cache)
+        return await self.led_controller.read_config(device_id, use_cache=use_cache)

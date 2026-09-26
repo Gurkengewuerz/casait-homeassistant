@@ -24,7 +24,7 @@ Home Assistant entities
         ↓
 CasaITApi state caches and async methods
         ↓
-serialized synchronous I2C and 1-Wire drivers
+serialized asyncio I2C and 1-Wire drivers
 ```
 
 - `api.py` owns discovery, the free-running poll loop, caches, dispatcher signals, and serialized writes.

@@ -218,7 +218,7 @@ This integration uses the following identifiers consistently:
 - `entity.py` - shared base entity for dispatcher-fed Multisensor entities
 - `binary_sensor.py`, `button.py`, `cover.py`, `event.py`, `light.py`, `number.py`, `sensor.py`, `switch.py` - entity platforms
 - `services/smbus_proxy.py` - TCP bridge client
-- `services/i2cClasses/` - synchronous I2C and 1-Wire hardware drivers; `multisensor.py` there drives the SHT41, SGP40, STCC4 and VEML7700
+- `services/i2cClasses/` - asyncio I2C and 1-Wire hardware drivers; `multisensor.py` there drives the SHT41, SGP40, STCC4 and VEML7700
   behind a DS28E17, `gas_index.py` is a pure-Python port of Sensirion's VOC gas index algorithm
 - `diagnostics.py` - redacted config-entry diagnostics
 
@@ -230,7 +230,7 @@ This integration uses the following identifiers consistently:
 
 **Key patterns:**
 
-- Entities → `CasaITApi` → synchronous hardware drivers (never skip the API layer)
+- Entities → `CasaITApi` → asyncio hardware drivers (never skip the API layer)
 - Dispatcher-driven entities read API state caches; polling entities call async API methods
 - Hardware drivers never own Home Assistant entities or access `hass`
 - Keep the existing flat platform modules unless an approved refactor changes the architecture

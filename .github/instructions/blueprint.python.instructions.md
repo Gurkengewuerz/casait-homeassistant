@@ -182,7 +182,7 @@ See [Integration Setup Failures](https://developers.home-assistant.io/docs/integ
 
 - Inherit from the Home Assistant platform entity class
 - Set `_attr_unique_id` in `__init__` (format: `{entry_id}_{key}`)
-- Read API state caches or call async `CasaITApi` methods; never access synchronous drivers directly
+- Read API state caches or call async `CasaITApi` methods; never access hardware drivers directly
 - Handle unavailability via `_attr_available`
 
 ## Error Handling

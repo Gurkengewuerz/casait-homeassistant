@@ -65,22 +65,15 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
     """
     bus: SMBus | None = None
     try:
-        connected_bus = await hass.async_add_executor_job(
-            SMBus,
-            1,
-            data[CONF_HOST],
-            data[CONF_PORT],
-            data[CONF_TIMEOUT],
-        )
-        bus = connected_bus
-        if not await hass.async_add_executor_job(connected_bus.ping):
+        bus = await SMBus.connect(data[CONF_HOST], data[CONF_PORT], data[CONF_TIMEOUT])
+        if not await bus.ping():
             raise CannotConnect
     except (SMBusProxyError, OSError) as exc:
         raise CannotConnect from exc
     finally:
         if bus is not None:
             with contextlib.suppress(SMBusProxyError, OSError):
-                await hass.async_add_executor_job(bus.close)
+                await bus.close()
 
     return {"title": data[CONF_HOST]}
 

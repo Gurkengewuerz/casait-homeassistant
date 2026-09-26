@@ -9,7 +9,7 @@ The casaIT integration does not use a `DataUpdateCoordinator`. Preserve its API-
 ## Layering
 
 ```text
-Entities → CasaITApi → synchronous hardware drivers
+Entities → CasaITApi → async hardware drivers → async SMBus bridge client
 ```
 
 - `CasaITApi` owns discovery, state caches, the free-running poll loop, dispatcher signals, and async writes.
@@ -19,7 +19,9 @@ Entities → CasaITApi → synchronous hardware drivers
 
 ## Async Boundaries
 
-- Synchronous SMBus and hardware-driver operations run through `hass.async_add_executor_job()`.
+- The SMBus bridge client and every driver are native asyncio: no executor jobs, no `time.sleep()`.
+- A driver method is one bus transaction or a short sequence of them. Sensor conversion times are
+  awaited by the caller between transactions with the bus released, never inside the lock.
 - Public hardware-facing API methods are async and return typed values or explicit success/failure results.
 - Never hold the hardware lock while calling Home Assistant callbacks or writing entity state.
 - Bound waits and initialization with timeouts; cancellation must propagate cleanly.
@@ -46,6 +48,6 @@ Entities → CasaITApi → synchronous hardware drivers
 
 ## Driver Rules
 
-- Keep protocol framing, CRC handling, and synchronous I/O inside `services/`.
+- Keep protocol framing, CRC handling, and bus I/O inside `services/`.
 - Validate response lengths and value ranges before mutating cached state.
 - Do not change bus timing, port mapping, or protocol contracts without explicit hardware evidence.
