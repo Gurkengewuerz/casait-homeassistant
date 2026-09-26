@@ -20,7 +20,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from . import CasaITConfigEntry
 from .api import CasaITApi
 from .const import DOMAIN, DS2413_CHANNEL_INPUT, INPUT_ROLE_CONTACT, OW_PROFILE_MULTISENSOR, PCF8574_MAPPED_PORTS
-from .entity import CasaITMultisensorEntity
+from .entity import CasaITMultisensorEntity, CasaITOneWireEntity
 from .helpers import (
     DigitalInputConfig,
     build_bridge_slug,
@@ -311,11 +311,10 @@ class CasaITDM117BinarySensor(BinarySensorEntity):
         return self._address in self._api.dm117_states
 
 
-class CasaITDS2413BinarySensor(BinarySensorEntity):
+class CasaITDS2413BinarySensor(CasaITOneWireEntity, BinarySensorEntity):
     """Binary sensor for DS2413 channels configured as inputs."""
 
     _attr_has_entity_name = True
-    _attr_should_poll = True
     _attr_translation_key = "ds2413_input"
 
     def __init__(
@@ -343,12 +342,7 @@ class CasaITDS2413BinarySensor(BinarySensorEntity):
         self._attr_translation_placeholders = {"channel": channel_name}
         self._attr_device_info = build_onewire_device_info(config_entry.entry_id, device_id, meta)
 
-    async def async_update(self) -> None:
-        """Poll the DS2413 input state."""
-
-        self._attr_available = False
-        state = await self._api.read_ds2413_state(self._device_id, self._channel)
-        if state is None:
-            return
-        self._attr_is_on = state is not self._invert
-        self._attr_available = True
+    def _update_from_value(self, value: Any) -> None:
+        # The input is pulled up, so a closed contact reads low.
+        active = not value[self._channel]
+        self._attr_is_on = active is not self._invert

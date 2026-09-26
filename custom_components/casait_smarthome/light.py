@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
 from typing import Any
 
 from homeassistant.components.light import ATTR_BRIGHTNESS, ATTR_EFFECT, ATTR_RGB_COLOR, ATTR_TRANSITION, LightEntity
@@ -18,6 +17,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from . import CasaITConfigEntry
 from .api import CasaITApi
 from .const import DEFAULT_LED_COUNT, DOMAIN
+from .entity import CasaITOneWireEntity
 from .helpers import (
     build_bridge_slug,
     build_device_identifier,
@@ -34,7 +34,6 @@ from .services.i2cClasses.dm117 import DeviceType, DimmerConfig, DimmerSpeed, DM
 from .services.i2cClasses.led_controller import AnimationMode, Color, LEDConfig
 
 PARALLEL_UPDATES = 1
-SCAN_INTERVAL = timedelta(seconds=10)
 
 DM117_TRANSITION_SECONDS = {
     DimmerSpeed.INSTANT: 0.0,
@@ -199,11 +198,10 @@ class CasaITDM117Light(LightEntity):
         return self._address in self._api.dm117_states
 
 
-class CasaITLEDControllerLight(LightEntity, RestoreEntity):
+class CasaITLEDControllerLight(CasaITOneWireEntity, LightEntity, RestoreEntity):
     """Representation of a DS28E17-based LED controller."""
 
     _attr_has_entity_name = True
-    _attr_should_poll = True
     _attr_supported_color_modes = {ColorMode.RGB}
     _attr_color_mode = ColorMode.RGB
     _attr_supported_features = LightEntityFeature.EFFECT
@@ -235,7 +233,7 @@ class CasaITLEDControllerLight(LightEntity, RestoreEntity):
         """Restore the last UI state until the controller responds."""
 
         await super().async_added_to_hass()
-        if (last_state := await self.async_get_last_state()) is None:
+        if self._config is not None or (last_state := await self.async_get_last_state()) is None:
             return
 
         config = LEDConfig.create_default()
@@ -277,14 +275,23 @@ class CasaITLEDControllerLight(LightEntity, RestoreEntity):
             return None
         return ANIMATION_EFFECTS.get(self._config.animation)
 
-    async def async_update(self) -> None:
-        """Poll the LED controller configuration."""
-
-        config = await self._api.read_led_config(self._device_id, use_cache=False)
-        if config is None:
+    def _refresh(self) -> None:
+        # Until the first read the restored state stays usable, so the light
+        # does not show as unavailable for its first interval.
+        if (config := self._api.onewire.value(self._device_id)) is not None:
+            self._update_from_value(config)
+        elif self._config is not None and not self._attr_assumed_state:
             self._attr_available = False
-            return
 
+    def _update_from_value(self, value: Any) -> None:
+        config = LEDConfig(
+            led_count=value.led_count,
+            state=value.state,
+            brightness=value.brightness,
+            animation=value.animation,
+            animation_speed=value.animation_speed,
+            colors=list(value.colors),
+        )
         self._led_count = config.led_count or self._led_count
         self._apply_config(config, from_read=True)
 
@@ -376,5 +383,7 @@ class CasaITLEDControllerLight(LightEntity, RestoreEntity):
         if not success:
             raise HomeAssistantError(translation_domain=DOMAIN, translation_key="led_update_failed")
 
+        # The scheduler publishes the written configuration, which lands in
+        # _update_from_value; this only covers the time until it arrives.
         self._led_count = config.led_count or self._led_count
-        self._apply_config(config, from_read=False)
+        self._apply_config(config, from_read=True)

@@ -34,7 +34,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from . import CasaITConfigEntry
 from .api import CasaITApi
 from .const import DOMAIN, OW_PROFILE_MULTISENSOR
-from .entity import CasaITMultisensorEntity
+from .entity import CasaITMultisensorEntity, CasaITOneWireEntity
 from .helpers import (
     build_bridge_slug,
     build_device_identifier,
@@ -53,6 +53,7 @@ TEMP_COMP_B = 0.00216
 _LOGGER = logging.getLogger(__name__)
 
 PARALLEL_UPDATES = 1
+# Only the bridge diagnostics poll; 1-Wire values are pushed by the scheduler.
 SCAN_INTERVAL = timedelta(seconds=15)
 
 
@@ -64,8 +65,8 @@ class OneWireSensorDescription(SensorEntityDescription):
     value_fn: Callable[[Any], float | None]
 
 
-class OneWireEntity(SensorEntity):
-    """Base entity for OneWire sensors."""
+class OneWireEntity(CasaITOneWireEntity, SensorEntity):
+    """Base entity for OneWire sensors, fed by the 1-Wire scheduler."""
 
     _attr_has_entity_name = True
 
@@ -118,14 +119,8 @@ class DS18B20TemperatureSensor(OneWireEntity):
         )
         self._api = api
 
-    async def async_update(self) -> None:
-        """Fetch the latest temperature reading."""
-        self._attr_available = False
-        value = await self._api.read_ds18b20_temperature(self._device_id)
-        if value is None:
-            return
+    def _update_from_value(self, value: Any) -> None:
         self._attr_native_value = value
-        self._attr_available = True
 
 
 class DS2438Sensor(OneWireEntity):
@@ -145,16 +140,11 @@ class DS2438Sensor(OneWireEntity):
         super().__init__(entry, device_id, meta, description)
         self._api = api
 
-    async def async_update(self) -> None:
-        """Fetch the latest reading and update the sensor state."""
-        self._attr_available = False
-        reading = await self._api.read_ds2438(self._device_id)
-        if reading is None:
-            return
-        self._attr_native_value = self.entity_description.value_fn(reading)
-        if self._attr_native_value is None:
-            return
-        self._attr_available = True
+    def _update_from_value(self, value: Any) -> None:
+        self._attr_native_value = self.entity_description.value_fn(value)
+        # A reading can be complete and still yield no value for one quantity,
+        # such as a humidity outside the sensor's range.
+        self._attr_available = self._attr_native_value is not None
 
 
 class CasaITDebugSensor(SensorEntity):

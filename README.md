@@ -143,20 +143,23 @@ protocol allows — one operation per round trip was what made cycle time scale
 with module count, not the bus itself. Writes take priority over the loop so a
 command is not queued behind a full sweep.
 
-**1-Wire chips are polled** by Home Assistant on each platform's own interval,
-because a 1-Wire transaction is long and cannot be interleaved. These reads wait
-for a gap between poll cycles so a temperature conversion cannot delay an input
-edge:
+**1-Wire chips are scheduled** by one scheduler per bridge rather than by their
+entities. Each chip is read on its own interval and the result is pushed to its
+entities. A reading is a short sequence of bus transactions, and conversion
+times are waited out with the bus released, so a temperature conversion never
+delays an input edge. All DS18B20s on one bus share a single broadcast
+conversion. A chip is only shown as unavailable after three failed reads in a
+row.
 
-| Entity                             | Interval |
-| ---------------------------------- | -------- |
-| `binary_sensor`, `switch` (DS2413) | 1 s      |
-| `light` (LED controller), `number` | 10 s     |
-| `sensor` (DS18B20, DS2438)         | 15 s     |
-| Multisensor (pushed, see above)    | 10 s     |
+| Chip                                   | Default interval |
+| -------------------------------------- | ---------------- |
+| DS2413                                 | 1 s              |
+| LED controller                         | 10 s             |
+| Multisensor (fixed, see above)         | 10 s             |
+| DS2438                                 | 15 s             |
+| DS18B20 (per bus, the shortest counts) | 60 s             |
 
-Per-chip cache intervals are set from the profile and can be overridden per
-device in the options.
+The interval can be changed per device in the options.
 
 ## Configuration options
 

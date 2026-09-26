@@ -9,8 +9,8 @@ it. Unlike the other 1-Wire chips it is not polled by its entities:
 - The chips feed each other. The SHT41 compensates the SGP40 and the STCC4, so
   one sample has to run them in order.
 
-So one background task samples every board at SAMPLE_INTERVAL and pushes the
-result to the entities over the dispatcher.
+So the 1-Wire scheduler samples every board at SAMPLE_INTERVAL through this
+manager, which pushes the result to the entities over the dispatcher.
 
 Every bus access is one short DS28E17 transaction taken through the API's
 background lane. The sensors' measurement times are slept out with the bus
@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
-from contextlib import suppress
 import logging
 import time
 from typing import TYPE_CHECKING, Any
@@ -122,7 +121,6 @@ class CasaITMultisensorManager:
         self._stcc4_started: dict[str, float] = {}
         # Reference concentration per board, set by its number entity.
         self._calibration_targets: dict[str, int] = {}
-        self._task: asyncio.Task | None = None
         # Chips each board has ever been seen with. A chip that stops answering
         # keeps its entities and raises a repair issue instead of silently
         # disappearing on the next restart; only the repair flow forgets it.
@@ -295,39 +293,6 @@ class CasaITMultisensorManager:
     # ------------------------------------------------------------------
     # Sampling
     # ------------------------------------------------------------------
-
-    def start(self) -> None:
-        """Start the sampling task if there is anything to sample."""
-
-        if self._task is None and self._states:
-            self._task = self._api.hass.async_create_background_task(self._sample_loop(), "casait_multisensor")
-
-    async def stop(self) -> None:
-        """Stop the sampling task."""
-
-        if self._task is None:
-            return
-        self._task.cancel()
-        with suppress(asyncio.CancelledError):
-            await self._task
-        self._task = None
-
-    async def _sample_loop(self) -> None:
-        next_due = time.monotonic()
-        while True:
-            for device_id in list(self._states):
-                try:
-                    await self.async_sample(device_id)
-                except Exception:
-                    _LOGGER.exception("Error sampling Multisensor %s", device_id)
-            next_due += SAMPLE_INTERVAL
-            now = time.monotonic()
-            if next_due < now:
-                # A slow bus made us miss a slot. Skip ahead instead of
-                # sampling in a burst, which would feed the VOC algorithm
-                # samples closer together than it expects.
-                next_due = now + SAMPLE_INTERVAL
-            await asyncio.sleep(next_due - now)
 
     async def async_sample(self, device_id: str) -> None:
         """Read every chip of one board once and publish the result."""

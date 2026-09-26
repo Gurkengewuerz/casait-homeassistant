@@ -1,21 +1,11 @@
-"""Tests for the driver-side split of bus I/O from decoding, and the 1-Wire caches."""
+"""Tests for the driver-side split of bus I/O from decoding."""
 
 from __future__ import annotations
-
-import time
 
 from crccheck.crc import Crc8Smbus
 import pytest
 
 from custom_components.casait_smarthome.services.i2cClasses.dm117 import DM117, DeviceType
-from custom_components.casait_smarthome.services.i2cClasses.ds18b20 import (
-    CACHE_TIMEOUT,
-    CONVERSION_TIME,
-    DS18B20,
-    ConversionState,
-    SensorState,
-    TemperatureReading,
-)
 from custom_components.casait_smarthome.services.i2cClasses.pcf8574 import PCF8574, SET_HIGH_REFRESH_READS
 
 
@@ -196,88 +186,3 @@ def test_cached_ports_expire_with_the_read_interval() -> None:
 
     device._last_read_time -= device._read_interval * 2  # noqa: SLF001
     assert device.cached_ports() is None
-
-
-# ---------------------------------------------------------------------------
-# DS18B20 cache and broadcast conversion
-# ---------------------------------------------------------------------------
-
-
-class FakeOneWire:
-    """1-Wire bus double that counts conversions and serves a fixed temperature."""
-
-    def __init__(self) -> None:
-        self.bridge = self
-        self.selected: list[str] = []
-        self.written: list[list[int]] = []
-        self.resets = 0
-
-    def wire_reset(self) -> bool:
-        self.resets += 1
-        return True
-
-    def wire_write_bytes(self, data: list[int]) -> bool:
-        self.written.append(list(data))
-        return True
-
-    def select_device(self, device_id: str) -> bool:
-        self.selected.append(device_id)
-        return True
-
-
-@pytest.mark.unit
-def test_valid_cache_is_served_from_idle_without_touching_the_bus() -> None:
-    bus = FakeOneWire()
-    sensor = DS18B20(bus)
-    sensor._sensor_states["a"] = SensorState(  # noqa: SLF001
-        state=ConversionState.IDLE,
-        reading=TemperatureReading(temperature=21.5, timestamp=time.time()),
-    )
-
-    assert sensor.get_temperature("a") == 21.5
-    assert bus.resets == 0
-    assert bus.written == []
-
-
-@pytest.mark.unit
-def test_stale_cache_starts_a_new_conversion() -> None:
-    bus = FakeOneWire()
-    sensor = DS18B20(bus)
-    sensor._sensor_states["a"] = SensorState(  # noqa: SLF001
-        state=ConversionState.IDLE,
-        reading=TemperatureReading(temperature=21.5, timestamp=time.time() - CACHE_TIMEOUT - 1),
-    )
-
-    sensor.get_temperature("a")
-
-    assert bus.written == [[DS18B20.CMD_SKIP_ROM, DS18B20.CMD_CONVERT_T]]
-
-
-@pytest.mark.unit
-def test_one_broadcast_conversion_covers_every_sensor() -> None:
-    bus = FakeOneWire()
-    sensor = DS18B20(bus)
-
-    for device_id in ("a", "b", "c"):
-        sensor.get_temperature(device_id)
-
-    # One SKIP ROM convert for the whole strand, not one per sensor.
-    assert bus.written == [[DS18B20.CMD_SKIP_ROM, DS18B20.CMD_CONVERT_T]]
-    assert bus.selected == []
-
-    states = [sensor._sensor_states[device_id] for device_id in ("a", "b", "c")]  # noqa: SLF001
-    assert all(state.state is ConversionState.CONVERTING for state in states)
-    # Joining sensors adopt the conversion's start time instead of waiting again.
-    assert len({state.last_action for state in states}) == 1
-
-
-@pytest.mark.unit
-def test_a_new_conversion_starts_once_the_previous_one_finished() -> None:
-    bus = FakeOneWire()
-    sensor = DS18B20(bus)
-    sensor.get_temperature("a")
-    sensor._broadcast_at = time.time() - CONVERSION_TIME - 0.1  # noqa: SLF001
-
-    sensor.get_temperature("b")
-
-    assert len(bus.written) == 2

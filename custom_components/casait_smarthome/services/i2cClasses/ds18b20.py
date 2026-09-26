@@ -12,12 +12,12 @@ Key Features:
 - Unique 64-bit serial number
 - Configurable temperature alarms
 
-This implementation provides:
-- Non-blocking state machine for conversions
-- 60-second result caching
-- Resolution detection and handling
-- Parasitic power compatibility
-- Comprehensive error checks
+This driver only offers the two transactions a reading consists of. Waiting
+for the conversion and deciding when to read belong to the caller, which can
+release the bus in between:
+
+- start_conversion() converts every DS18B20 on the strand at once
+- read_temperature() reads one sensor's scratchpad afterwards
 
 Timing characteristics:
 - 9-bit resolution: 93.75ms
@@ -31,165 +31,39 @@ References:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from enum import Enum, auto
 import logging
-import time
 
 _LOGGER = logging.getLogger(__name__)
 
-CACHE_TIMEOUT = 60
-CONVERSION_TIME = 0.750  # 750ms for 12-bit conversion
-
-
-class ConversionState(Enum):
-    """State machine for DS18B20 conversion process."""
-
-    IDLE = auto()
-    CONVERTING = auto()
-    READING = auto()
-
-
-@dataclass
-class TemperatureReading:
-    """Data class for storing temperature reading and timestamp."""
-
-    temperature: float
-    timestamp: float
-    cache_time: float = CACHE_TIMEOUT
-
-    @property
-    def age(self) -> float:
-        """Calculate age of the reading in seconds."""
-        return time.time() - self.timestamp
-
-    @property
-    def is_valid(self) -> bool:
-        """Check if the reading is still valid based on cache time."""
-        return self.age < self.cache_time
-
-
-@dataclass
-class SensorState:
-    """Class to track the state of each DS18B20 sensor."""
-
-    state: ConversionState = ConversionState.IDLE
-    last_action: float = 0
-    reading: TemperatureReading | None = None
-
-    @property
-    def conversion_ready(self) -> bool:
-        """Check if enough time has passed for conversion to be ready."""
-        return time.time() - self.last_action >= CONVERSION_TIME
-
-    def update_timestamp(self):
-        """Update the timestamp for the last action."""
-        self.last_action = time.time()
+# Conversion time at the default 12-bit resolution.
+CONVERSION_TIME = 0.750
 
 
 class DS18B20:
-    """DS18B20 Temperature Sensor with non-blocking state machine."""
+    """DS18B20 temperature sensors on one 1-Wire bus."""
 
     CMD_CONVERT_T = 0x44
     CMD_READ_SCRATCHPAD = 0xBE
     CMD_SKIP_ROM = 0xCC
 
     def __init__(self, bus_interface) -> None:
-        """Initialize DS18B20 instance."""
+        """Initialize for one bus."""
         self.bus = bus_interface
-        self._sensor_states: dict[str, SensorState] = {}
-        self._broadcast_at = 0.0
 
-    def _get_state(self, device_id: str) -> SensorState:
-        if device_id not in self._sensor_states:
-            self._sensor_states[device_id] = SensorState()
-        return self._sensor_states[device_id]
+    def start_conversion(self) -> bool:
+        """Start a conversion in every sensor on the strand at once.
 
-    def get_temperature(self, device_id: str, custom_cache: int | None = None) -> float | None:
-        """Get temperature reading, starting new conversion if needed."""
-        state = self._get_state(device_id)
-
-        # A finished cycle leaves the machine IDLE, so gating the cache on "not IDLE"
-        # meant a fresh reading was never served and every poll restarted a whole
-        # conversion. Serve the cache whenever it is still within its interval; a
-        # cycle already in flight has to keep running to completion.
-        if state.state == ConversionState.IDLE and state.reading and state.reading.is_valid:
-            return state.reading.temperature
-
-        if not self._process_state(device_id, state, custom_cache):
-            return state.reading.temperature if state.reading else None
-
-        return state.reading.temperature if state.reading else None
-
-    def _process_state(self, device_id: str, state: SensorState, custom_cache: int | None = None) -> bool:
-        try:
-            if state.state == ConversionState.IDLE:
-                _LOGGER.debug("Starting conversion for DS18B20 %s", device_id)
-                started = self._start_conversion(device_id)
-                if started is None:
-                    return False
-                state.state = ConversionState.CONVERTING
-                # Adopt the conversion's own start time rather than "now". A sensor
-                # joining a broadcast already in flight would otherwise wait a second
-                # full conversion time for a result that is already on its way.
-                state.last_action = started
-                return True
-
-            if not state.conversion_ready:
-                _LOGGER.debug(
-                    "Waiting for conversion, elapsed: %.1fms",
-                    (time.time() - state.last_action) * 1000,
-                )
-                return True
-
-            if state.state == ConversionState.CONVERTING:
-                _LOGGER.debug("Conversion complete, reading scratchpad")
-                state.state = ConversionState.READING
-                return True
-
-            if state.state == ConversionState.READING:
-                temperature = self._read_temperature(device_id)
-                if temperature is not None:
-                    state.reading = TemperatureReading(
-                        temperature=temperature,
-                        timestamp=time.time(),
-                        cache_time=custom_cache or CACHE_TIMEOUT,
-                    )
-                    state.state = ConversionState.IDLE
-                    _LOGGER.debug("Temperature read successful: %.1f°C", temperature)
-                    return True
-        except Exception:
-            _LOGGER.exception("Error processing state %s for %s", state.state, device_id)
-            state.state = ConversionState.IDLE
-            return False
-        return False
-
-    def _start_conversion(self, device_id: str) -> float | None:
-        """Convert every sensor on the strand at once; returns the start time.
-
-        CONVERT T after a SKIP ROM starts the conversion in all DS18B20s on the bus
-        simultaneously, and they all take the same 750 ms. Addressing them one at a
-        time paid that wait once per sensor for no benefit. Returns None if the
-        command could not be sent.
+        CONVERT T after SKIP ROM reaches all DS18B20s simultaneously and they all
+        take the same time, so addressing them one by one would pay the wait
+        once per sensor for nothing.
         """
 
-        now = time.time()
-        if now - self._broadcast_at < CONVERSION_TIME:
-            # A conversion is already running for the whole strand; join it.
-            return self._broadcast_at
-
         if not self.bus.bridge.wire_reset():
-            _LOGGER.error("1-Wire reset failed before conversion for %s", device_id)
-            return None
+            _LOGGER.debug("1-Wire reset failed before a DS18B20 conversion")
+            return False
+        return bool(self.bus.bridge.wire_write_bytes([self.CMD_SKIP_ROM, self.CMD_CONVERT_T]))
 
-        if not self.bus.bridge.wire_write_bytes([self.CMD_SKIP_ROM, self.CMD_CONVERT_T]):
-            _LOGGER.error("Failed to start conversion for %s", device_id)
-            return None
-
-        self._broadcast_at = time.time()
-        return self._broadcast_at
-
-    def _read_temperature(self, device_id: str) -> float | None:
+    def read_temperature(self, device_id: str) -> float | None:
         """Read temperature from scratchpad. Returns temperature in °C or None on error."""
         if not self.bus.select_device(device_id):
             return None

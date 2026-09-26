@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import timedelta
 from typing import Any
 
@@ -30,7 +30,7 @@ from .const import (
     OM117_MODE_SHUTTER,
     OW_PROFILE_MULTISENSOR,
 )
-from .entity import CasaITMultisensorEntity
+from .entity import CasaITMultisensorEntity, CasaITOneWireEntity
 from .helpers import (
     OM117PairConfig,
     build_bridge_slug,
@@ -208,11 +208,10 @@ class CasaITOM117RuntimeNumber(NumberEntity, RestoreEntity):
         return self._address in self._api.im117_om117
 
 
-class CasaITLEDControllerNumber(NumberEntity):
+class CasaITLEDControllerNumber(CasaITOneWireEntity, NumberEntity):
     """Writable LED controller configuration register."""
 
     _attr_has_entity_name = True
-    _attr_should_poll = True
     _attr_mode = NumberMode.SLIDER
     _attr_entity_category = EntityCategory.CONFIG
     _attr_native_min_value = 0
@@ -240,26 +239,21 @@ class CasaITLEDControllerNumber(NumberEntity):
         self.entity_id = build_onewire_entity_id("number", bridge_slug, device_id, meta, "led", field)
         self._attr_device_info = build_onewire_device_info(entry.entry_id, device_id, meta)
 
-    async def async_update(self) -> None:
-        """Read the current register value."""
-
-        config = await self._api.read_led_config(self._device_id, use_cache=False)
-        self._attr_available = config is not None
-        if config is not None:
-            self._attr_native_value = int(getattr(config, self._field))
+    def _update_from_value(self, value: Any) -> None:
+        self._attr_native_value = int(getattr(value, self._field))
 
     async def async_set_native_value(self, value: float) -> None:
         """Write the register while preserving the remaining LED configuration."""
 
-        config = await self._api.read_led_config(self._device_id, use_cache=False) or LEDConfig.create_default()
-        setattr(config, self._field, round(value))
+        current = self._api.onewire.value(self._device_id)
+        if current is None:
+            current = await self._api.read_led_config(self._device_id, use_cache=False)
+        config = replace(current or LEDConfig.create_default(), **{self._field: round(value)})
         if not config.validate():
             raise HomeAssistantError(translation_domain=DOMAIN, translation_key="invalid_led_configuration")
+        # The written configuration comes back through the scheduler's signal.
         if not await self._api.write_led_config(self._device_id, config):
             raise HomeAssistantError(translation_domain=DOMAIN, translation_key="led_update_failed")
-        self._attr_native_value = int(getattr(config, self._field))
-        self._attr_available = True
-        self.async_write_ha_state()
 
 
 CO2_CALIBRATION_TARGET = NumberEntityDescription(

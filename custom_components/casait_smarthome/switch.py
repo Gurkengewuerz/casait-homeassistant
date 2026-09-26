@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
 import logging
 from typing import Any
 
@@ -16,6 +15,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from . import CasaITConfigEntry
 from .api import CasaITApi
 from .const import DOMAIN, DS2413_CHANNEL_OUTPUT, OM117_MODE_SWITCH, PCF8574_MAPPED_PORTS
+from .entity import CasaITOneWireEntity
 from .helpers import (
     build_bridge_slug,
     build_device_identifier,
@@ -35,7 +35,6 @@ from .services.i2cClasses.dm117 import DeviceType, DM117PortConfig, PortConfig
 _LOGGER = logging.getLogger(__name__)
 
 PARALLEL_UPDATES = 1
-SCAN_INTERVAL = timedelta(seconds=1)
 
 
 async def async_setup_entry(
@@ -258,11 +257,10 @@ class CasaITDM117Switch(SwitchEntity):
         return self._address in self._api.dm117_states
 
 
-class CasaITDS2413Switch(SwitchEntity):
+class CasaITDS2413Switch(CasaITOneWireEntity, SwitchEntity):
     """Switch entity for DS2413 channels configured as outputs."""
 
     _attr_has_entity_name = True
-    _attr_should_poll = True
     _attr_translation_key = "ds2413_output"
 
     def __init__(
@@ -286,15 +284,9 @@ class CasaITDS2413Switch(SwitchEntity):
         self._attr_translation_placeholders = {"channel": channel_name}
         self._attr_device_info = build_onewire_device_info(config_entry.entry_id, device_id, meta)
 
-    async def async_update(self) -> None:
-        """Poll current DS2413 output state."""
-
-        self._attr_available = False
-        state = await self._api.read_ds2413_state(self._device_id, self._channel, invert=False)
-        if state is None:
-            return
-        self._attr_is_on = state
-        self._attr_available = True
+    def _update_from_value(self, value: Any) -> None:
+        # A switched-on output pulls its pin low.
+        self._attr_is_on = not value[self._channel]
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the DS2413 output on."""
@@ -307,7 +299,6 @@ class CasaITDS2413Switch(SwitchEntity):
         await self._async_set_state(False)
 
     async def _async_set_state(self, state: bool) -> None:
+        # The written pin levels come back through the scheduler's signal.
         if not await self._api.write_ds2413_state(self._device_id, self._channel, state):
             raise HomeAssistantError(translation_domain=DOMAIN, translation_key="ds2413_output_write_failed")
-        self._attr_is_on = state
-        self.async_write_ha_state()

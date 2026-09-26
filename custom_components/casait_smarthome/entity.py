@@ -1,4 +1,4 @@
-"""Shared entity base for casaIT Multisensor boards."""
+"""Shared entity bases for dispatcher-fed 1-Wire devices."""
 
 from __future__ import annotations
 
@@ -58,6 +58,42 @@ class CasaITMultisensorEntity(Entity):
 
     def _update_from_sample(self) -> None:
         """Refresh the entity's attributes from the latest sample."""
+
+
+class CasaITOneWireEntity(Entity):
+    """Mixin for an entity fed by the 1-Wire scheduler rather than polling on its own.
+
+    Subclasses keep their own identity attributes and only implement
+    ``_update_from_value``; availability follows whether the scheduler has a
+    value for the device.
+    """
+
+    _attr_should_poll = False
+    _api: CasaITApi
+    _device_id: str
+
+    async def async_added_to_hass(self) -> None:
+        """Follow the device's scheduled reads."""
+
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_dispatcher_connect(self.hass, self._api.onewire.signal(self._device_id), self._handle_value)
+        )
+        self._refresh()
+
+    @callback
+    def _handle_value(self) -> None:
+        self._refresh()
+        self.async_write_ha_state()
+
+    def _refresh(self) -> None:
+        value = self._api.onewire.value(self._device_id)
+        self._attr_available = value is not None
+        if value is not None:
+            self._update_from_value(value)
+
+    def _update_from_value(self, value: Any) -> None:
+        """Refresh the entity's attributes from the device's latest value."""
 
 
 def raise_command_error(err: MultisensorCommandError) -> None:

@@ -60,7 +60,6 @@ class OneWireBus:
         self.ds28e17 = DS28E17(self)
         self.multisensor = Multisensor(self.ds28e17)
         self.last_scan_time = 0
-        self._interval_cache: dict[str, int] = {}
         self._timeout_cache: dict[str, tuple[float, int]] = {}
         self._scan_bus()
 
@@ -251,42 +250,10 @@ class OneWireBus:
         _, count = self._timeout_cache.get(device_id, (time.time(), 0))
         self._timeout_cache[device_id] = (time.time(), count + 1)
 
-    def set_interval(self, device_id: str, seconds: int) -> None:
-        """Set the driver cache interval for a 1-Wire device."""
-
-        self._interval_cache[device_id] = seconds
-
-    def get_interval(self, device_id: str) -> int | None:
-        """Get polling interval for device."""
-        return self._interval_cache.get(device_id, None)
-
-    def read_temperature(self, device_id: str) -> float | None:
-        """Read temperature from DS18B20 sensor."""
-        try:
-            return self.ds18b20.get_temperature(device_id, self.get_interval(device_id))
-        except Exception:
-            _LOGGER.exception("Error reading temperature")
-            return None
-
-    def read_binary_state(self, device_id: str, channel: int = 0, *, invert: bool = True) -> bool | None:
-        """Read binary state from DS2413."""
-        try:
-            state = self.ds2413.get_state(device_id, channel, self.get_interval(device_id))
-            if state is None:
-                return None
-        except Exception:
-            _LOGGER.exception("Error reading binary state")
-            return None
-        if invert:
-            return not state
-        return state
-
     def write_led_config(self, device_id: str, config: LEDConfig) -> bool:
         """Write LED configuration to device."""
-        return self.led_controller.write_config(device_id, config, custom_cache=self.get_interval(device_id))
+        return self.led_controller.write_config(device_id, config)
 
     def read_led_config(self, device_id: str, use_cache: bool = True) -> LEDConfig | None:
         """Read LED configuration from device."""
-        return self.led_controller.read_config(
-            device_id, use_cache=use_cache, custom_cache=self.get_interval(device_id)
-        )
+        return self.led_controller.read_config(device_id, use_cache=use_cache)

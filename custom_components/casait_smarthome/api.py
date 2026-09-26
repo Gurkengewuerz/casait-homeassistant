@@ -19,8 +19,6 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from .const import (
     DEFAULT_FAST_POLL_INTERVAL,
     DEFAULT_INPUT_DEBOUNCE_MS,
-    DEFAULT_OW_POLL_INTERVAL,
-    DEFAULT_OW_PROFILE,
     DEFAULT_SLOW_POLL_INTERVAL,
     DOMAIN,
     DS28E17_FAMILY,
@@ -36,9 +34,9 @@ from .helpers import (
     get_address_range,
 )
 from .multisensor import CasaITMultisensorManager
+from .onewire import CasaITOneWireScheduler
 from .services.i2cClasses.dm117 import DM117, DeviceType, DM117PortConfig, PortConfig
 from .services.i2cClasses.ds28e17 import DS28E17Error
-from .services.i2cClasses.ds2438 import DS2438Reading
 from .services.i2cClasses.edge_tracker import EdgeTracker
 from .services.i2cClasses.led_controller import LEDConfig
 from .services.i2cClasses.multisensor import MultisensorComponents
@@ -158,6 +156,7 @@ class CasaITApi:
         # a board is only identified once per setup.
         self._ds28e17_identity: dict[str, tuple[str, MultisensorComponents | None]] = {}
         self.multisensor = CasaITMultisensorManager(self)
+        self.onewire = CasaITOneWireScheduler(self)
 
     def start_initialization(self, dm_config: Mapping[int, Mapping[int, DeviceType]] | None = None) -> None:
         """Kick off asynchronous initialization for initial scans and polling."""
@@ -245,6 +244,7 @@ class CasaITApi:
                 | dict(sorted(self._ow_missing_scans.items())),
             },
             "multisensors": self.multisensor.diagnostic_data,
+            "onewire_schedule": self.onewire.diagnostic_data,
             "transport": self.bus.stats,
         }
 
@@ -406,7 +406,7 @@ class CasaITApi:
         self._poll_task = self.hass.async_create_background_task(self._poll_loop(), "casait_poll_loop")
         if self._topology.enabled:
             self._topology_task = self.hass.async_create_background_task(self._topology_loop(), "casait_topology_watch")
-        self.multisensor.start()
+        self.onewire.start()
 
     async def stop_polling(self) -> None:
         """Stop background polling task."""
@@ -415,7 +415,7 @@ class CasaITApi:
             return
 
         self._stop_event.set()
-        await self.multisensor.stop()
+        await self.onewire.stop()
         await self._poll_task
         self._poll_task = None
         if self._topology_task:
@@ -1093,7 +1093,7 @@ class CasaITApi:
         self.ow_devices = discovered
         self.ow_ids = set(discovered)
         await self._identify_ds28e17()
-        self._apply_onewire_intervals()
+        self._configure_onewire_schedule()
 
         if discovered:
             _LOGGER.info("Discovered OneWire devices: %s", list(discovered.keys()))
@@ -1147,8 +1147,6 @@ class CasaITApi:
             self.multisensor.register(device_id, components)
 
         self.multisensor.unregister_missing(set(self.ow_devices))
-        if self._poll_task is not None:
-            self.multisensor.start()
 
     def onewire_profile(self, device_id: str) -> str | None:
         """Return the effective profile of one 1-Wire chip: configured, detected, or by family."""
@@ -1210,25 +1208,15 @@ class CasaITApi:
             device_id: count for device_id, count in self._ow_missing_scans.items() if device_id in discovered
         }
 
-    def _apply_onewire_intervals(self) -> None:
-        """Apply configured or profile-default cache intervals after a 1-Wire scan."""
+    def _configure_onewire_schedule(self) -> None:
+        """Hand the scheduler every chip the last scan found, with its profile."""
 
-        for device_id, meta in self.ow_devices.items():
-            bus = self.sm117.get(meta["bus_address"])
-            if bus is None:
-                continue
-
-            profile = self._onewire_profiles.get(device_id)
-            if profile is None:
-                family_code = meta.get("family_code")
-                if isinstance(family_code, int):
-                    profile = DEFAULT_OW_PROFILE.get(family_code)
-
-            interval = self._onewire_poll_intervals.get(device_id)
-            if interval is None and profile is not None:
-                interval = DEFAULT_OW_POLL_INTERVAL.get(profile)
-            if interval is not None:
-                bus.set_interval(device_id, interval)
+        profiles = {
+            device_id: profile
+            for device_id in self.ow_devices
+            if (profile := self.onewire_profile(device_id)) is not None
+        }
+        self.onewire.configure(profiles, self._onewire_poll_intervals)
 
     async def async_configure_dm117(self, slot_config: Mapping[int, Mapping[int, DeviceType]]) -> None:
         """Configure DM117 modules based on slot configuration."""
@@ -1251,39 +1239,6 @@ class CasaITApi:
 
         return self.sm117.get(meta["bus_address"])
 
-    async def read_ds18b20_temperature(self, device_id: str) -> float | None:
-        """Read temperature from a DS18B20 device."""
-
-        bus = self._get_onewire_bus(device_id)
-        if not bus:
-            return None
-
-        async with self._background_access():
-            return await self.hass.async_add_executor_job(bus.read_temperature, device_id)
-
-    async def read_ds2438(self, device_id: str) -> DS2438Reading | None:
-        """Read values from a DS2438 device."""
-
-        bus = self._get_onewire_bus(device_id)
-        if not bus:
-            return None
-
-        async with self._background_access():
-            return await self.hass.async_add_executor_job(
-                bus.ds2438.get_reading, device_id, bus.get_interval(device_id)
-            )
-
-    async def read_ds2413_state(self, device_id: str, channel: int, *, invert: bool = True) -> bool | None:
-        """Read a binary state from a DS2413 channel."""
-
-        bus = self._get_onewire_bus(device_id)
-        if not bus:
-            return None
-
-        read_job = partial(bus.read_binary_state, device_id, channel, invert=invert)
-        async with self._background_access():
-            return await self.hass.async_add_executor_job(read_job)
-
     async def write_ds2413_state(self, device_id: str, channel: int, value: bool) -> bool:
         """Write a binary state to a DS2413 channel."""
 
@@ -1292,7 +1247,11 @@ class CasaITApi:
             return False
 
         async with self._write_access():
-            return await self.hass.async_add_executor_job(bus.ds2413.set_state, device_id, channel, value)
+            pins = await self.hass.async_add_executor_job(bus.ds2413.set_state, device_id, channel, value)
+        if pins is None:
+            return False
+        self.onewire.set_value(device_id, pins)
+        return True
 
     async def read_led_config(self, device_id: str, *, use_cache: bool = True) -> LEDConfig | None:
         """Read the LED controller configuration for a device."""
@@ -1314,7 +1273,10 @@ class CasaITApi:
 
         write_job = partial(bus.write_led_config, device_id, config)
         async with self._write_access():
-            return await self.hass.async_add_executor_job(write_job)
+            written = await self.hass.async_add_executor_job(write_job)
+        if written:
+            self.onewire.set_value(device_id, config)
+        return written
 
     async def async_write_pcf_port(self, address: int, port: int, state: int) -> bool:
         """Write a PCF8574 port and publish the resulting state."""
