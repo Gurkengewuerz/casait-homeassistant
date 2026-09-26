@@ -22,14 +22,22 @@ References:
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 import logging
 import time
+from typing import Any
 
 from .ds28e17 import DS28E17, DS28E17Error, DS28E17Nack
 from .gas_index import VocGasIndexAlgorithm
 
 _LOGGER = logging.getLogger(__name__)
+
+CHIP_SHT41 = "sht41"
+CHIP_SGP40 = "sgp40"
+CHIP_STCC4 = "stcc4"
+CHIP_VEML7700 = "veml7700"
+CHIPS = (CHIP_SHT41, CHIP_SGP40, CHIP_STCC4, CHIP_VEML7700)
 
 SHT41_ADDRESS = 0x44
 SGP40_ADDRESS = 0x59
@@ -192,6 +200,58 @@ class MultisensorComponents:
 
         return self.sht41 or self.sgp40 or self.stcc4 or self.veml7700
 
+    def has(self, chip: str) -> bool:
+        """Return whether one chip, by its CHIP_* name, is fitted."""
+
+        return {
+            CHIP_SHT41: self.sht41,
+            CHIP_SGP40: self.sgp40,
+            CHIP_STCC4: self.stcc4,
+            CHIP_VEML7700: self.veml7700,
+        }[chip]
+
+    def union(self, other: MultisensorComponents) -> MultisensorComponents:
+        """Return the chips fitted in either set."""
+
+        return MultisensorComponents(
+            sht41=self.sht41 or other.sht41,
+            sgp40=self.sgp40 or other.sgp40,
+            stcc4_address=self.stcc4_address if self.stcc4_address is not None else other.stcc4_address,
+            veml7700=self.veml7700 or other.veml7700,
+        )
+
+    def without(self, chip: str) -> MultisensorComponents:
+        """Return the same set minus one chip."""
+
+        return MultisensorComponents(
+            sht41=self.sht41 and chip != CHIP_SHT41,
+            sgp40=self.sgp40 and chip != CHIP_SGP40,
+            stcc4_address=None if chip == CHIP_STCC4 else self.stcc4_address,
+            veml7700=self.veml7700 and chip != CHIP_VEML7700,
+        )
+
+    def to_dict(self) -> dict[str, bool | int | None]:
+        """Return a JSON-safe form for storage."""
+
+        return {
+            CHIP_SHT41: self.sht41,
+            CHIP_SGP40: self.sgp40,
+            "stcc4_address": self.stcc4_address,
+            CHIP_VEML7700: self.veml7700,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> MultisensorComponents:
+        """Rebuild from the stored form, ignoring anything malformed."""
+
+        address = data.get("stcc4_address")
+        return cls(
+            sht41=bool(data.get(CHIP_SHT41)),
+            sgp40=bool(data.get(CHIP_SGP40)),
+            stcc4_address=address if isinstance(address, int) else None,
+            veml7700=bool(data.get(CHIP_VEML7700)),
+        )
+
     def as_list(self) -> list[str]:
         """Return the fitted chips by name, for diagnostics."""
 
@@ -272,19 +332,27 @@ class Multisensor:
         bus fault is not mistaken for an empty board.
         """
 
-        sht41 = self._probe_sht41(device_id)
-        sgp40 = self._probe_sgp40(device_id)
-        stcc4_address = next(
-            (address for address in STCC4_ADDRESSES if self._probe_stcc4(device_id, address)),
-            None,
+        # Writing the VEML7700 configuration doubles as its probe and powers it up.
+        return MultisensorComponents(
+            sht41=self.probe_chip(device_id, CHIP_SHT41) is not None,
+            sgp40=self.probe_chip(device_id, CHIP_SGP40) is not None,
+            stcc4_address=self.probe_chip(device_id, CHIP_STCC4),
+            veml7700=self.probe_chip(device_id, CHIP_VEML7700) is not None,
         )
-        # Writing the configuration doubles as the probe and powers the chip up.
-        veml7700 = self.bridge.probe(
-            device_id,
-            VEML7700_ADDRESS,
-            bytes([VEML7700_REG_ALS_CONF]) + veml7700_config(VEML7700_DEFAULT_RANGE).to_bytes(2, "little"),
-        )
-        return MultisensorComponents(sht41=sht41, sgp40=sgp40, stcc4_address=stcc4_address, veml7700=veml7700)
+
+    def probe_chip(self, device_id: str, chip: str) -> int | None:
+        """Probe one chip; return its I2C address when it answers, else None."""
+
+        if chip == CHIP_SHT41:
+            return SHT41_ADDRESS if self._probe_sht41(device_id) else None
+        if chip == CHIP_SGP40:
+            return SGP40_ADDRESS if self._probe_sgp40(device_id) else None
+        if chip == CHIP_STCC4:
+            return next((address for address in STCC4_ADDRESSES if self._probe_stcc4(device_id, address)), None)
+        if chip == CHIP_VEML7700:
+            config = bytes([VEML7700_REG_ALS_CONF]) + veml7700_config(VEML7700_DEFAULT_RANGE).to_bytes(2, "little")
+            return VEML7700_ADDRESS if self.bridge.probe(device_id, VEML7700_ADDRESS, config) else None
+        raise ValueError(f"unknown chip {chip}")
 
     def _probe_sht41(self, device_id: str) -> bool:
         if not self.bridge.probe(device_id, SHT41_ADDRESS, bytes([SHT41_CMD_SERIAL])):

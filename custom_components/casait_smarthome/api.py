@@ -1107,14 +1107,25 @@ class CasaITApi:
         Multisensor are told apart by which I2C addresses answer behind it.
         """
 
+        await self.multisensor.async_load()
         for device_id, meta in self.ow_devices.items():
             if meta.get("family_code") != DS28E17_FAMILY:
                 continue
             identity = self._ds28e17_identity.get(device_id)
             if identity is None:
                 identity = await self.multisensor.async_detect(device_id)
+                known = self.multisensor.known_components(device_id)
+                if identity is None and known is not None and known.any:
+                    # None of its sensors answered this time, but it has been a
+                    # Multisensor before. Keep it one, so its entities stay and
+                    # the missing chips get reported instead of the board
+                    # turning into an LED controller.
+                    identity = (OW_PROFILE_MULTISENSOR, known)
                 if identity is None:
                     continue
+                profile, found = identity
+                if profile == OW_PROFILE_MULTISENSOR and found is not None:
+                    identity = (profile, await self.multisensor.async_remember(device_id, found))
                 self._ds28e17_identity[device_id] = identity
             meta["detected_profile"], components = identity
 

@@ -26,12 +26,19 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any
 
+from homeassistant.helpers import entity_registry as er, issue_registry as ir
 from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.helpers.storage import Store
 
-from .const import DEFAULT_CO2_CALIBRATION_PPM, OW_PROFILE_LED, OW_PROFILE_MULTISENSOR
+from .const import DEFAULT_CO2_CALIBRATION_PPM, DOMAIN, OW_PROFILE_LED, OW_PROFILE_MULTISENSOR
 from .services.i2cClasses.ds28e17 import DS28E17Error
 from .services.i2cClasses.gas_index import VocGasIndexAlgorithm
 from .services.i2cClasses.multisensor import (
+    CHIP_SGP40,
+    CHIP_SHT41,
+    CHIP_STCC4,
+    CHIP_VEML7700,
+    CHIPS,
     SGP40_MEASURE_TIME,
     SHT41_MEASURE_TIME,
     STCC4_CMD_CONDITIONING,
@@ -65,6 +72,29 @@ SAMPLE_INTERVAL = 10.0
 STCC4_FRC_WARMUP = 180.0
 # Sensirion only recommends restoring learned VOC states after short outages.
 VOC_STATE_MAX_AGE = 600.0
+# Samples in a row a chip may fail before it is reported as missing: one minute.
+# A single failed read is noise on a long 1-Wire line, not a missing sensor.
+CHIP_MISSING_SAMPLES = 6
+STORE_VERSION = 1
+
+# The entities each chip provides, by description key. Forgetting a chip removes
+# exactly these.
+CHIP_ENTITY_KEYS: dict[str, tuple[str, ...]] = {
+    CHIP_SHT41: ("temperature", "humidity"),
+    CHIP_SGP40: ("voc_index", "voc_raw"),
+    CHIP_STCC4: (
+        "co2",
+        "co2_calibration_correction",
+        "co2_calibration_target",
+        "co2_calibrate",
+        "co2_self_test",
+        "co2_self_test_result",
+        "co2_conditioning",
+        "co2_factory_reset",
+    ),
+    CHIP_VEML7700: ("illuminance",),
+}
+CHIP_NAMES = {CHIP_SHT41: "SHT41", CHIP_SGP40: "SGP40", CHIP_STCC4: "STCC4", CHIP_VEML7700: "VEML7700"}
 
 
 class MultisensorCommandError(Exception):
@@ -93,6 +123,14 @@ class CasaITMultisensorManager:
         # Reference concentration per board, set by its number entity.
         self._calibration_targets: dict[str, int] = {}
         self._task: asyncio.Task | None = None
+        # Chips each board has ever been seen with. A chip that stops answering
+        # keeps its entities and raises a repair issue instead of silently
+        # disappearing on the next restart; only the repair flow forgets it.
+        self._store: Store[dict[str, dict[str, Any]]] = Store(
+            api.hass, STORE_VERSION, f"{DOMAIN}.{api.entry_id}.multisensor"
+        )
+        self._known: dict[str, MultisensorComponents] | None = None
+        self._chip_failures: dict[tuple[str, str], int] = {}
 
     # ------------------------------------------------------------------
     # Discovery
@@ -119,6 +157,43 @@ class CasaITMultisensorManager:
 
         _LOGGER.info("DS28E17 %s is a Multisensor with %s", device_id, ", ".join(components.as_list()))
         return OW_PROFILE_MULTISENSOR, components
+
+    async def async_load(self) -> None:
+        """Load the chips every board was seen with before."""
+
+        if self._known is not None:
+            return
+        stored = await self._store.async_load() or {}
+        self._known = {
+            device_id: MultisensorComponents.from_dict(data)
+            for device_id, data in stored.items()
+            if isinstance(data, dict)
+        }
+
+    def known_components(self, device_id: str) -> MultisensorComponents | None:
+        """Return the chips a board was seen with before, if it ever was."""
+
+        return (self._known or {}).get(device_id)
+
+    async def async_remember(self, device_id: str, found: MultisensorComponents) -> MultisensorComponents:
+        """Merge freshly detected chips with the ones seen before and store them.
+
+        Returns the merged set: a chip that did not answer this time is kept, so
+        its entities stay and the sampler notices it and raises the issue.
+        """
+
+        await self.async_load()
+        assert self._known is not None
+        previous = self._known.get(device_id)
+        merged = found if previous is None else previous.union(found)
+        if merged != previous:
+            self._known[device_id] = merged
+            await self._async_save()
+        return merged
+
+    async def _async_save(self) -> None:
+        assert self._known is not None
+        await self._store.async_save({device_id: parts.to_dict() for device_id, parts in self._known.items()})
 
     def register(self, device_id: str, components: MultisensorComponents) -> None:
         """Start tracking one board, or update the chips it carries."""
@@ -267,12 +342,14 @@ class CasaITMultisensorManager:
             reading = state.reading
             parts = state.components
             failures: list[str] = []
+            answered: set[str] = set()
 
             if parts.sht41:
                 try:
                     await self._job(device_id, lambda ms: ms.sht41_trigger(device_id))
                     await asyncio.sleep(SHT41_MEASURE_TIME)
                     await self._job(device_id, lambda ms: ms.sht41_fetch(device_id, state))
+                    answered.add(CHIP_SHT41)
                 except DS28E17Error as err:
                     failures.append(f"SHT41: {err}")
                     reading.temperature = reading.humidity = None
@@ -291,6 +368,7 @@ class CasaITMultisensorManager:
             if parts.veml7700:
                 try:
                     await self._job(device_id, lambda ms: ms.veml7700_sample(device_id, state))
+                    answered.add(CHIP_VEML7700)
                 except DS28E17Error as err:
                     failures.append(f"VEML7700: {err}")
                     reading.illuminance = None
@@ -300,6 +378,7 @@ class CasaITMultisensorManager:
                 was_running = state.stcc4_running
                 try:
                     await self._job(device_id, lambda ms: ms.stcc4_sample(device_id, state))
+                    answered.add(CHIP_STCC4)
                 except DS28E17Error as err:
                     failures.append(f"STCC4: {err}")
                     reading.co2 = None
@@ -310,12 +389,97 @@ class CasaITMultisensorManager:
                 await asyncio.sleep(max(0.0, SGP40_MEASURE_TIME - (time.monotonic() - sgp_started)))
                 try:
                     await self._job(device_id, lambda ms: ms.sgp40_fetch(device_id, state))
+                    answered.add(CHIP_SGP40)
                 except DS28E17Error as err:
                     failures.append(f"SGP40: {err}")
                     reading.voc_index = reading.voc_raw = None
 
         self._log_health(device_id, failures)
+        self._track_chips(device_id, parts, answered)
         async_dispatcher_send(self._api.hass, self.signal(device_id))
+
+    def _track_chips(self, device_id: str, parts: MultisensorComponents, answered: set[str]) -> None:
+        """Raise a repair issue for a chip that stopped answering, clear it when it is back."""
+
+        for chip in CHIPS:
+            if not parts.has(chip):
+                continue
+            key = (device_id, chip)
+            if chip in answered:
+                if self._chip_failures.pop(key, 0) >= CHIP_MISSING_SAMPLES:
+                    _LOGGER.info("%s on Multisensor %s answers again", CHIP_NAMES[chip], device_id)
+                ir.async_delete_issue(self._api.hass, DOMAIN, self.chip_issue_id(device_id, chip))
+                continue
+            failures = self._chip_failures[key] = self._chip_failures.get(key, 0) + 1
+            if failures == CHIP_MISSING_SAMPLES:
+                self._raise_chip_issue(device_id, chip)
+
+    def chip_issue_id(self, device_id: str, chip: str) -> str:
+        """Return the repair issue id for one missing chip."""
+
+        return f"multisensor_chip_missing_{self._api.entry_id}_{device_id}_{chip}"
+
+    def _raise_chip_issue(self, device_id: str, chip: str) -> None:
+        meta = self._api.ow_devices.get(device_id, {})
+        name = str(meta.get("name") or f"Multisensor {device_id}")
+        _LOGGER.warning("%s on Multisensor %s stopped answering", CHIP_NAMES[chip], device_id)
+        ir.async_create_issue(
+            self._api.hass,
+            DOMAIN,
+            self.chip_issue_id(device_id, chip),
+            data={"entry_id": self._api.entry_id, "device_id": device_id, "chip": chip, "name": name},
+            is_fixable=True,
+            is_persistent=False,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key="multisensor_chip_missing",
+            translation_placeholders={"name": name, "chip": CHIP_NAMES[chip]},
+        )
+
+    async def async_probe_chip(self, device_id: str, chip: str) -> bool:
+        """Look for one chip right now; clear its issue if it answers."""
+
+        state = self._states.get(device_id)
+        lock = self._locks.get(device_id)
+        if state is None or lock is None:
+            return False
+        async with lock:
+            try:
+                address = await self._job(device_id, lambda ms: ms.probe_chip(device_id, chip))
+            except DS28E17Error:
+                return False
+            if chip == CHIP_STCC4:
+                # The probe stopped continuous measurement.
+                state.stcc4_running = False
+                state.stcc4_ready_at = time.monotonic() + STCC4_STOP_TIME
+                if address is not None and address != state.components.stcc4_address:
+                    state.components = state.components.without(CHIP_STCC4).union(
+                        MultisensorComponents(stcc4_address=address)
+                    )
+            if chip == CHIP_VEML7700:
+                state.veml_configured = False
+        if address is None:
+            return False
+        self._chip_failures.pop((device_id, chip), None)
+        ir.async_delete_issue(self._api.hass, DOMAIN, self.chip_issue_id(device_id, chip))
+        return True
+
+    async def async_forget_chip(self, device_id: str, chip: str) -> None:
+        """Drop a chip for good: from memory, and with its entities from the registry."""
+
+        await self.async_load()
+        assert self._known is not None
+        if (known := self._known.get(device_id)) is not None:
+            self._known[device_id] = known.without(chip)
+            await self._async_save()
+
+        registry = er.async_get(self._api.hass)
+        for key in CHIP_ENTITY_KEYS[chip]:
+            unique_id = f"{self._api.entry_id}_{device_id}_{key}"
+            for domain in ("sensor", "binary_sensor", "button", "number"):
+                if entity_id := registry.async_get_entity_id(domain, DOMAIN, unique_id):
+                    registry.async_remove(entity_id)
+        self._chip_failures.pop((device_id, chip), None)
+        ir.async_delete_issue(self._api.hass, DOMAIN, self.chip_issue_id(device_id, chip))
 
     def _log_health(self, device_id: str, failures: list[str]) -> None:
         """Log a failing board once, and once more when it recovers."""

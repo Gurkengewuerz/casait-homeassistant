@@ -15,6 +15,7 @@ from homeassistant.helpers import device_registry as dr, issue_registry as ir
 
 from .config_flow import validate_input
 from .const import DOMAIN
+from .multisensor import CHIP_NAMES
 
 
 class CasaITRepairFlow(RepairsFlow):
@@ -34,7 +35,85 @@ class CasaITRepairFlow(RepairsFlow):
 
         if self._issue_id.startswith("device_gone_"):
             return await self.async_step_device_gone()
+        if self._issue_id.startswith("multisensor_chip_missing_"):
+            return await self.async_step_chip_missing()
         return await self.async_step_confirm(user_input)
+
+    # ------------------------------------------------------------------
+    # A Multisensor chip that stopped answering
+    # ------------------------------------------------------------------
+
+    async def async_step_chip_missing(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> data_entry_flow.FlowResult:
+        """Ask whether the chip should be looked for again or given up on."""
+
+        return self.async_show_menu(
+            step_id="chip_missing",
+            menu_options=["rescan_chip", "forget_chip"],
+            description_placeholders=self._chip_placeholders,
+        )
+
+    async def async_step_rescan_chip(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> data_entry_flow.FlowResult:
+        """Probe the chip once more and close the issue if it answers."""
+
+        api = self._loaded_api()
+        if api is not None and await api.multisensor.async_probe_chip(
+            str(self._issue_data.get("device_id")), str(self._issue_data.get("chip"))
+        ):
+            return self.async_create_entry(title="", data={})
+
+        return self.async_show_form(
+            step_id="chip_still_missing",
+            data_schema=vol.Schema({}),
+            errors={"base": "still_missing"},
+            description_placeholders=self._chip_placeholders,
+        )
+
+    async def async_step_chip_still_missing(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> data_entry_flow.FlowResult:
+        """Return to the choice after a probe that found nothing."""
+
+        return await self.async_step_chip_missing()
+
+    async def async_step_forget_chip(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> data_entry_flow.FlowResult:
+        """Remove the chip's entities once the user confirms it is gone for good."""
+
+        if user_input is None:
+            return self.async_show_form(
+                step_id="forget_chip",
+                data_schema=vol.Schema({}),
+                description_placeholders=self._chip_placeholders,
+            )
+
+        if (api := self._loaded_api()) is not None:
+            await api.multisensor.async_forget_chip(
+                str(self._issue_data.get("device_id")), str(self._issue_data.get("chip"))
+            )
+            # Reload so the board is sampled without the chip from now on.
+            self.hass.config_entries.async_schedule_reload(api.entry_id)
+        ir.async_delete_issue(self.hass, DOMAIN, self._issue_id)
+        return self.async_create_entry(title="", data={})
+
+    @property
+    def _chip_placeholders(self) -> dict[str, str]:
+        chip = str(self._issue_data.get("chip") or "")
+        return {"name": str(self._issue_data.get("name") or ""), "chip": CHIP_NAMES.get(chip, chip)}
+
+    def _loaded_api(self):
+        entry = self.hass.config_entries.async_get_entry(str(self._issue_data.get("entry_id") or ""))
+        if entry is None or entry.state is not ConfigEntryState.LOADED:
+            return None
+        return entry.runtime_data
 
     async def async_step_device_gone(
         self,

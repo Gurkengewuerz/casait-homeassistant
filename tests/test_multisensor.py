@@ -7,7 +7,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from custom_components.casait_smarthome.multisensor import CasaITMultisensorManager, MultisensorCommandError
+from custom_components.casait_smarthome.multisensor import (
+    CHIP_MISSING_SAMPLES,
+    CasaITMultisensorManager,
+    MultisensorCommandError,
+)
 from custom_components.casait_smarthome.services.i2cClasses import multisensor as ms_module
 from custom_components.casait_smarthome.services.i2cClasses.ds28e17 import DS28E17, DS28E17Nack
 from custom_components.casait_smarthome.services.i2cClasses.gas_index import VocGasIndexAlgorithm
@@ -25,6 +29,7 @@ from custom_components.casait_smarthome.services.i2cClasses.multisensor import (
     veml7700_config,
     veml7700_lux,
 )
+from homeassistant.helpers import issue_registry as ir
 
 DEVICE = "1900000000000001"
 
@@ -331,7 +336,9 @@ def _manager(hass, bus: FakeOneWireBus) -> CasaITMultisensorManager:
     async def job(device_id: str, func: Callable, *, write: bool = False):
         return func(bus)
 
-    api = SimpleNamespace(hass=hass, state_update_signal="casait_test", async_onewire_job=job)
+    api = SimpleNamespace(
+        hass=hass, state_update_signal="casait_test", async_onewire_job=job, entry_id="entry", ow_devices={}
+    )
     return CasaITMultisensorManager(api)  # type: ignore[arg-type]
 
 
@@ -384,3 +391,42 @@ async def test_calibration_waits_for_the_co2_sensor_to_warm_up(hass, monkeypatch
     assert state.stcc4_running
 
     assert await manager.async_self_test(DEVICE) is True
+
+
+@pytest.mark.unit
+async def test_a_chip_that_stops_answering_raises_and_clears_an_issue(hass) -> None:
+    slaves = _full_board()
+    bus = FakeOneWireBus(slaves)
+    manager = _manager(hass, bus)
+    manager.register(DEVICE, MultisensorComponents(sht41=True, veml7700=True))
+    issue_id = manager.chip_issue_id(DEVICE, "veml7700")
+    registry = ir.async_get(hass)
+
+    veml = slaves.pop(VEML7700_ADDRESS)
+    for _ in range(CHIP_MISSING_SAMPLES - 1):
+        await manager.async_sample(DEVICE)
+    assert registry.async_get_issue("casait_smarthome", issue_id) is None
+
+    await manager.async_sample(DEVICE)
+    issue = registry.async_get_issue("casait_smarthome", issue_id)
+    assert issue is not None
+    assert issue.translation_placeholders == {"name": f"Multisensor {DEVICE}", "chip": "VEML7700"}
+    # The chip that still answers is not reported.
+    assert registry.async_get_issue("casait_smarthome", manager.chip_issue_id(DEVICE, "sht41")) is None
+
+    slaves[VEML7700_ADDRESS] = veml
+    assert await manager.async_probe_chip(DEVICE, "veml7700")
+    assert registry.async_get_issue("casait_smarthome", issue_id) is None
+
+
+@pytest.mark.unit
+async def test_chips_seen_before_are_kept_when_they_do_not_answer(hass) -> None:
+    manager = _manager(hass, FakeOneWireBus({}))
+
+    first = await manager.async_remember(DEVICE, MultisensorComponents(sht41=True, stcc4_address=0x64))
+    second = await manager.async_remember(DEVICE, MultisensorComponents(sht41=True))
+
+    assert first == second == MultisensorComponents(sht41=True, stcc4_address=0x64)
+
+    await manager.async_forget_chip(DEVICE, "stcc4")
+    assert manager.known_components(DEVICE) == MultisensorComponents(sht41=True)

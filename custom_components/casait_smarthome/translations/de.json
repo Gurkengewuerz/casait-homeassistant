@@ -451,6 +451,32 @@
           "still_missing": "Das Ger\u00e4t hat beim Scan nicht geantwortet."
         }
       }
+    },
+    "multisensor_chip_missing": {
+      "title": "{chip} von {name} antwortet nicht mehr",
+      "fix_flow": {
+        "step": {
+          "chip_missing": {
+            "title": "{chip} von {name} fehlt",
+            "description": "Der Sensor {chip} antwortet seit einer Minute nicht mehr. Seine Entit\u00e4ten bleiben erhalten und werden als nicht verf\u00fcgbar angezeigt; es wird nichts entfernt, bevor du dich daf\u00fcr entscheidest.",
+            "menu_options": {
+              "rescan_chip": "Erneut danach suchen",
+              "forget_chip": "Sensor wurde entfernt, vergessen"
+            }
+          },
+          "chip_still_missing": {
+            "title": "{chip} von {name} fehlt weiterhin",
+            "description": "Pr\u00fcfe, ob der Sensor best\u00fcckt und sauber verl\u00f6tet ist, und best\u00e4tige danach f\u00fcr einen weiteren Versuch."
+          },
+          "forget_chip": {
+            "title": "{chip} von {name} vergessen",
+            "description": "Damit werden die Entit\u00e4ten dieses Sensors und ihr aufgezeichneter Verlauf entfernt. Zum Best\u00e4tigen absenden."
+          }
+        },
+        "error": {
+          "still_missing": "Der Sensor hat nicht geantwortet."
+        }
+      }
     }
   },
   "selector": {

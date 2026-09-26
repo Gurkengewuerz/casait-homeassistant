@@ -451,6 +451,32 @@
           "still_missing": "The device did not answer the scan."
         }
       }
+    },
+    "multisensor_chip_missing": {
+      "title": "{chip} of {name} no longer answers",
+      "fix_flow": {
+        "step": {
+          "chip_missing": {
+            "title": "{chip} of {name} is missing",
+            "description": "The {chip} sensor has not answered for a minute. Its entities stay, showing as unavailable, and nothing is removed until you choose to.",
+            "menu_options": {
+              "rescan_chip": "Look for it again",
+              "forget_chip": "The sensor was removed, forget it"
+            }
+          },
+          "chip_still_missing": {
+            "title": "{chip} of {name} is still missing",
+            "description": "Check that the sensor is fitted and soldered properly, then submit to try once more."
+          },
+          "forget_chip": {
+            "title": "Forget {chip} of {name}",
+            "description": "This removes the entities of this sensor along with their recorded history. Submit to confirm."
+          }
+        },
+        "error": {
+          "still_missing": "The sensor did not answer."
+        }
+      }
     }
   },
   "selector": {
