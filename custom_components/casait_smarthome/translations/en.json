@@ -232,42 +232,6 @@
       }
     }
   },
-  "device_automation": {
-    "trigger_type": {
-      "single_press": "Pressed",
-      "single_release": "Released after short press",
-      "double_press": "Double pressed",
-      "long_press": "Long pressed",
-      "long_release": "Released after long press",
-      "repeat": "Repeating while held"
-    },
-    "trigger_subtype": {
-      "button_1": "Button 1",
-      "button_2": "Button 2",
-      "button_3": "Button 3",
-      "button_4": "Button 4",
-      "button_5": "Button 5",
-      "button_6": "Button 6",
-      "button_7": "Button 7",
-      "button_8": "Button 8",
-      "button_slot_1_a": "Slot 1 button A",
-      "button_slot_1_b": "Slot 1 button B",
-      "button_slot_2_a": "Slot 2 button A",
-      "button_slot_2_b": "Slot 2 button B",
-      "button_slot_3_a": "Slot 3 button A",
-      "button_slot_3_b": "Slot 3 button B",
-      "button_slot_4_a": "Slot 4 button A",
-      "button_slot_4_b": "Slot 4 button B",
-      "button_slot_5_a": "Slot 5 button A",
-      "button_slot_5_b": "Slot 5 button B",
-      "button_slot_6_a": "Slot 6 button A",
-      "button_slot_6_b": "Slot 6 button B",
-      "button_slot_7_a": "Slot 7 button A",
-      "button_slot_7_b": "Slot 7 button B",
-      "button_slot_8_a": "Slot 8 button A",
-      "button_slot_8_b": "Slot 8 button B"
-    }
-  },
   "services": {
     "scan_devices": {
       "name": "Scan devices",

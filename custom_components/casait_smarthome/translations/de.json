@@ -232,42 +232,6 @@
       }
     }
   },
-  "device_automation": {
-    "trigger_type": {
-      "single_press": "Gedr\u00fcckt",
-      "single_release": "Kurz losgelassen",
-      "double_press": "Doppelt gedr\u00fcckt",
-      "long_press": "Lange gedr\u00fcckt",
-      "long_release": "Nach langem Druck losgelassen",
-      "repeat": "Wiederholt beim Halten"
-    },
-    "trigger_subtype": {
-      "button_1": "Taster 1",
-      "button_2": "Taster 2",
-      "button_3": "Taster 3",
-      "button_4": "Taster 4",
-      "button_5": "Taster 5",
-      "button_6": "Taster 6",
-      "button_7": "Taster 7",
-      "button_8": "Taster 8",
-      "button_slot_1_a": "Steckplatz 1 Taster A",
-      "button_slot_1_b": "Steckplatz 1 Taster B",
-      "button_slot_2_a": "Steckplatz 2 Taster A",
-      "button_slot_2_b": "Steckplatz 2 Taster B",
-      "button_slot_3_a": "Steckplatz 3 Taster A",
-      "button_slot_3_b": "Steckplatz 3 Taster B",
-      "button_slot_4_a": "Steckplatz 4 Taster A",
-      "button_slot_4_b": "Steckplatz 4 Taster B",
-      "button_slot_5_a": "Steckplatz 5 Taster A",
-      "button_slot_5_b": "Steckplatz 5 Taster B",
-      "button_slot_6_a": "Steckplatz 6 Taster A",
-      "button_slot_6_b": "Steckplatz 6 Taster B",
-      "button_slot_7_a": "Steckplatz 7 Taster A",
-      "button_slot_7_b": "Steckplatz 7 Taster B",
-      "button_slot_8_a": "Steckplatz 8 Taster A",
-      "button_slot_8_b": "Steckplatz 8 Taster B"
-    }
-  },
   "services": {
     "scan_devices": {
       "name": "Ger\u00e4te suchen",

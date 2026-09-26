@@ -2,6 +2,16 @@
 
 This document provides guidance for AI coding agents working on this Home Assistant custom integration project.
 
+<!-- repo-role:start -->
+
+## Which repository is this?
+
+This is an initialised integration generated from the blueprint: domain `casait_smarthome`, class prefix `CasaIT`.
+`initialize.sh` is gone for good, and template sync never restores it. Blueprint updates arrive through the
+template-sync workflow; `.templatesyncignore` lists what this project maintains itself.
+
+<!-- repo-role:end -->
+
 ## Project Overview
 
 This is a Home Assistant custom integration that was generated from a blueprint template. The integration follows Home Assistant Core development patterns and quality standards.

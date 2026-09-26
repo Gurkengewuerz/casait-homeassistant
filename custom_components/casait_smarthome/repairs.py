@@ -194,7 +194,8 @@ class CasaITRepairFlow(RepairsFlow):
 
         identifier = str(self._issue_data.get("identifier") or "")
         device_registry = dr.async_get(self.hass)
-        device = device_registry.async_get_device(identifiers={(DOMAIN, identifier)})
+        entry_id = str(self._issue_data.get("entry_id") or "")
+        device = device_registry.async_get_device_by_identifier((DOMAIN, identifier), entry_id)
         if device is not None:
             device_registry.async_remove_device(device.id)
 

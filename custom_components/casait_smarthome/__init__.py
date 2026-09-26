@@ -281,7 +281,15 @@ def _migrate_entity_identities(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         target_identifiers = migrated_device_identifiers(entry.entry_id, device_entry.identifiers)
         if target_identifiers is None:
             continue
-        if conflicting_device := device_registry.async_get_device(identifiers=target_identifiers):
+        conflicting_device = next(
+            (
+                found
+                for identifier in target_identifiers
+                if (found := device_registry.async_get_device_by_identifier(identifier, entry.entry_id)) is not None
+            ),
+            None,
+        )
+        if conflicting_device is not None:
             if conflicting_device.id != device_entry.id:
                 _LOGGER.error(
                     "Cannot migrate device %s because the target identifier belongs to %s",

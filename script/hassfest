@@ -66,10 +66,8 @@ _git_fetch_tag() {
     return 1
 }
 
-# Activate the virtual environment before anything reads from it. Detecting the
-# version below imports homeassistant, which is only importable once the venv is
-# on the path - doing it the other way round made the script claim Home Assistant
-# was not installed whenever HA_VERSION happened to be unset.
+# The version detection below imports homeassistant, so the venv has to be
+# active before it runs, not only before the hassfest run itself.
 activate_venv
 
 # Detect Home Assistant version to use

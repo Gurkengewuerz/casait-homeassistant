@@ -1,7 +1,7 @@
 {
-  "name": "casait-homeassistant-tools",
+  "name": "ha-integration-tools",
   "version": "1.0.0",
-  "description": "Development tools for the casaIT Home Assistant integration",
+  "description": "Development tools for the Home Assistant integration",
   "private": true,
   "devDependencies": {
     "@commitlint/cli": "21.2.1",

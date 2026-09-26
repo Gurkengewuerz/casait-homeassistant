@@ -5,7 +5,7 @@
 `casaIT : Smart Home` is a custom Home Assistant integration for casaIT I2C and 1-Wire modules connected through the casaIT SMBus TCP bridge.
 
 - Domain: `casait_smarthome`
-- Minimum Home Assistant version: 2026.7.4
+- Minimum Home Assistant version: 2026.8.0
 - Connection: local TCP bridge, no cloud account or YAML configuration
 - Repository: `Gurkengewuerz/casait-homeassistant`
 
@@ -81,13 +81,14 @@ Every digital input — IM117 port, DM117 input slot, DS2413 channel — is
 described the same way: a role (_contact_, _button_, or _unused_), an optional
 device class, an inversion flag for normally closed contacts, and for buttons an
 opt-in repeat while held. The role decides which entity, if any, the input
-becomes. Button inputs additionally expose device triggers.
+becomes. Button inputs are event entities, so automations react to them with
+Home Assistant's own **Event received** trigger.
 
 ## Home Assistant features
 
 - Fast input polling with latched push-button edges
 - IM117 inputs exposed as events, switches, contacts, or unused channels
-- Press, long-press, and double-press device triggers
+- Press, long-press, double-press, and repeat events for automations
 - OM117 switches, pulse outputs, roller shutters, and blinds with time-based slat tilt
 - Runtime controls for cover calibration, pulse duration, LED count, and animation speed
 - Five-color LED palettes for chase and alternate animations
@@ -210,9 +211,8 @@ a possible second press only adds latency.
 ## Use cases
 
 - **Wall switches driving Home Assistant logic.** Give an IM117 port the _button_
-  role and it stops being a binary sensor; it becomes an event entity with device
-  triggers, so one physical button can run different scenes on single, double, and
-  long press.
+  role and it stops being a binary sensor; it becomes an event entity, so one
+  physical button can run different scenes on single, double, and long press.
 - **Dimming while holding.** Enable repeat on a button input and it emits `repeat`
   events for as long as it is held, which an automation can turn into stepwise
   brightness changes.
@@ -231,16 +231,19 @@ a possible second press only adds latency.
 
 ## Examples
 
-React to a double press on the third input of an IM117:
+Button inputs are event entities, so they work with Home Assistant's **Event
+received** trigger. In the automation editor pick the button's event entity and the
+event types to react to. React to a double press on the third input of an IM117:
 
 ```yaml
 automation:
   - triggers:
-      - trigger: device
-        domain: casait_smarthome
-        device_id: <your IM117 device id>
-        type: double_press
-        subtype: button_3
+      - trigger: event.received
+        target:
+          entity_id: event.bridge_<id>_im117_0x38_button_3
+        options:
+          event_type:
+            - double_press
     actions:
       - action: scene.turn_on
         target:
@@ -252,11 +255,12 @@ Dim a light while a button is held, using the repeat event:
 ```yaml
 automation:
   - triggers:
-      - trigger: device
-        domain: casait_smarthome
-        device_id: <your IM117 device id>
-        type: repeat
-        subtype: button_1
+      - trigger: event.received
+        target:
+          entity_id: event.bridge_<id>_im117_0x38_button_1
+        options:
+          event_type:
+            - repeat
     actions:
       - action: light.turn_on
         target:

@@ -4,7 +4,7 @@ This guide covers installation, bridge setup, hardware configuration, and the fi
 
 ## Prerequisites
 
-- Home Assistant 2026.7.4 or newer
+- Home Assistant 2026.8.0 or newer
 - A running casaIT SMBus TCP bridge
 - Network access from Home Assistant to the bridge, normally on TCP port `8555`
 - At least one supported casaIT I2C module or 1-Wire device
@@ -49,7 +49,7 @@ close**.
 
 Give the module a meaningful name and open each input to assign one role:
 
-- **Push button** creates an event entity and automation device triggers.
+- **Push button** creates an event entity; automations react to it with the **Event received** trigger.
 - **Contact or switch** creates a binary sensor, with an optional door, window, motion, smoke, or similar device class.
 - **Unused** creates no entity.
 

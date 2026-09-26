@@ -19,11 +19,11 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.const import (
-    CONCENTRATION_PARTS_PER_MILLION,
     LIGHT_LUX,
     PERCENTAGE,
     EntityCategory,
     UnitOfElectricPotential,
+    UnitOfRatio,
     UnitOfTemperature,
     UnitOfTime,
 )
@@ -323,7 +323,7 @@ MULTISENSOR_SENSORS: tuple[MultisensorSensorDescription, ...] = (
         key="co2",
         translation_key="co2",
         device_class=SensorDeviceClass.CO2,
-        native_unit_of_measurement=CONCENTRATION_PARTS_PER_MILLION,
+        native_unit_of_measurement=UnitOfRatio.PARTS_PER_MILLION,
         state_class=SensorStateClass.MEASUREMENT,
         fitted_fn=lambda parts: parts.stcc4,
         value_fn=_reading_value("co2"),
@@ -350,7 +350,7 @@ MULTISENSOR_SENSORS: tuple[MultisensorSensorDescription, ...] = (
     MultisensorSensorDescription(
         key="co2_calibration_correction",
         translation_key="co2_calibration_correction",
-        native_unit_of_measurement=CONCENTRATION_PARTS_PER_MILLION,
+        native_unit_of_measurement=UnitOfRatio.PARTS_PER_MILLION,
         entity_category=EntityCategory.DIAGNOSTIC,
         fitted_fn=lambda parts: parts.stcc4,
         value_fn=lambda api, device_id: api.multisensor.maintenance(device_id).get("frc_correction"),

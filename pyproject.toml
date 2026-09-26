@@ -196,6 +196,7 @@ ignore = [
     "PLR0912", # Too many branches ({branches} > {max_branches})
     "PLR0913", # Too many arguments to function call ({c_args} > {max_args})
     "PLR0915", # Too many statements ({statements} > {max_statements})
+    "PLR0917", # Too many positional arguments; same trade-off as PLR0913, enforced since ruff 0.16
     "PLR2004", # Magic value used in comparison, consider replacing {value} with a constant variable
     "PLW0108", # Unnecessary lambda wrapping a function call; can often be replaced by the function itself
     "PLW1641", # __eq__ without __hash__

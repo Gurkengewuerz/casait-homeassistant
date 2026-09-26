@@ -65,14 +65,15 @@ CLAUDE.md
 GEMINI.md
 .github/copilot-instructions.md
 
-# Architecture-specific path instructions. These deliberately differ from the
+# Architecture-specific path instructions (.github/instructions links to
+# .agents/instructions since the blueprint moved them). These deliberately differ from the
 # blueprint's coordinator/package layout and are maintained by this project.
-.github/instructions/blueprint.api.instructions.md
-.github/instructions/blueprint.config_flow.instructions.md
-.github/instructions/blueprint.diagnostics.instructions.md
-.github/instructions/blueprint.entities.instructions.md
-.github/instructions/blueprint.python.instructions.md
-.github/instructions/blueprint.tests.instructions.md
+.agents/instructions/blueprint.api.instructions.md
+.agents/instructions/blueprint.config_flow.instructions.md
+.agents/instructions/blueprint.diagnostics.instructions.md
+.agents/instructions/blueprint.entities.instructions.md
+.agents/instructions/blueprint.python.instructions.md
+.agents/instructions/blueprint.tests.instructions.md
 
 # These prompts carry casaIT architecture guards around otherwise generic
 # coordinator examples and must be merged deliberately when upstream changes.
@@ -111,8 +112,13 @@ release-please-config.json
 config/
 
 # ── Documentation ────────────────────────────────────────────
-# Docs are written for your specific integration
-docs/
+# User docs and the architecture record are written for this integration. The
+# blueprint's own docs (docs/blueprint/, the generic development guides) do get
+# synced: its skills link to them.
+docs/user/
+docs/development/ARCHITECTURE.md
+docs/development/DECISIONS.md
+docs/development/COPILOT_AGENT.md
 
 # ── Template sync ignore list ────────────────────────────────
 # This file itself is excluded so your additions are never overwritten by sync.

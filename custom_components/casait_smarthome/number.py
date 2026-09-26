@@ -13,7 +13,7 @@ from homeassistant.components.number import (
     NumberMode,
     RestoreNumber,
 )
-from homeassistant.const import CONCENTRATION_PARTS_PER_MILLION, EntityCategory, UnitOfTime
+from homeassistant.const import EntityCategory, UnitOfRatio, UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -261,7 +261,7 @@ CO2_CALIBRATION_TARGET = NumberEntityDescription(
     translation_key="co2_calibration_target",
     entity_category=EntityCategory.CONFIG,
     device_class=NumberDeviceClass.CO2,
-    native_unit_of_measurement=CONCENTRATION_PARTS_PER_MILLION,
+    native_unit_of_measurement=UnitOfRatio.PARTS_PER_MILLION,
     native_min_value=300,
     native_max_value=5000,
     native_step=1,

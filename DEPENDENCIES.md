@@ -96,7 +96,7 @@ The `script/setup/bootstrap` automatically installs dependencies from multiple s
 
 ### From Home Assistant Core
 
-**Version:** Configured via `HA_VERSION` in `.devcontainer/devcontainer.json` (currently `2026.7.4`)
+**Version:** Configured via `HA_VERSION` in `.devcontainer/devcontainer.json` (currently `2026.8.0`)
 
 1. **Runtime dependencies** (`requirements_all.txt`)
    - All packages that Home Assistant integrations might need
@@ -131,7 +131,7 @@ This approach means this project only needs to maintain a minimal set of depende
 ```json
 {
   "name": "Integration Name",
-  "homeassistant": "2026.7.4",
+  "homeassistant": "2026.8.0",
   "hacs": "2.0.5"
 }
 ```
