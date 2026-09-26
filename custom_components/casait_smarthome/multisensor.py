@@ -379,6 +379,21 @@ class CasaITMultisensorManager:
             if failures == CHIP_MISSING_SAMPLES:
                 self._raise_chip_issue(device_id, chip)
 
+    def chip_diagnostics(self, device_id: str) -> dict[str, dict[str, Any]]:
+        """Return, per fitted chip, how many samples in a row it has failed."""
+
+        state = self._states.get(device_id)
+        if state is None:
+            return {}
+        return {
+            CHIP_NAMES[chip]: {
+                "consecutive_failures": self._chip_failures.get((device_id, chip), 0),
+                "reported_missing": self._chip_failures.get((device_id, chip), 0) >= CHIP_MISSING_SAMPLES,
+            }
+            for chip in CHIPS
+            if state.components.has(chip)
+        }
+
     def chip_issue_id(self, device_id: str, chip: str) -> str:
         """Return the repair issue id for one missing chip."""
 

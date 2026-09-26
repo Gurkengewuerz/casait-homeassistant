@@ -31,6 +31,7 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .const import DEFAULT_OW_POLL_INTERVAL, OW_PROFILE_LED, OW_PROFILE_MULTISENSOR
+from .health import LinkHealth
 from .multisensor import SAMPLE_INTERVAL
 from .services.i2cClasses.ds18b20 import CONVERSION_TIME as DS18B20_CONVERSION_TIME
 from .services.i2cClasses.ds2438 import CONVERSION_TIME as DS2438_CONVERSION_TIME, DS2438Reading
@@ -59,6 +60,7 @@ class _Job:
     key: str
     interval: float
     run: Callable[[], Awaitable[None]]
+    devices: tuple[str, ...] = ()
     next_due: float = 0.0
     task: asyncio.Task | None = field(default=None, repr=False)
 
@@ -74,6 +76,10 @@ class CasaITOneWireScheduler:
         self._failures: dict[str, int] = {}
         self._jobs: dict[str, _Job] = {}
         self._task: asyncio.Task | None = None
+        self._health: dict[str, LinkHealth] = defaultdict(LinkHealth)
+        # Bus time spent on each device during its current job, excluding
+        # conversion waits, so the latency describes the link and not the chip.
+        self._busy: dict[str, float] = defaultdict(float)
         self._wake = asyncio.Event()
 
     # ------------------------------------------------------------------
@@ -108,6 +114,25 @@ class CasaITOneWireScheduler:
             if job.key == device_id or job.key.endswith(f"/{device_id}"):
                 job.next_due = 0.0
         self._wake.set()
+
+    def device_diagnostics(self, device_id: str) -> dict[str, Any]:
+        """Return the schedule and link health of one device for the bus overview."""
+
+        job = next(
+            (job for job in self._jobs.values() if job.key.endswith(f"/{device_id}") or device_id in job.devices),
+            None,
+        )
+        data: dict[str, Any] = {
+            "interval_s": job.interval if job is not None else None,
+            "job": job.key if job is not None else None,
+            "available": device_id in self._values,
+        }
+        if job is not None and job.key.startswith("multisensor/"):
+            data["chips"] = self._api.multisensor.chip_diagnostics(device_id)
+        else:
+            health = self._health.get(device_id)
+            data["health"] = health.as_dict() if health is not None else None
+        return data
 
     @property
     def diagnostic_data(self) -> dict[str, Any]:
@@ -170,7 +195,7 @@ class CasaITOneWireScheduler:
             interval = min(
                 float(intervals.get(device_id) or DEFAULT_OW_POLL_INTERVAL[DS18B20_PROFILE]) for device_id in device_ids
             )
-            job = _Job(f"ds18b20@{bus:02x}", interval, self._ds18b20_job(sorted(device_ids)))
+            job = _Job(f"ds18b20@{bus:02x}", interval, self._ds18b20_job(sorted(device_ids)), devices=tuple(device_ids))
             jobs[job.key] = job
 
         now = time.monotonic()
@@ -247,6 +272,7 @@ class CasaITOneWireScheduler:
     # ------------------------------------------------------------------
 
     def _succeeded(self, device_id: str, value: Any) -> None:
+        self._health[device_id].success(time.time(), self._busy.pop(device_id, None))
         if self._failures.pop(device_id, 0) >= MAX_FAILURES:
             _LOGGER.info("1-Wire device %s answers again", device_id)
         previous = self._values.get(device_id)
@@ -255,6 +281,8 @@ class CasaITOneWireScheduler:
             async_dispatcher_send(self._api.hass, self.signal(device_id))
 
     def _failed(self, device_id: str, reason: str) -> None:
+        self._busy.pop(device_id, None)
+        self._health[device_id].failure(time.time(), reason)
         failures = self._failures[device_id] = self._failures.get(device_id, 0) + 1
         _LOGGER.debug("Reading 1-Wire device %s failed (%s), %s in a row", device_id, reason, failures)
         if failures == MAX_FAILURES:
@@ -265,11 +293,14 @@ class CasaITOneWireScheduler:
     async def _read(self, device_id: str, func: Callable[[Any], Any]) -> Any:
         """Run one transaction; transport errors count as a None result."""
 
+        started = time.monotonic()
         try:
             return await self._api.async_onewire_job(device_id, func)
         except Exception as err:  # noqa: BLE001
             _LOGGER.debug("1-Wire transaction on %s failed: %s", device_id, err)
             return None
+        finally:
+            self._busy[device_id] += time.monotonic() - started
 
     # ------------------------------------------------------------------
     # Jobs

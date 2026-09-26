@@ -367,6 +367,19 @@ The bridge device includes diagnostic entities for:
 - Current adaptive send spacing
 - Fast and full poll-cycle duration
 
+The diagnostics download (**Settings > Devices & services > casaIT : Smart Home >
+⋮ > Download diagnostics**) contains a bus overview, `bus_topology`:
+
+- every I2C module with address, name, whether it is read every cycle or only on
+  the slow cycle, and whether the bridge samples it on its own;
+- every 1-Wire bus with its chips, their profile, poll interval and schedule;
+- per module and per chip: reads, errors, error rate, errors in a row, the last
+  error and when it happened, and the last and the smoothed round-trip latency.
+  For a Multisensor the errors are counted per sensor chip.
+
+It answers which device is slow or unreliable, where the bridge counters only
+say that something is.
+
 Home Assistant raises repair issues when a configured module is missing, a DM117 slot reports a different type than configured, or the bridge repeatedly fails to connect.
 
 ### Topology watch

@@ -25,12 +25,14 @@ from .const import (
     OW_PROFILE_MULTISENSOR,
     SIGNAL_STATE_UPDATED,
 )
+from .health import LinkHealth
 from .helpers import (
     OM117PairConfig,
     TopologySettings,
     build_device_identifier,
     default_onewire_profile,
     get_address_range,
+    get_module_name,
 )
 from .multisensor import CasaITMultisensorManager
 from .onewire import CasaITOneWireScheduler
@@ -115,6 +117,10 @@ class CasaITApi:
         # inside a driver that latches them.
         self._dm117_edges: dict[int, EdgeTracker[tuple[int, int]]] = {}
         self._read_errors: set[tuple[str, int]] = set()
+        # Link health per I2C module for the bus overview, keyed like _read_errors.
+        self._health: dict[tuple[str, int], LinkHealth] = defaultdict(LinkHealth)
+        # Round trip of the frame whose results are being published right now.
+        self._frame_latency: float | None = None
         self._connection_failure_cycles = 0
         self._topology = topology_settings or TopologySettings()
         # How many scans in a row each known module or 1-Wire chip has been
@@ -240,6 +246,60 @@ class CasaITApi:
             "onewire_schedule": self.onewire.diagnostic_data,
             "transport": self.bus.stats,
         }
+
+    @property
+    def bus_topology(self) -> dict[str, Any]:
+        """Return every module and 1-Wire chip with its address and link health.
+
+        Meant for the diagnostics download: it answers which device on the bus
+        is slow or unreliable, where the transport counters only tell that
+        something is.
+        """
+
+        entry = self.hass.config_entries.async_get_entry(self.entry_id)
+        options = entry.options if entry is not None else {}
+        driver_names = {"IM117": "PCF8574", "OM117": "PCF8574", "DM117": "DM117", "SM117": "DS2482"}
+
+        i2c: list[dict[str, Any]] = []
+        for code, addresses in sorted(self.found_i2c_devices.items()):
+            for address in sorted(addresses):
+                health = self._health.get((driver_names.get(code, code), address))
+                i2c.append(
+                    {
+                        "module": code,
+                        "address": f"0x{address:02X}",
+                        "name": get_module_name(options, code.lower(), address, ""),
+                        "polled": "every cycle"
+                        if address in self._fast_pcf_addresses() | self._fast_dm117_addresses()
+                        else "slow cycle",
+                        "sampled_by_bridge": address in self._scan_addresses,
+                        "health": health.as_dict() if health is not None else None,
+                    }
+                )
+
+        onewire: list[dict[str, Any]] = []
+        for bus_address in sorted(self.sm117):
+            chips = [
+                {
+                    "rom": device_id,
+                    "chip": meta.get("device_type"),
+                    "profile": self.onewire_profile(device_id),
+                    "name": meta.get("name"),
+                    "components": meta.get("components"),
+                    **self.onewire.device_diagnostics(device_id),
+                }
+                for device_id, meta in sorted(self.ow_devices.items())
+                if meta.get("bus_address") == bus_address
+            ]
+            onewire.append(
+                {
+                    "bus": f"0x{bus_address:02X}",
+                    "name": get_module_name(options, "sm117", bus_address, ""),
+                    "chips": chips,
+                }
+            )
+
+        return {"transport": self.bus.stats, "i2c": i2c, "onewire": onewire}
 
     def debounce_time(self, module_kind: str, address: int) -> int:
         """Return the configured debounce window of one input module."""
@@ -562,7 +622,9 @@ class CasaITApi:
 
         try:
             async with self._lock:
+                started = time.monotonic()
                 flags, entries = await self.bus.scan_fetch()
+                self._frame_latency = time.monotonic() - started
         except Exception as exc:  # noqa: BLE001
             for address in self._scan_addresses:
                 self._record_read_error("PCF8574", address, exc)
@@ -590,6 +652,7 @@ class CasaITApi:
             if device is None:
                 continue
             self._publish_pcf_reading(address, device.apply_reading(value, sampled_at))
+        self._frame_latency = None
 
     def _plan_poll_batches(
         self,
@@ -661,7 +724,9 @@ class CasaITApi:
 
         try:
             async with self._lock:
+                started = time.monotonic()
                 results = await self.bus.execute_batch(batch)
+                self._frame_latency = time.monotonic() - started
         except I2CBatchError as exc:
             await self._recover_failed_batch(modules, exc)
             return
@@ -676,6 +741,7 @@ class CasaITApi:
         for module in modules:
             values = results[module.result_start : module.result_start + module.result_count]
             self._publish_module(module, values, sampled_at)
+        self._frame_latency = None
 
     async def _recover_failed_batch(self, modules: list[_PolledModule], exc: I2CBatchError) -> None:
         """Attribute a batch failure to one module and re-read the rest on their own.
@@ -779,13 +845,16 @@ class CasaITApi:
 
         try:
             async with self._lock:
+                started = time.monotonic()
                 reading = await device.read_ports(is_input)
+                self._frame_latency = time.monotonic() - started
         except Exception as exc:  # noqa: BLE001
             self._record_read_error("PCF8574", address, exc)
             self._drop_state(self._pcf_states, address)
             return
 
         self._publish_pcf_reading(address, reading)
+        self._frame_latency = None
 
     def _publish_pcf_reading(self, address: int, reading: PCF8574Reading) -> None:
         """Cache one PCF8574 reading and dispatch state changes plus input edges."""
@@ -815,13 +884,16 @@ class CasaITApi:
 
         try:
             async with self._lock:
+                started = time.monotonic()
                 port_states = await device.read_ports()
+                self._frame_latency = time.monotonic() - started
         except Exception as exc:  # noqa: BLE001
             self._record_read_error("DM117", address, exc)
             self._drop_state(self._dm117_states, address)
             return
 
         self._publish_dm117_reading(address, port_states, device)
+        self._frame_latency = None
 
     def _publish_dm117_reading(self, address: int, port_states: dict[int, int] | None, device: DM117) -> None:
         """Cache one DM117 reading and dispatch its state changes plus input edges."""
@@ -985,6 +1057,7 @@ class CasaITApi:
         """Log a device read failure only when it first becomes unavailable."""
 
         key = (device_type, address)
+        self._health[key].failure(time.time(), str(exc) if exc is not None else "no data")
         if key in self._read_errors:
             return
 
@@ -998,6 +1071,7 @@ class CasaITApi:
         """Log once when a previously unavailable device recovers."""
 
         key = (device_type, address)
+        self._health[key].success(time.time(), self._frame_latency)
         if key not in self._read_errors:
             return
 

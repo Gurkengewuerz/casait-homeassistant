@@ -19,7 +19,9 @@ async def async_get_config_entry_diagnostics(
 ) -> dict[str, Any]:
     """Return redacted diagnostics for a config entry."""
 
+    api = entry.runtime_data
     return {
         "entry_data": async_redact_data(dict(entry.data), TO_REDACT),
-        **entry.runtime_data.diagnostic_data,
+        **api.diagnostic_data,
+        "bus_topology": api.bus_topology,
     }
