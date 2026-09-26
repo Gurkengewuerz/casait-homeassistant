@@ -6,7 +6,11 @@ from datetime import timedelta
 import logging
 from typing import Any
 
-from homeassistant.components.binary_sensor import BinarySensorDeviceClass, BinarySensorEntity
+from homeassistant.components.binary_sensor import (
+    BinarySensorDeviceClass,
+    BinarySensorEntity,
+    BinarySensorEntityDescription,
+)
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -15,7 +19,8 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import CasaITConfigEntry
 from .api import CasaITApi
-from .const import DOMAIN, DS2413_CHANNEL_INPUT, INPUT_ROLE_CONTACT, PCF8574_MAPPED_PORTS
+from .const import DOMAIN, DS2413_CHANNEL_INPUT, INPUT_ROLE_CONTACT, OW_PROFILE_MULTISENSOR, PCF8574_MAPPED_PORTS
+from .entity import CasaITMultisensorEntity
 from .helpers import (
     DigitalInputConfig,
     build_bridge_slug,
@@ -94,7 +99,44 @@ async def async_setup_entry(
             if role == DS2413_CHANNEL_INPUT
         )
 
-    async_add_entities([CasaITBridgeConnectionSensor(api, config_entry), *pcf_entities, *dm_entities, *ds2413_entities])
+    co2_entities: list[BinarySensorEntity] = []
+    for device_id, meta in api.ow_devices.items():
+        if api.onewire_profile(device_id) != OW_PROFILE_MULTISENSOR:
+            continue
+        parts = api.multisensor.components(device_id)
+        if parts is not None and parts.stcc4:
+            co2_entities.append(CasaITCO2SelfTestSensor(api, config_entry, device_id, meta))
+
+    async_add_entities(
+        [
+            CasaITBridgeConnectionSensor(api, config_entry),
+            *pcf_entities,
+            *dm_entities,
+            *ds2413_entities,
+            *co2_entities,
+        ]
+    )
+
+
+CO2_SELF_TEST = BinarySensorEntityDescription(
+    key="co2_self_test_result",
+    translation_key="co2_self_test_result",
+    device_class=BinarySensorDeviceClass.PROBLEM,
+    entity_category=EntityCategory.DIAGNOSTIC,
+)
+
+
+class CasaITCO2SelfTestSensor(CasaITMultisensorEntity, BinarySensorEntity):
+    """Whether the last STCC4 self test found a malfunction; unknown until one ran."""
+
+    def __init__(self, api: CasaITApi, entry: CasaITConfigEntry, device_id: str, meta: dict[str, Any]) -> None:
+        """Initialize the sensor."""
+
+        super().__init__(api, entry, device_id, meta, CO2_SELF_TEST, "binary_sensor")
+
+    def _update_from_sample(self) -> None:
+        passed = self._api.multisensor.maintenance(self._device_id).get("self_test_passed")
+        self._attr_is_on = None if passed is None else not passed
 
 
 class CasaITBridgeConnectionSensor(BinarySensorEntity):

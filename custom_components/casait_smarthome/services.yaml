@@ -7,12 +7,12 @@ set_led_palette:
   description: Writes one to five colors used by the LED controller animations.
   fields:
     device_id:
-      name: 1-Wire device ID
-      description: ROM ID of the DS28E17 LED controller.
+      name: LED controller
+      description: The LED controller device. Its 1-Wire ROM ID is accepted as well.
       required: true
-      example: "1900000000000001"
       selector:
-        text:
+        device:
+          integration: casait_smarthome
     color_1:
       name: Color 1
       description: Primary color used by every animation.
@@ -39,3 +39,30 @@ set_led_palette:
       description: Fifth chase color.
       selector:
         color_rgb:
+
+calibrate_co2:
+  name: Calibrate CO2 sensor
+  description: >-
+    Recalibrates the CO2 sensor of a Multisensor to a known concentration. Run it
+    after the sensor has measured for at least three minutes in air of that
+    concentration, for example fresh outdoor air at about 420 ppm.
+  fields:
+    device_id:
+      name: Multisensor
+      description: The Multisensor device whose CO2 sensor is calibrated.
+      required: true
+      selector:
+        device:
+          integration: casait_smarthome
+    target_ppm:
+      name: Reference concentration
+      description: >-
+        CO2 concentration the sensor is exposed to. Defaults to the value of the
+        device's calibration target entity.
+      example: 420
+      selector:
+        number:
+          min: 300
+          max: 5000
+          unit_of_measurement: ppm
+          mode: box

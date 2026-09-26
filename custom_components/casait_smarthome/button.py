@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from typing import Any
 
-from homeassistant.components.button import ButtonEntity
+from homeassistant.components.button import ButtonEntity, ButtonEntityDescription
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
@@ -13,8 +16,10 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import CasaITConfigEntry
 from .api import CasaITApi
-from .const import DOMAIN, OM117_MODE_PULSE, PCF8574_MAPPED_PORTS
+from .const import DOMAIN, OM117_MODE_PULSE, OW_PROFILE_MULTISENSOR, PCF8574_MAPPED_PORTS
+from .entity import CasaITMultisensorEntity, raise_command_error
 from .helpers import build_bridge_slug, build_device_identifier, build_entity_id, build_i2c_entity_id, get_module_name
+from .multisensor import MultisensorCommandError
 
 PARALLEL_UPDATES = 0
 
@@ -40,7 +45,84 @@ async def async_setup_entry(
                 CasaITPulseButton(api, entry, address, pair_index, pair_index * 2 + offset) for offset in (0, 1)
             )
 
+    for device_id, meta in api.ow_devices.items():
+        if api.onewire_profile(device_id) != OW_PROFILE_MULTISENSOR:
+            continue
+        parts = api.multisensor.components(device_id)
+        if parts is None or not parts.stcc4:
+            continue
+        entities.extend(
+            CasaITCO2MaintenanceButton(api, entry, device_id, meta, description) for description in CO2_BUTTONS
+        )
+
     async_add_entities(entities)
+
+
+@dataclass(kw_only=True, frozen=True)
+class CO2ButtonDescription(ButtonEntityDescription):
+    """Describe one STCC4 maintenance command."""
+
+    press_fn: Callable[[CasaITApi, str], Awaitable[Any]]
+
+
+async def _calibrate(api: CasaITApi, device_id: str) -> None:
+    await api.multisensor.async_forced_recalibration(device_id, api.multisensor.calibration_target(device_id))
+
+
+CO2_BUTTONS: tuple[CO2ButtonDescription, ...] = (
+    CO2ButtonDescription(
+        key="co2_calibrate",
+        translation_key="co2_calibrate",
+        entity_category=EntityCategory.CONFIG,
+        press_fn=_calibrate,
+    ),
+    CO2ButtonDescription(
+        key="co2_self_test",
+        translation_key="co2_self_test",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        press_fn=lambda api, device_id: api.multisensor.async_self_test(device_id),
+    ),
+    CO2ButtonDescription(
+        key="co2_conditioning",
+        translation_key="co2_conditioning",
+        entity_category=EntityCategory.CONFIG,
+        entity_registry_enabled_default=False,
+        press_fn=lambda api, device_id: api.multisensor.async_conditioning(device_id),
+    ),
+    CO2ButtonDescription(
+        key="co2_factory_reset",
+        translation_key="co2_factory_reset",
+        entity_category=EntityCategory.CONFIG,
+        entity_registry_enabled_default=False,
+        press_fn=lambda api, device_id: api.multisensor.async_factory_reset(device_id),
+    ),
+)
+
+
+class CasaITCO2MaintenanceButton(CasaITMultisensorEntity, ButtonEntity):
+    """Run one maintenance command on a Multisensor's STCC4."""
+
+    entity_description: CO2ButtonDescription
+
+    def __init__(
+        self,
+        api: CasaITApi,
+        entry: CasaITConfigEntry,
+        device_id: str,
+        meta: dict[str, Any],
+        description: CO2ButtonDescription,
+    ) -> None:
+        """Initialize the button."""
+
+        super().__init__(api, entry, device_id, meta, description, "button")
+
+    async def async_press(self) -> None:
+        """Run the command; it takes the CO2 sensor offline for a few seconds."""
+
+        try:
+            await self.entity_description.press_fn(self._api, self._device_id)
+        except MultisensorCommandError as err:
+            raise_command_error(err)
 
 
 class CasaITRescanButton(ButtonEntity):

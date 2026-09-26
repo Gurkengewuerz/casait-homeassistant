@@ -5,6 +5,9 @@
     },
     "set_led_palette": {
       "service": "mdi:palette"
+    },
+    "calibrate_co2": {
+      "service": "mdi:molecule-co2"
     }
   },
   "entity": {
@@ -22,6 +25,18 @@
       },
       "om117_pulse": {
         "default": "mdi:gesture-tap-button"
+      },
+      "co2_calibrate": {
+        "default": "mdi:tune-variant"
+      },
+      "co2_self_test": {
+        "default": "mdi:clipboard-check-outline"
+      },
+      "co2_conditioning": {
+        "default": "mdi:fan-clock"
+      },
+      "co2_factory_reset": {
+        "default": "mdi:restore"
       }
     },
     "cover": {
@@ -57,6 +72,9 @@
       },
       "om117_tilt_time": {
         "default": "mdi:blinds-horizontal"
+      },
+      "co2_calibration_target": {
+        "default": "mdi:target"
       }
     },
     "sensor": {
@@ -86,6 +104,15 @@
       },
       "ds2438_vse": {
         "default": "mdi:current-dc"
+      },
+      "voc_index": {
+        "default": "mdi:air-filter"
+      },
+      "voc_raw": {
+        "default": "mdi:chart-bell-curve"
+      },
+      "co2_calibration_correction": {
+        "default": "mdi:delta"
       }
     }
   }

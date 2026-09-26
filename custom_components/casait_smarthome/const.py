@@ -125,6 +125,10 @@ EVENT_DATA_SUBTYPE: Final = "subtype"
 # Services
 SERVICE_SCAN_DEVICES: Final = "scan_devices"
 SERVICE_SET_LED_PALETTE: Final = "set_led_palette"
+SERVICE_CALIBRATE_CO2: Final = "calibrate_co2"
+
+# Fresh outdoor air, the usual reference for a forced CO2 recalibration.
+DEFAULT_CO2_CALIBRATION_PPM: Final = 420
 
 # Output module defaults
 OM117_MODE_SWITCH: Final = "switch"
@@ -141,12 +145,18 @@ DEFAULT_PULSE_DURATION: Final = 0.5
 DS2413_CHANNEL_INPUT: Final = "input"
 DS2413_CHANNEL_OUTPUT: Final = "output"
 
+# Profiles of the DS28E17 1-Wire to I2C bridge. Which one a chip gets is
+# detected by probing what answers behind it; the family code cannot tell.
+OW_PROFILE_LED: Final = "ds28e17_led"
+OW_PROFILE_MULTISENSOR: Final = "ds28e17_multisensor"
+DS28E17_FAMILY: Final = 0x19
+
 # Default profiles for 1-Wire devices by family code
 DEFAULT_OW_PROFILE: Final = {
     0x28: "ds18b20_temp",  # DS18B20
     0x26: "ds2438_hih5030_tept5600",  # DS2438
     0x3A: "ds2413_in",  # DS2413
-    0x19: "ds28e17_led",  # DS28E17
+    DS28E17_FAMILY: OW_PROFILE_LED,  # DS28E17, unless probing finds sensors
 }
 
 DEFAULT_LED_COUNT: Final = 30
@@ -156,6 +166,7 @@ DEFAULT_OW_POLL_INTERVAL: Final = {
     "ds2413_out": 1,
     "ds2413": 1,
     "ds28e17_led": 10,
+    "ds28e17_multisensor": 10,
     "ds2438_hih4030_tept5600": 15,
     "ds2438_hih5030_tept5600": 15,
     "ds18b20_temp": 60,

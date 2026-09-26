@@ -211,11 +211,15 @@ This integration uses the following identifiers consistently:
 **Current package organization:**
 
 - `api.py` - integration API, discovery, shared polling loop, state caches, and serialized writes
-- `config_flow.py` - config flow and options flow
+- `config_flow.py` - config flow (bridge setup, reconfigure, zeroconf)
+- `options_flow.py` - options flow: one device picker, one sectioned form per device
 - `helpers.py` - option parsers and shared device-info helpers
-- `binary_sensor.py`, `cover.py`, `light.py`, `sensor.py`, `switch.py` - entity platforms
+- `multisensor.py` - sampling and STCC4 maintenance of DS28E17 Multisensor boards, owned by the API
+- `entity.py` - shared base entity for dispatcher-fed Multisensor entities
+- `binary_sensor.py`, `button.py`, `cover.py`, `event.py`, `light.py`, `number.py`, `sensor.py`, `switch.py` - entity platforms
 - `services/smbus_proxy.py` - TCP bridge client
-- `services/i2cClasses/` - synchronous I2C and 1-Wire hardware drivers
+- `services/i2cClasses/` - synchronous I2C and 1-Wire hardware drivers; `multisensor.py` there drives the SHT41, SGP40, STCC4 and VEML7700
+  behind a DS28E17, `gas_index.py` is a pure-Python port of Sensirion's VOC gas index algorithm
 - `diagnostics.py` - redacted config-entry diagnostics
 
 **Do NOT create:**

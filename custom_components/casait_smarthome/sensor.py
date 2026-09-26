@@ -7,10 +7,19 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import timedelta
 import logging
+import time
 from typing import Any
 
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorEntityDescription, SensorStateClass
+from homeassistant.components.sensor import (
+    RestoreSensor,
+    SensorDeviceClass,
+    SensorEntity,
+    SensorEntityDescription,
+    SensorExtraStoredData,
+    SensorStateClass,
+)
 from homeassistant.const import (
+    CONCENTRATION_PARTS_PER_MILLION,
     LIGHT_LUX,
     PERCENTAGE,
     EntityCategory,
@@ -24,7 +33,8 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import CasaITConfigEntry
 from .api import CasaITApi
-from .const import DOMAIN
+from .const import DOMAIN, OW_PROFILE_MULTISENSOR
+from .entity import CasaITMultisensorEntity
 from .helpers import (
     build_bridge_slug,
     build_device_identifier,
@@ -35,6 +45,7 @@ from .helpers import (
     get_configured_onewire_profiles,
 )
 from .services.i2cClasses.ds2438 import DS2438Reading
+from .services.i2cClasses.multisensor import MultisensorComponents, MultisensorReading
 
 TEMP_COMP_A = 1.0546
 TEMP_COMP_B = 0.00216
@@ -281,6 +292,162 @@ class CasaITBridgeDiagnosticSensor(SensorEntity):
         self._attr_available = True
 
 
+@dataclass(kw_only=True, frozen=True)
+class MultisensorSensorDescription(SensorEntityDescription):
+    """Describe one quantity a Multisensor chip reports."""
+
+    fitted_fn: Callable[[MultisensorComponents], bool]
+    value_fn: Callable[[CasaITApi, str], float | int | None]
+
+
+def _reading_value(field: str) -> Callable[[CasaITApi, str], float | int | None]:
+    def value(api: CasaITApi, device_id: str) -> float | int | None:
+        reading: MultisensorReading | None = api.multisensor.reading(device_id)
+        return getattr(reading, field) if reading is not None else None
+
+    return value
+
+
+MULTISENSOR_SENSORS: tuple[MultisensorSensorDescription, ...] = (
+    MultisensorSensorDescription(
+        key="temperature",
+        translation_key="temperature",
+        device_class=SensorDeviceClass.TEMPERATURE,
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=1,
+        fitted_fn=lambda parts: parts.sht41,
+        value_fn=_reading_value("temperature"),
+    ),
+    MultisensorSensorDescription(
+        key="humidity",
+        translation_key="humidity",
+        device_class=SensorDeviceClass.HUMIDITY,
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=1,
+        fitted_fn=lambda parts: parts.sht41,
+        value_fn=_reading_value("humidity"),
+    ),
+    MultisensorSensorDescription(
+        key="co2",
+        translation_key="co2",
+        device_class=SensorDeviceClass.CO2,
+        native_unit_of_measurement=CONCENTRATION_PARTS_PER_MILLION,
+        state_class=SensorStateClass.MEASUREMENT,
+        fitted_fn=lambda parts: parts.stcc4,
+        value_fn=_reading_value("co2"),
+    ),
+    MultisensorSensorDescription(
+        key="illuminance",
+        translation_key="illuminance",
+        device_class=SensorDeviceClass.ILLUMINANCE,
+        native_unit_of_measurement=LIGHT_LUX,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=0,
+        fitted_fn=lambda parts: parts.veml7700,
+        value_fn=_reading_value("illuminance"),
+    ),
+    MultisensorSensorDescription(
+        key="voc_raw",
+        translation_key="voc_raw",
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        fitted_fn=lambda parts: parts.sgp40,
+        value_fn=_reading_value("voc_raw"),
+    ),
+    MultisensorSensorDescription(
+        key="co2_calibration_correction",
+        translation_key="co2_calibration_correction",
+        native_unit_of_measurement=CONCENTRATION_PARTS_PER_MILLION,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        fitted_fn=lambda parts: parts.stcc4,
+        value_fn=lambda api, device_id: api.multisensor.maintenance(device_id).get("frc_correction"),
+    ),
+)
+
+VOC_INDEX_DESCRIPTION = MultisensorSensorDescription(
+    key="voc_index",
+    translation_key="voc_index",
+    state_class=SensorStateClass.MEASUREMENT,
+    fitted_fn=lambda parts: parts.sgp40,
+    value_fn=_reading_value("voc_index"),
+)
+
+
+class CasaITMultisensorSensor(CasaITMultisensorEntity, SensorEntity):
+    """One quantity reported by a Multisensor."""
+
+    entity_description: MultisensorSensorDescription
+
+    def __init__(
+        self,
+        api: CasaITApi,
+        entry: CasaITConfigEntry,
+        device_id: str,
+        meta: dict[str, Any],
+        description: MultisensorSensorDescription,
+    ) -> None:
+        """Initialize the sensor."""
+
+        super().__init__(api, entry, device_id, meta, description, "sensor")
+
+    def _update_from_sample(self) -> None:
+        value = self.entity_description.value_fn(self._api, self._device_id)
+        self._attr_native_value = value
+        # The correction only exists once a calibration ran; that is not an outage.
+        self._attr_available = value is not None or self.entity_description.key == "co2_calibration_correction"
+
+
+@dataclass
+class VocExtraStoredData(SensorExtraStoredData):
+    """Sensor state plus the learned VOC baseline."""
+
+    voc_mean: float | None = None
+    voc_std: float | None = None
+    saved_at: float | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return a dict representation of the stored data."""
+
+        data = super().as_dict()
+        data.update({"voc_mean": self.voc_mean, "voc_std": self.voc_std, "saved_at": self.saved_at})
+        return data
+
+
+class CasaITVocIndexSensor(CasaITMultisensorSensor, RestoreSensor):
+    """The VOC index, keeping its learned baseline across short restarts.
+
+    The algorithm needs hours to learn a room's baseline. Restoring it after a
+    Home Assistant restart avoids that relearning whenever the outage was short.
+    """
+
+    async def async_added_to_hass(self) -> None:
+        """Restore the learned baseline before the first sample arrives."""
+
+        await super().async_added_to_hass()
+        if (data := await self.async_get_last_extra_data()) is None:
+            return
+        stored = data.as_dict()
+        mean, std, saved_at = stored.get("voc_mean"), stored.get("voc_std"), stored.get("saved_at")
+        if isinstance(mean, (int, float)) and isinstance(std, (int, float)) and isinstance(saved_at, (int, float)):
+            self._api.multisensor.restore_voc_states(self._device_id, float(mean), float(std), time.time() - saved_at)
+
+    @property
+    def extra_restore_state_data(self) -> VocExtraStoredData:
+        """Return the state and the learned baseline for storage."""
+
+        states = self._api.multisensor.voc_states(self._device_id)
+        return VocExtraStoredData(
+            native_value=self._attr_native_value,
+            native_unit_of_measurement=None,
+            voc_mean=states[0] if states else None,
+            voc_std=states[1] if states else None,
+            saved_at=time.time() if states else None,
+        )
+
+
 def _humidity_hih4030(reading: DS2438Reading) -> float | None:
     """Calculate humidity using HIH4030 formula."""
     if reading.vdd in (None, 0) or reading.vad is None:
@@ -369,6 +536,18 @@ async def async_setup_entry(
 
         if profile == "ds18b20_temp":
             entities.append(DS18B20TemperatureSensor(api, entry, device_id, meta))
+            continue
+
+        if profile == OW_PROFILE_MULTISENSOR:
+            if (parts := api.multisensor.components(device_id)) is None:
+                continue
+            entities.extend(
+                CasaITMultisensorSensor(api, entry, device_id, meta, description)
+                for description in MULTISENSOR_SENSORS
+                if description.fitted_fn(parts)
+            )
+            if VOC_INDEX_DESCRIPTION.fitted_fn(parts):
+                entities.append(CasaITVocIndexSensor(api, entry, device_id, meta, VOC_INDEX_DESCRIPTION))
             continue
 
         if profile in {"ds2438_hih4030_tept5600", "ds2438_hih5030_tept5600"}:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import defaultdict
-from collections.abc import AsyncIterator, Iterable, Mapping
+from collections.abc import AsyncIterator, Callable, Iterable, Mapping
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from functools import partial
@@ -23,14 +23,25 @@ from .const import (
     DEFAULT_OW_PROFILE,
     DEFAULT_SLOW_POLL_INTERVAL,
     DOMAIN,
+    DS28E17_FAMILY,
     I2C_ADDR_RANGES,
+    OW_PROFILE_MULTISENSOR,
     SIGNAL_STATE_UPDATED,
 )
-from .helpers import OM117PairConfig, TopologySettings, build_device_identifier, get_address_range
+from .helpers import (
+    OM117PairConfig,
+    TopologySettings,
+    build_device_identifier,
+    default_onewire_profile,
+    get_address_range,
+)
+from .multisensor import CasaITMultisensorManager
 from .services.i2cClasses.dm117 import DM117, DeviceType, DM117PortConfig, PortConfig
+from .services.i2cClasses.ds28e17 import DS28E17Error
 from .services.i2cClasses.ds2438 import DS2438Reading
 from .services.i2cClasses.edge_tracker import EdgeTracker
 from .services.i2cClasses.led_controller import LEDConfig
+from .services.i2cClasses.multisensor import MultisensorComponents
 from .services.i2cClasses.oneWireBus import OneWireBus
 from .services.i2cClasses.pcf8574 import PCF8574, PCF8574Reading
 from .services.smbus_proxy import SCAN_FLAG_OVERFLOW, I2CBatch, I2CBatchError, SMBus, SMBusProxyError
@@ -59,6 +70,12 @@ class _PolledModule:
     is_input: bool = False
 
 
+def _detect_multisensor(bus: OneWireBus, *, device_id: str) -> MultisensorComponents:
+    """Probe the sensors behind one DS28E17."""
+
+    return bus.multisensor.detect(device_id)
+
+
 class CasaITApi:
     """API for casaIT devices."""
 
@@ -75,6 +92,7 @@ class CasaITApi:
         configured_module_addresses: Mapping[str, set[int]] | None = None,
         input_debounce_ms: Mapping[str, Mapping[int, int]] | None = None,
         topology_settings: TopologySettings | None = None,
+        onewire_names: Mapping[str, str] | None = None,
     ) -> None:
         """Initialize the API."""
         self.hass = hass
@@ -88,6 +106,7 @@ class CasaITApi:
         self.ow_devices: dict[str, dict[str, Any]] = {}
         self._onewire_profiles = dict(onewire_profiles or {})
         self._onewire_poll_intervals = dict(onewire_poll_intervals or {})
+        self._onewire_names = dict(onewire_names or {})
         self.om117_pair_configuration = {
             address: dict(pairs) for address, pairs in (om117_pair_configuration or {}).items()
         }
@@ -135,6 +154,10 @@ class CasaITApi:
         self._init_done = asyncio.Event()
         self._init_task: asyncio.Task | None = None
         self.initialization_error: Exception | None = None
+        # What probing found behind each DS28E17, kept across topology scans so
+        # a board is only identified once per setup.
+        self._ds28e17_identity: dict[str, tuple[str, MultisensorComponents | None]] = {}
+        self.multisensor = CasaITMultisensorManager(self)
 
     def start_initialization(self, dm_config: Mapping[int, Mapping[int, DeviceType]] | None = None) -> None:
         """Kick off asynchronous initialization for initial scans and polling."""
@@ -221,6 +244,7 @@ class CasaITApi:
                 }
                 | dict(sorted(self._ow_missing_scans.items())),
             },
+            "multisensors": self.multisensor.diagnostic_data,
             "transport": self.bus.stats,
         }
 
@@ -382,6 +406,7 @@ class CasaITApi:
         self._poll_task = self.hass.async_create_background_task(self._poll_loop(), "casait_poll_loop")
         if self._topology.enabled:
             self._topology_task = self.hass.async_create_background_task(self._topology_loop(), "casait_topology_watch")
+        self.multisensor.start()
 
     async def stop_polling(self) -> None:
         """Stop background polling task."""
@@ -390,6 +415,7 @@ class CasaITApi:
             return
 
         self._stop_event.set()
+        await self.multisensor.stop()
         await self._poll_task
         self._poll_task = None
         if self._topology_task:
@@ -1059,17 +1085,88 @@ class CasaITApi:
 
             for device_id, meta in devices.items():
                 discovered[device_id] = {"bus_address": addr, **meta}
+                if name := self._onewire_names.get(device_id):
+                    discovered[device_id]["name"] = name
 
         self._apply_onewire_miss_tolerance(discovered, tolerate=tolerate_misses)
 
         self.ow_devices = discovered
         self.ow_ids = set(discovered)
+        await self._identify_ds28e17()
         self._apply_onewire_intervals()
 
         if discovered:
             _LOGGER.info("Discovered OneWire devices: %s", list(discovered.keys()))
         else:
             _LOGGER.info("No OneWire devices discovered")
+
+    async def _identify_ds28e17(self) -> None:
+        """Find out what sits behind every DS28E17 and set up the Multisensors.
+
+        The family code only names the bridge chip. An LED controller and a
+        Multisensor are told apart by which I2C addresses answer behind it.
+        """
+
+        for device_id, meta in self.ow_devices.items():
+            if meta.get("family_code") != DS28E17_FAMILY:
+                continue
+            identity = self._ds28e17_identity.get(device_id)
+            if identity is None:
+                identity = await self.multisensor.async_detect(device_id)
+                if identity is None:
+                    continue
+                self._ds28e17_identity[device_id] = identity
+            meta["detected_profile"], components = identity
+
+            profile = self._onewire_profiles.get(device_id) or default_onewire_profile(meta)
+            if profile != OW_PROFILE_MULTISENSOR:
+                continue
+            if components is None:
+                # Configured as a Multisensor although the LED firmware answered,
+                # or detection never ran: probe the sensors now.
+                try:
+                    components = await self.async_onewire_job(
+                        device_id, partial(_detect_multisensor, device_id=device_id)
+                    )
+                except DS28E17Error as err:
+                    _LOGGER.warning("Could not probe the sensors of %s: %s", device_id, err)
+                    continue
+                self._ds28e17_identity[device_id] = (meta["detected_profile"], components)
+            meta["components"] = components.as_list()
+            self.multisensor.register(device_id, components)
+
+        self.multisensor.unregister_missing(set(self.ow_devices))
+        if self._poll_task is not None:
+            self.multisensor.start()
+
+    def onewire_profile(self, device_id: str) -> str | None:
+        """Return the effective profile of one 1-Wire chip: configured, detected, or by family."""
+
+        meta = self.ow_devices.get(device_id)
+        if meta is None:
+            return None
+        return self._onewire_profiles.get(device_id) or default_onewire_profile(meta)
+
+    async def async_onewire_job[T](
+        self,
+        device_id: str,
+        func: Callable[[OneWireBus], T],
+        *,
+        write: bool = False,
+    ) -> T:
+        """Run one synchronous transaction against the bus a 1-Wire chip sits on.
+
+        Writes take the priority lane, everything else waits for a gap between
+        poll cycles like the other 1-Wire reads.
+        """
+
+        bus = self._get_onewire_bus(device_id)
+        if bus is None:
+            raise DS28E17Error(f"1-Wire device {device_id} is not on any bus")
+
+        access = self._write_access() if write else self._background_access()
+        async with access:
+            return await self.hass.async_add_executor_job(func, bus)
 
     def _apply_onewire_miss_tolerance(self, discovered: dict[str, dict[str, Any]], *, tolerate: bool) -> None:
         """Keep a known 1-Wire chip listed until it has been absent often enough.

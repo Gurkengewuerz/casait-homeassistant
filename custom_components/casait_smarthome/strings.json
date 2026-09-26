@@ -68,6 +68,9 @@
       },
       "ds2413_input": {
         "name": "Input {channel}"
+      },
+      "co2_self_test_result": {
+        "name": "CO2 sensor self test"
       }
     },
     "switch": {
@@ -103,6 +106,18 @@
       },
       "om117_pulse": {
         "name": "Pulse output {port}"
+      },
+      "co2_calibrate": {
+        "name": "Calibrate CO2 sensor"
+      },
+      "co2_self_test": {
+        "name": "CO2 sensor self test"
+      },
+      "co2_conditioning": {
+        "name": "Condition CO2 sensor"
+      },
+      "co2_factory_reset": {
+        "name": "Reset CO2 sensor calibration"
       }
     },
     "number": {
@@ -126,6 +141,9 @@
       },
       "led_count": {
         "name": "LED count"
+      },
+      "co2_calibration_target": {
+        "name": "CO2 calibration reference"
       }
     },
     "event": {
@@ -199,6 +217,18 @@
       },
       "diagnostics": {
         "name": "Diagnostics"
+      },
+      "co2": {
+        "name": "Carbon dioxide"
+      },
+      "voc_index": {
+        "name": "VOC index"
+      },
+      "voc_raw": {
+        "name": "VOC raw signal"
+      },
+      "co2_calibration_correction": {
+        "name": "CO2 calibration correction"
       }
     }
   },
@@ -248,8 +278,8 @@
       "description": "Writes one to five colors used by the LED controller animations.",
       "fields": {
         "device_id": {
-          "name": "1-Wire device ID",
-          "description": "ROM ID of the DS28E17 LED controller."
+          "name": "LED controller",
+          "description": "The LED controller device. Its 1-Wire ROM ID is accepted as well."
         },
         "color_1": {
           "name": "Color 1",
@@ -270,6 +300,20 @@
         "color_5": {
           "name": "Color 5",
           "description": "Fifth chase color."
+        }
+      }
+    },
+    "calibrate_co2": {
+      "name": "Calibrate CO2 sensor",
+      "description": "Recalibrates the CO2 sensor of a Multisensor to a known concentration. Run it after the sensor has measured for at least three minutes in air of that concentration, for example fresh outdoor air at about 420 ppm.",
+      "fields": {
+        "device_id": {
+          "name": "Multisensor",
+          "description": "The Multisensor device whose CO2 sensor is calibrated."
+        },
+        "target_ppm": {
+          "name": "Reference concentration",
+          "description": "CO2 concentration the sensor is exposed to. Defaults to the value of the device's calibration reference entity."
         }
       }
     }
@@ -325,6 +369,18 @@
     },
     "led_palette_update_failed": {
       "message": "The LED controller palette could not be updated."
+    },
+    "co2_sensor_unavailable": {
+      "message": "This device has no CO2 sensor that could be reached."
+    },
+    "co2_not_warmed_up": {
+      "message": "The CO2 sensor has to measure for at least three minutes before it can be calibrated."
+    },
+    "co2_calibration_failed": {
+      "message": "The CO2 sensor rejected the calibration."
+    },
+    "co2_command_failed": {
+      "message": "The CO2 sensor did not carry out the command."
     }
   },
   "issues": {
@@ -443,7 +499,8 @@
         "ds2438_hih4030_tept5600": "DS2438 with HIH4030 and TEPT5600",
         "ds2438_hih5030_tept5600": "DS2438 with HIH5030 and TEPT5600",
         "ds2413": "DS2413 with per-channel roles",
-        "ds28e17_led": "DS28E17 LED controller"
+        "ds28e17_led": "LED controller (DS28E17)",
+        "ds28e17_multisensor": "Multisensor (DS28E17)"
       }
     },
     "ds2413_channel_profile": {
@@ -457,109 +514,530 @@
     "step": {
       "init": {
         "title": "casaIT configuration",
-        "description": "Configure as many modules as you like. Changes are only applied once you select \"Save and close\" - closing this dialog discards them.",
+        "description": "Pick a device to configure. Changes are only applied with \"Save and close\"; closing this dialog discards them.\n\nUnsaved changes: {pending}",
         "menu_options": {
-          "im117_select": "Configure IM117 modules",
-          "om117_select": "Configure OM117 modules",
-          "dm117_select": "Configure DM117 modules",
-          "sm117_select": "Configure SM117 modules",
-          "onewire_select": "Configure OneWire devices",
-          "global_settings": "Global settings",
+          "device": "Configure a device",
+          "input_settings": "Button timing",
+          "advanced_settings": "Advanced: polling and bus",
           "save": "Save and close"
         }
       },
-      "im117_select": {
-        "title": "Select IM117 module",
+      "device": {
+        "title": "Select device",
         "data": {
-          "selected_module": "Module"
+          "device": "Device"
         },
         "data_description": {
-          "selected_module": "Input module to configure."
+          "device": "All modules and 1-Wire devices found in the last bus scan. A * marks unsaved changes."
         }
       },
-      "im117_config": {
-        "title": "Configure IM117 module: {module_name}",
-        "description": "Choose what each input is wired to. Push buttons report events; contacts report a persistent state.",
+      "im117": {
+        "title": "IM117 {device}",
+        "description": "Open an input to set what is wired to it.",
         "data": {
-          "module_name": "Module name",
-          "debounce_ms": "Debounce time (ms)",
-          "port_1_role": "Input 1",
-          "port_1_device_class": "Input 1 device class",
-          "port_1_invert": "Invert input 1",
-          "port_1_repeat": "Repeat while input 1 is held",
-          "port_2_role": "Input 2",
-          "port_2_device_class": "Input 2 device class",
-          "port_2_invert": "Invert input 2",
-          "port_2_repeat": "Repeat while input 2 is held",
-          "port_3_role": "Input 3",
-          "port_3_device_class": "Input 3 device class",
-          "port_3_invert": "Invert input 3",
-          "port_3_repeat": "Repeat while input 3 is held",
-          "port_4_role": "Input 4",
-          "port_4_device_class": "Input 4 device class",
-          "port_4_invert": "Invert input 4",
-          "port_4_repeat": "Repeat while input 4 is held",
-          "port_5_role": "Input 5",
-          "port_5_device_class": "Input 5 device class",
-          "port_5_invert": "Invert input 5",
-          "port_5_repeat": "Repeat while input 5 is held",
-          "port_6_role": "Input 6",
-          "port_6_device_class": "Input 6 device class",
-          "port_6_invert": "Invert input 6",
-          "port_6_repeat": "Repeat while input 6 is held",
-          "port_7_role": "Input 7",
-          "port_7_device_class": "Input 7 device class",
-          "port_7_invert": "Invert input 7",
-          "port_7_repeat": "Repeat while input 7 is held",
-          "port_8_role": "Input 8",
-          "port_8_device_class": "Input 8 device class",
-          "port_8_invert": "Invert input 8",
-          "port_8_repeat": "Repeat while input 8 is held"
+          "name": "Name",
+          "debounce_ms": "Debounce time (ms)"
         },
         "data_description": {
-          "module_name": "Name shown for this module and all of its entities.",
-          "debounce_ms": "How long an input is ignored after it changed. Applies to the whole module.",
-          "port_1_role": "Function connected to input 1.",
-          "port_1_device_class": "Device class used when input 1 is a contact.",
-          "port_1_invert": "Report input 1 the other way round, for a normally closed contact.",
-          "port_1_repeat": "Keep reporting a repeat event while input 1 stays held, for example to dim.",
-          "port_2_role": "Function connected to input 2.",
-          "port_2_device_class": "Device class used when input 2 is a contact.",
-          "port_2_invert": "Report input 2 the other way round, for a normally closed contact.",
-          "port_2_repeat": "Keep reporting a repeat event while input 2 stays held, for example to dim.",
-          "port_3_role": "Function connected to input 3.",
-          "port_3_device_class": "Device class used when input 3 is a contact.",
-          "port_3_invert": "Report input 3 the other way round, for a normally closed contact.",
-          "port_3_repeat": "Keep reporting a repeat event while input 3 stays held, for example to dim.",
-          "port_4_role": "Function connected to input 4.",
-          "port_4_device_class": "Device class used when input 4 is a contact.",
-          "port_4_invert": "Report input 4 the other way round, for a normally closed contact.",
-          "port_4_repeat": "Keep reporting a repeat event while input 4 stays held, for example to dim.",
-          "port_5_role": "Function connected to input 5.",
-          "port_5_device_class": "Device class used when input 5 is a contact.",
-          "port_5_invert": "Report input 5 the other way round, for a normally closed contact.",
-          "port_5_repeat": "Keep reporting a repeat event while input 5 stays held, for example to dim.",
-          "port_6_role": "Function connected to input 6.",
-          "port_6_device_class": "Device class used when input 6 is a contact.",
-          "port_6_invert": "Report input 6 the other way round, for a normally closed contact.",
-          "port_6_repeat": "Keep reporting a repeat event while input 6 stays held, for example to dim.",
-          "port_7_role": "Function connected to input 7.",
-          "port_7_device_class": "Device class used when input 7 is a contact.",
-          "port_7_invert": "Report input 7 the other way round, for a normally closed contact.",
-          "port_7_repeat": "Keep reporting a repeat event while input 7 stays held, for example to dim.",
-          "port_8_role": "Function connected to input 8.",
-          "port_8_device_class": "Device class used when input 8 is a contact.",
-          "port_8_invert": "Report input 8 the other way round, for a normally closed contact.",
-          "port_8_repeat": "Keep reporting a repeat event while input 8 stays held, for example to dim."
+          "name": "Shown for this device and its entities. Leave empty for the default.",
+          "debounce_ms": "How long an input is ignored after it changed. Applies to the whole module."
+        },
+        "sections": {
+          "port_1": {
+            "name": "Input 1",
+            "data": {
+              "role": "Function",
+              "device_class": "Device class",
+              "invert": "Invert",
+              "repeat": "Repeat while held"
+            },
+            "data_description": {
+              "role": "Push buttons report events, contacts a lasting state.",
+              "device_class": "Only used for a contact.",
+              "invert": "Report the input the other way round, for a normally closed contact.",
+              "repeat": "Keep sending repeat events while a button is held, for example to dim."
+            }
+          },
+          "port_2": {
+            "name": "Input 2",
+            "data": {
+              "role": "Function",
+              "device_class": "Device class",
+              "invert": "Invert",
+              "repeat": "Repeat while held"
+            },
+            "data_description": {
+              "role": "Push buttons report events, contacts a lasting state.",
+              "device_class": "Only used for a contact.",
+              "invert": "Report the input the other way round, for a normally closed contact.",
+              "repeat": "Keep sending repeat events while a button is held, for example to dim."
+            }
+          },
+          "port_3": {
+            "name": "Input 3",
+            "data": {
+              "role": "Function",
+              "device_class": "Device class",
+              "invert": "Invert",
+              "repeat": "Repeat while held"
+            },
+            "data_description": {
+              "role": "Push buttons report events, contacts a lasting state.",
+              "device_class": "Only used for a contact.",
+              "invert": "Report the input the other way round, for a normally closed contact.",
+              "repeat": "Keep sending repeat events while a button is held, for example to dim."
+            }
+          },
+          "port_4": {
+            "name": "Input 4",
+            "data": {
+              "role": "Function",
+              "device_class": "Device class",
+              "invert": "Invert",
+              "repeat": "Repeat while held"
+            },
+            "data_description": {
+              "role": "Push buttons report events, contacts a lasting state.",
+              "device_class": "Only used for a contact.",
+              "invert": "Report the input the other way round, for a normally closed contact.",
+              "repeat": "Keep sending repeat events while a button is held, for example to dim."
+            }
+          },
+          "port_5": {
+            "name": "Input 5",
+            "data": {
+              "role": "Function",
+              "device_class": "Device class",
+              "invert": "Invert",
+              "repeat": "Repeat while held"
+            },
+            "data_description": {
+              "role": "Push buttons report events, contacts a lasting state.",
+              "device_class": "Only used for a contact.",
+              "invert": "Report the input the other way round, for a normally closed contact.",
+              "repeat": "Keep sending repeat events while a button is held, for example to dim."
+            }
+          },
+          "port_6": {
+            "name": "Input 6",
+            "data": {
+              "role": "Function",
+              "device_class": "Device class",
+              "invert": "Invert",
+              "repeat": "Repeat while held"
+            },
+            "data_description": {
+              "role": "Push buttons report events, contacts a lasting state.",
+              "device_class": "Only used for a contact.",
+              "invert": "Report the input the other way round, for a normally closed contact.",
+              "repeat": "Keep sending repeat events while a button is held, for example to dim."
+            }
+          },
+          "port_7": {
+            "name": "Input 7",
+            "data": {
+              "role": "Function",
+              "device_class": "Device class",
+              "invert": "Invert",
+              "repeat": "Repeat while held"
+            },
+            "data_description": {
+              "role": "Push buttons report events, contacts a lasting state.",
+              "device_class": "Only used for a contact.",
+              "invert": "Report the input the other way round, for a normally closed contact.",
+              "repeat": "Keep sending repeat events while a button is held, for example to dim."
+            }
+          },
+          "port_8": {
+            "name": "Input 8",
+            "data": {
+              "role": "Function",
+              "device_class": "Device class",
+              "invert": "Invert",
+              "repeat": "Repeat while held"
+            },
+            "data_description": {
+              "role": "Push buttons report events, contacts a lasting state.",
+              "device_class": "Only used for a contact.",
+              "invert": "Report the input the other way round, for a normally closed contact.",
+              "repeat": "Keep sending repeat events while a button is held, for example to dim."
+            }
+          }
         }
       },
-      "global_settings": {
-        "title": "Global settings",
-        "description": "These values apply to the complete bridge.",
+      "om117": {
+        "title": "OM117 {device}",
+        "description": "Open an output pair to set what it drives. Timing fields appear for the selected mode.",
+        "data": {
+          "name": "Name"
+        },
+        "data_description": {
+          "name": "Shown for this device and its entities. Leave empty for the default."
+        },
+        "sections": {
+          "pair_1": {
+            "name": "Outputs 1 and 2",
+            "data": {
+              "mode": "Mode",
+              "open_time": "Opening time (s)",
+              "close_time": "Closing time (s)",
+              "overrun_time": "Overrun (s)",
+              "tilt_time": "Full slat travel (s)",
+              "pulse_duration": "Pulse duration (s)"
+            },
+            "data_description": {
+              "mode": "Two independent outputs, or together as a shutter, a blind, or pulse outputs.",
+              "open_time": "Time to fully open.",
+              "close_time": "Time to fully close.",
+              "overrun_time": "Extra motor time at the end position.",
+              "tilt_time": "Time for the slats to turn from closed to open.",
+              "pulse_duration": "How long a pulse output stays on."
+            }
+          },
+          "pair_2": {
+            "name": "Outputs 3 and 4",
+            "data": {
+              "mode": "Mode",
+              "open_time": "Opening time (s)",
+              "close_time": "Closing time (s)",
+              "overrun_time": "Overrun (s)",
+              "tilt_time": "Full slat travel (s)",
+              "pulse_duration": "Pulse duration (s)"
+            },
+            "data_description": {
+              "mode": "Two independent outputs, or together as a shutter, a blind, or pulse outputs.",
+              "open_time": "Time to fully open.",
+              "close_time": "Time to fully close.",
+              "overrun_time": "Extra motor time at the end position.",
+              "tilt_time": "Time for the slats to turn from closed to open.",
+              "pulse_duration": "How long a pulse output stays on."
+            }
+          },
+          "pair_3": {
+            "name": "Outputs 5 and 6",
+            "data": {
+              "mode": "Mode",
+              "open_time": "Opening time (s)",
+              "close_time": "Closing time (s)",
+              "overrun_time": "Overrun (s)",
+              "tilt_time": "Full slat travel (s)",
+              "pulse_duration": "Pulse duration (s)"
+            },
+            "data_description": {
+              "mode": "Two independent outputs, or together as a shutter, a blind, or pulse outputs.",
+              "open_time": "Time to fully open.",
+              "close_time": "Time to fully close.",
+              "overrun_time": "Extra motor time at the end position.",
+              "tilt_time": "Time for the slats to turn from closed to open.",
+              "pulse_duration": "How long a pulse output stays on."
+            }
+          },
+          "pair_4": {
+            "name": "Outputs 7 and 8",
+            "data": {
+              "mode": "Mode",
+              "open_time": "Opening time (s)",
+              "close_time": "Closing time (s)",
+              "overrun_time": "Overrun (s)",
+              "tilt_time": "Full slat travel (s)",
+              "pulse_duration": "Pulse duration (s)"
+            },
+            "data_description": {
+              "mode": "Two independent outputs, or together as a shutter, a blind, or pulse outputs.",
+              "open_time": "Time to fully open.",
+              "close_time": "Time to fully close.",
+              "overrun_time": "Extra motor time at the end position.",
+              "tilt_time": "Time for the slats to turn from closed to open.",
+              "pulse_duration": "How long a pulse output stays on."
+            }
+          }
+        }
+      },
+      "dm117": {
+        "title": "DM117 {device}",
+        "description": "Open a slot to set its hardware. Input slots also show their two channels.",
+        "data": {
+          "name": "Name",
+          "debounce_ms": "Debounce time (ms)"
+        },
+        "data_description": {
+          "name": "Shown for this device and its entities. Leave empty for the default.",
+          "debounce_ms": "How long an input is ignored after it changed. Applies to the whole module."
+        },
+        "sections": {
+          "slot_1": {
+            "name": "Slot 1",
+            "data": {
+              "type": "Installed hardware",
+              "a_role": "Channel A function",
+              "a_device_class": "Channel A device class",
+              "a_invert": "Invert channel A",
+              "a_repeat": "Channel A: repeat while held",
+              "b_role": "Channel B function",
+              "b_device_class": "Channel B device class",
+              "b_invert": "Invert channel B",
+              "b_repeat": "Channel B: repeat while held"
+            },
+            "data_description": {
+              "type": "What is plugged into this slot.",
+              "a_role": "Push buttons report events, contacts a lasting state.",
+              "a_device_class": "Only used for a contact.",
+              "a_invert": "Report the input the other way round, for a normally closed contact.",
+              "a_repeat": "Keep sending repeat events while a button is held, for example to dim.",
+              "b_role": "Push buttons report events, contacts a lasting state.",
+              "b_device_class": "Only used for a contact.",
+              "b_invert": "Report the input the other way round, for a normally closed contact.",
+              "b_repeat": "Keep sending repeat events while a button is held, for example to dim."
+            }
+          },
+          "slot_2": {
+            "name": "Slot 2",
+            "data": {
+              "type": "Installed hardware",
+              "a_role": "Channel A function",
+              "a_device_class": "Channel A device class",
+              "a_invert": "Invert channel A",
+              "a_repeat": "Channel A: repeat while held",
+              "b_role": "Channel B function",
+              "b_device_class": "Channel B device class",
+              "b_invert": "Invert channel B",
+              "b_repeat": "Channel B: repeat while held"
+            },
+            "data_description": {
+              "type": "What is plugged into this slot.",
+              "a_role": "Push buttons report events, contacts a lasting state.",
+              "a_device_class": "Only used for a contact.",
+              "a_invert": "Report the input the other way round, for a normally closed contact.",
+              "a_repeat": "Keep sending repeat events while a button is held, for example to dim.",
+              "b_role": "Push buttons report events, contacts a lasting state.",
+              "b_device_class": "Only used for a contact.",
+              "b_invert": "Report the input the other way round, for a normally closed contact.",
+              "b_repeat": "Keep sending repeat events while a button is held, for example to dim."
+            }
+          },
+          "slot_3": {
+            "name": "Slot 3",
+            "data": {
+              "type": "Installed hardware",
+              "a_role": "Channel A function",
+              "a_device_class": "Channel A device class",
+              "a_invert": "Invert channel A",
+              "a_repeat": "Channel A: repeat while held",
+              "b_role": "Channel B function",
+              "b_device_class": "Channel B device class",
+              "b_invert": "Invert channel B",
+              "b_repeat": "Channel B: repeat while held"
+            },
+            "data_description": {
+              "type": "What is plugged into this slot.",
+              "a_role": "Push buttons report events, contacts a lasting state.",
+              "a_device_class": "Only used for a contact.",
+              "a_invert": "Report the input the other way round, for a normally closed contact.",
+              "a_repeat": "Keep sending repeat events while a button is held, for example to dim.",
+              "b_role": "Push buttons report events, contacts a lasting state.",
+              "b_device_class": "Only used for a contact.",
+              "b_invert": "Report the input the other way round, for a normally closed contact.",
+              "b_repeat": "Keep sending repeat events while a button is held, for example to dim."
+            }
+          },
+          "slot_4": {
+            "name": "Slot 4",
+            "data": {
+              "type": "Installed hardware",
+              "a_role": "Channel A function",
+              "a_device_class": "Channel A device class",
+              "a_invert": "Invert channel A",
+              "a_repeat": "Channel A: repeat while held",
+              "b_role": "Channel B function",
+              "b_device_class": "Channel B device class",
+              "b_invert": "Invert channel B",
+              "b_repeat": "Channel B: repeat while held"
+            },
+            "data_description": {
+              "type": "What is plugged into this slot.",
+              "a_role": "Push buttons report events, contacts a lasting state.",
+              "a_device_class": "Only used for a contact.",
+              "a_invert": "Report the input the other way round, for a normally closed contact.",
+              "a_repeat": "Keep sending repeat events while a button is held, for example to dim.",
+              "b_role": "Push buttons report events, contacts a lasting state.",
+              "b_device_class": "Only used for a contact.",
+              "b_invert": "Report the input the other way round, for a normally closed contact.",
+              "b_repeat": "Keep sending repeat events while a button is held, for example to dim."
+            }
+          },
+          "slot_5": {
+            "name": "Slot 5",
+            "data": {
+              "type": "Installed hardware",
+              "a_role": "Channel A function",
+              "a_device_class": "Channel A device class",
+              "a_invert": "Invert channel A",
+              "a_repeat": "Channel A: repeat while held",
+              "b_role": "Channel B function",
+              "b_device_class": "Channel B device class",
+              "b_invert": "Invert channel B",
+              "b_repeat": "Channel B: repeat while held"
+            },
+            "data_description": {
+              "type": "What is plugged into this slot.",
+              "a_role": "Push buttons report events, contacts a lasting state.",
+              "a_device_class": "Only used for a contact.",
+              "a_invert": "Report the input the other way round, for a normally closed contact.",
+              "a_repeat": "Keep sending repeat events while a button is held, for example to dim.",
+              "b_role": "Push buttons report events, contacts a lasting state.",
+              "b_device_class": "Only used for a contact.",
+              "b_invert": "Report the input the other way round, for a normally closed contact.",
+              "b_repeat": "Keep sending repeat events while a button is held, for example to dim."
+            }
+          },
+          "slot_6": {
+            "name": "Slot 6",
+            "data": {
+              "type": "Installed hardware",
+              "a_role": "Channel A function",
+              "a_device_class": "Channel A device class",
+              "a_invert": "Invert channel A",
+              "a_repeat": "Channel A: repeat while held",
+              "b_role": "Channel B function",
+              "b_device_class": "Channel B device class",
+              "b_invert": "Invert channel B",
+              "b_repeat": "Channel B: repeat while held"
+            },
+            "data_description": {
+              "type": "What is plugged into this slot.",
+              "a_role": "Push buttons report events, contacts a lasting state.",
+              "a_device_class": "Only used for a contact.",
+              "a_invert": "Report the input the other way round, for a normally closed contact.",
+              "a_repeat": "Keep sending repeat events while a button is held, for example to dim.",
+              "b_role": "Push buttons report events, contacts a lasting state.",
+              "b_device_class": "Only used for a contact.",
+              "b_invert": "Report the input the other way round, for a normally closed contact.",
+              "b_repeat": "Keep sending repeat events while a button is held, for example to dim."
+            }
+          },
+          "slot_7": {
+            "name": "Slot 7",
+            "data": {
+              "type": "Installed hardware",
+              "a_role": "Channel A function",
+              "a_device_class": "Channel A device class",
+              "a_invert": "Invert channel A",
+              "a_repeat": "Channel A: repeat while held",
+              "b_role": "Channel B function",
+              "b_device_class": "Channel B device class",
+              "b_invert": "Invert channel B",
+              "b_repeat": "Channel B: repeat while held"
+            },
+            "data_description": {
+              "type": "What is plugged into this slot.",
+              "a_role": "Push buttons report events, contacts a lasting state.",
+              "a_device_class": "Only used for a contact.",
+              "a_invert": "Report the input the other way round, for a normally closed contact.",
+              "a_repeat": "Keep sending repeat events while a button is held, for example to dim.",
+              "b_role": "Push buttons report events, contacts a lasting state.",
+              "b_device_class": "Only used for a contact.",
+              "b_invert": "Report the input the other way round, for a normally closed contact.",
+              "b_repeat": "Keep sending repeat events while a button is held, for example to dim."
+            }
+          },
+          "slot_8": {
+            "name": "Slot 8",
+            "data": {
+              "type": "Installed hardware",
+              "a_role": "Channel A function",
+              "a_device_class": "Channel A device class",
+              "a_invert": "Invert channel A",
+              "a_repeat": "Channel A: repeat while held",
+              "b_role": "Channel B function",
+              "b_device_class": "Channel B device class",
+              "b_invert": "Invert channel B",
+              "b_repeat": "Channel B: repeat while held"
+            },
+            "data_description": {
+              "type": "What is plugged into this slot.",
+              "a_role": "Push buttons report events, contacts a lasting state.",
+              "a_device_class": "Only used for a contact.",
+              "a_invert": "Report the input the other way round, for a normally closed contact.",
+              "a_repeat": "Keep sending repeat events while a button is held, for example to dim.",
+              "b_role": "Push buttons report events, contacts a lasting state.",
+              "b_device_class": "Only used for a contact.",
+              "b_invert": "Report the input the other way round, for a normally closed contact.",
+              "b_repeat": "Keep sending repeat events while a button is held, for example to dim."
+            }
+          }
+        }
+      },
+      "sm117": {
+        "title": "SM117 {device}",
+        "data": {
+          "name": "Name"
+        },
+        "data_description": {
+          "name": "Shown for this device and its entities. Leave empty for the default."
+        }
+      },
+      "onewire": {
+        "title": "1-Wire {device}",
+        "description": "Detected: {details}",
+        "data": {
+          "name": "Name",
+          "profile": "Profile",
+          "poll_interval": "Poll interval (s)",
+          "led_count": "Number of LEDs"
+        },
+        "data_description": {
+          "name": "Shown for this device and its entities. Leave empty for the default.",
+          "profile": "What is connected at this 1-Wire address. Detected automatically; change it only to override.",
+          "poll_interval": "Time between two reads of this device.",
+          "led_count": "Addressable LEDs connected to the controller."
+        },
+        "sections": {
+          "channel_1": {
+            "name": "Channel A",
+            "data": {
+              "direction": "Direction",
+              "device_class": "Device class",
+              "invert": "Invert"
+            },
+            "data_description": {
+              "direction": "Read the channel as an input or drive it as an output.",
+              "device_class": "Only used for a contact.",
+              "invert": "Report the input the other way round, for a normally closed contact."
+            }
+          },
+          "channel_2": {
+            "name": "Channel B",
+            "data": {
+              "direction": "Direction",
+              "device_class": "Device class",
+              "invert": "Invert"
+            },
+            "data_description": {
+              "direction": "Read the channel as an input or drive it as an output.",
+              "device_class": "Only used for a contact.",
+              "invert": "Report the input the other way round, for a normally closed contact."
+            }
+          }
+        }
+      },
+      "input_settings": {
+        "title": "Button timing",
+        "description": "Applies to every input with the push button function.",
         "data": {
           "long_press_ms": "Long press threshold (ms)",
           "double_click_ms": "Double click window (ms)",
-          "repeat_interval_ms": "Repeat interval (ms)",
+          "repeat_interval_ms": "Repeat interval (ms)"
+        },
+        "data_description": {
+          "long_press_ms": "Holding a button at least this long reports a long press.",
+          "double_click_ms": "Time to wait for a second press. Set to 0 to report single presses immediately.",
+          "repeat_interval_ms": "Gap between repeat events while a button with repeat enabled is held."
+        }
+      },
+      "advanced_settings": {
+        "title": "Advanced: polling and bus",
+        "description": "Only change these when the diagnostic sensors of the bridge suggest it.",
+        "data": {
           "fast_poll_interval_ms": "Fast polling interval (ms)",
           "slow_poll_interval": "Slow polling interval (s)",
           "max_send_interval_ms": "Maximum send spacing (ms)",
@@ -567,328 +1045,20 @@
           "topology_missing_scans": "Scans before a device counts as gone"
         },
         "data_description": {
-          "long_press_ms": "Holding a button at least this long reports a long press.",
-          "double_click_ms": "Time to wait for a second press. Set to 0 to report single presses immediately.",
-          "repeat_interval_ms": "Gap between repeats while a button with repeating enabled is held.",
-          "fast_poll_interval_ms": "Delay between input polling cycles.",
-          "slow_poll_interval": "Interval for consistency checks of output-only modules.",
+          "fast_poll_interval_ms": "Pause between two reads of the inputs.",
+          "slow_poll_interval": "How often output-only modules are read back to catch drift.",
           "max_send_interval_ms": "Largest spacing the adaptive bridge transport may use after communication errors.",
-          "topology_scan_interval": "How often to rescan the bus for modules that disappeared. Set to 0 to only scan at startup and on request.",
-          "topology_missing_scans": "How many scans in a row a module has to miss before it is reported. Guards against a single busy scan dropping a module."
-        }
-      },
-      "om117_select": {
-        "title": "Select OM117 module",
-        "data": {
-          "selected_module": "Module"
-        },
-        "data_description": {
-          "selected_module": "Output module to configure."
-        }
-      },
-      "om117_config": {
-        "title": "Configure OM117 module: {module_name}",
-        "data": {
-          "module_name": "Module name",
-          "pair_1_mode": "Pair 1 mode",
-          "pair_2_mode": "Pair 2 mode",
-          "pair_3_mode": "Pair 3 mode",
-          "pair_4_mode": "Pair 4 mode"
-        },
-        "data_description": {
-          "module_name": "Name shown for this module and all of its entities.",
-          "pair_1_mode": "Use outputs 1 and 2 separately or as one blind.",
-          "pair_2_mode": "Use outputs 3 and 4 separately or as one blind.",
-          "pair_3_mode": "Use outputs 5 and 6 separately or as one blind.",
-          "pair_4_mode": "Use outputs 7 and 8 separately or as one blind."
-        }
-      },
-      "om117_timing": {
-        "title": "Configure output timings: {module_name}",
-        "data": {
-          "pair_1_open_time": "Pair 1 opening time (s)",
-          "pair_1_close_time": "Pair 1 closing time (s)",
-          "pair_1_overrun_time": "Pair 1 overrun (s)",
-          "pair_1_tilt_time": "Pair 1 full tilt time (s)",
-          "pair_1_pulse_duration": "Pair 1 pulse duration (s)",
-          "pair_2_open_time": "Pair 2 opening time (s)",
-          "pair_2_close_time": "Pair 2 closing time (s)",
-          "pair_2_overrun_time": "Pair 2 overrun (s)",
-          "pair_2_tilt_time": "Pair 2 full tilt time (s)",
-          "pair_2_pulse_duration": "Pair 2 pulse duration (s)",
-          "pair_3_open_time": "Pair 3 opening time (s)",
-          "pair_3_close_time": "Pair 3 closing time (s)",
-          "pair_3_overrun_time": "Pair 3 overrun (s)",
-          "pair_3_tilt_time": "Pair 3 full tilt time (s)",
-          "pair_3_pulse_duration": "Pair 3 pulse duration (s)",
-          "pair_4_open_time": "Pair 4 opening time (s)",
-          "pair_4_close_time": "Pair 4 closing time (s)",
-          "pair_4_overrun_time": "Pair 4 overrun (s)",
-          "pair_4_tilt_time": "Pair 4 full tilt time (s)",
-          "pair_4_pulse_duration": "Pair 4 pulse duration (s)"
-        },
-        "data_description": {
-          "pair_1_open_time": "Time required for pair 1 to open fully.",
-          "pair_1_close_time": "Time required for pair 1 to close fully.",
-          "pair_1_overrun_time": "Additional motor time at the end position for pair 1.",
-          "pair_1_tilt_time": "Time needed to move pair 1 through its complete slat tilt range.",
-          "pair_1_pulse_duration": "How long either pulse output in pair 1 remains active.",
-          "pair_2_open_time": "Time required for pair 2 to open fully.",
-          "pair_2_close_time": "Time required for pair 2 to close fully.",
-          "pair_2_overrun_time": "Additional motor time at the end position for pair 2.",
-          "pair_2_tilt_time": "Time needed to move pair 2 through its complete slat tilt range.",
-          "pair_2_pulse_duration": "How long either pulse output in pair 2 remains active.",
-          "pair_3_open_time": "Time required for pair 3 to open fully.",
-          "pair_3_close_time": "Time required for pair 3 to close fully.",
-          "pair_3_overrun_time": "Additional motor time at the end position for pair 3.",
-          "pair_3_tilt_time": "Time needed to move pair 3 through its complete slat tilt range.",
-          "pair_3_pulse_duration": "How long either pulse output in pair 3 remains active.",
-          "pair_4_open_time": "Time required for pair 4 to open fully.",
-          "pair_4_close_time": "Time required for pair 4 to close fully.",
-          "pair_4_overrun_time": "Additional motor time at the end position for pair 4.",
-          "pair_4_tilt_time": "Time needed to move pair 4 through its complete slat tilt range.",
-          "pair_4_pulse_duration": "How long either pulse output in pair 4 remains active."
-        }
-      },
-      "dm117_select": {
-        "title": "Select DM117 module",
-        "data": {
-          "selected_module": "Module"
-        },
-        "data_description": {
-          "selected_module": "Digital module to configure."
-        }
-      },
-      "dm117_config": {
-        "title": "Configure DM117 module: {module_name}",
-        "data": {
-          "module_name": "Module name",
-          "slot_1": "Slot 1",
-          "slot_2": "Slot 2",
-          "slot_3": "Slot 3",
-          "slot_4": "Slot 4",
-          "slot_5": "Slot 5",
-          "slot_6": "Slot 6",
-          "slot_7": "Slot 7",
-          "slot_8": "Slot 8"
-        },
-        "data_description": {
-          "module_name": "Name shown for this module and all of its entities.",
-          "slot_1": "Hardware installed in slot 1.",
-          "slot_2": "Hardware installed in slot 2.",
-          "slot_3": "Hardware installed in slot 3.",
-          "slot_4": "Hardware installed in slot 4.",
-          "slot_5": "Hardware installed in slot 5.",
-          "slot_6": "Hardware installed in slot 6.",
-          "slot_7": "Hardware installed in slot 7.",
-          "slot_8": "Hardware installed in slot 8."
-        }
-      },
-      "dm117_input_config": {
-        "title": "Configure DM117 inputs: {module_name}",
-        "description": "Choose what each channel of the input slots is wired to.",
-        "data": {
-          "debounce_ms": "Debounce time (ms)",
-          "slot_1_channel_a_role": "Slot 1 input A",
-          "slot_1_channel_a_device_class": "Slot 1 input A device class",
-          "slot_1_channel_a_invert": "Invert slot 1 input A",
-          "slot_1_channel_a_repeat": "Repeat while slot 1 input A is held",
-          "slot_1_channel_b_role": "Slot 1 input B",
-          "slot_1_channel_b_device_class": "Slot 1 input B device class",
-          "slot_1_channel_b_invert": "Invert slot 1 input B",
-          "slot_1_channel_b_repeat": "Repeat while slot 1 input B is held",
-          "slot_2_channel_a_role": "Slot 2 input A",
-          "slot_2_channel_a_device_class": "Slot 2 input A device class",
-          "slot_2_channel_a_invert": "Invert slot 2 input A",
-          "slot_2_channel_a_repeat": "Repeat while slot 2 input A is held",
-          "slot_2_channel_b_role": "Slot 2 input B",
-          "slot_2_channel_b_device_class": "Slot 2 input B device class",
-          "slot_2_channel_b_invert": "Invert slot 2 input B",
-          "slot_2_channel_b_repeat": "Repeat while slot 2 input B is held",
-          "slot_3_channel_a_role": "Slot 3 input A",
-          "slot_3_channel_a_device_class": "Slot 3 input A device class",
-          "slot_3_channel_a_invert": "Invert slot 3 input A",
-          "slot_3_channel_a_repeat": "Repeat while slot 3 input A is held",
-          "slot_3_channel_b_role": "Slot 3 input B",
-          "slot_3_channel_b_device_class": "Slot 3 input B device class",
-          "slot_3_channel_b_invert": "Invert slot 3 input B",
-          "slot_3_channel_b_repeat": "Repeat while slot 3 input B is held",
-          "slot_4_channel_a_role": "Slot 4 input A",
-          "slot_4_channel_a_device_class": "Slot 4 input A device class",
-          "slot_4_channel_a_invert": "Invert slot 4 input A",
-          "slot_4_channel_a_repeat": "Repeat while slot 4 input A is held",
-          "slot_4_channel_b_role": "Slot 4 input B",
-          "slot_4_channel_b_device_class": "Slot 4 input B device class",
-          "slot_4_channel_b_invert": "Invert slot 4 input B",
-          "slot_4_channel_b_repeat": "Repeat while slot 4 input B is held",
-          "slot_5_channel_a_role": "Slot 5 input A",
-          "slot_5_channel_a_device_class": "Slot 5 input A device class",
-          "slot_5_channel_a_invert": "Invert slot 5 input A",
-          "slot_5_channel_a_repeat": "Repeat while slot 5 input A is held",
-          "slot_5_channel_b_role": "Slot 5 input B",
-          "slot_5_channel_b_device_class": "Slot 5 input B device class",
-          "slot_5_channel_b_invert": "Invert slot 5 input B",
-          "slot_5_channel_b_repeat": "Repeat while slot 5 input B is held",
-          "slot_6_channel_a_role": "Slot 6 input A",
-          "slot_6_channel_a_device_class": "Slot 6 input A device class",
-          "slot_6_channel_a_invert": "Invert slot 6 input A",
-          "slot_6_channel_a_repeat": "Repeat while slot 6 input A is held",
-          "slot_6_channel_b_role": "Slot 6 input B",
-          "slot_6_channel_b_device_class": "Slot 6 input B device class",
-          "slot_6_channel_b_invert": "Invert slot 6 input B",
-          "slot_6_channel_b_repeat": "Repeat while slot 6 input B is held",
-          "slot_7_channel_a_role": "Slot 7 input A",
-          "slot_7_channel_a_device_class": "Slot 7 input A device class",
-          "slot_7_channel_a_invert": "Invert slot 7 input A",
-          "slot_7_channel_a_repeat": "Repeat while slot 7 input A is held",
-          "slot_7_channel_b_role": "Slot 7 input B",
-          "slot_7_channel_b_device_class": "Slot 7 input B device class",
-          "slot_7_channel_b_invert": "Invert slot 7 input B",
-          "slot_7_channel_b_repeat": "Repeat while slot 7 input B is held",
-          "slot_8_channel_a_role": "Slot 8 input A",
-          "slot_8_channel_a_device_class": "Slot 8 input A device class",
-          "slot_8_channel_a_invert": "Invert slot 8 input A",
-          "slot_8_channel_a_repeat": "Repeat while slot 8 input A is held",
-          "slot_8_channel_b_role": "Slot 8 input B",
-          "slot_8_channel_b_device_class": "Slot 8 input B device class",
-          "slot_8_channel_b_invert": "Invert slot 8 input B",
-          "slot_8_channel_b_repeat": "Repeat while slot 8 input B is held"
-        },
-        "data_description": {
-          "debounce_ms": "How long an input is ignored after it changed. Applies to the whole module.",
-          "slot_1_channel_a_role": "Function connected to slot 1 input A.",
-          "slot_1_channel_a_device_class": "Device class used when slot 1 input A is a contact.",
-          "slot_1_channel_a_invert": "Report slot 1 input A the other way round, for a normally closed contact.",
-          "slot_1_channel_a_repeat": "Keep reporting a repeat event while slot 1 input A stays held, for example to dim.",
-          "slot_1_channel_b_role": "Function connected to slot 1 input B.",
-          "slot_1_channel_b_device_class": "Device class used when slot 1 input B is a contact.",
-          "slot_1_channel_b_invert": "Report slot 1 input B the other way round, for a normally closed contact.",
-          "slot_1_channel_b_repeat": "Keep reporting a repeat event while slot 1 input B stays held, for example to dim.",
-          "slot_2_channel_a_role": "Function connected to slot 2 input A.",
-          "slot_2_channel_a_device_class": "Device class used when slot 2 input A is a contact.",
-          "slot_2_channel_a_invert": "Report slot 2 input A the other way round, for a normally closed contact.",
-          "slot_2_channel_a_repeat": "Keep reporting a repeat event while slot 2 input A stays held, for example to dim.",
-          "slot_2_channel_b_role": "Function connected to slot 2 input B.",
-          "slot_2_channel_b_device_class": "Device class used when slot 2 input B is a contact.",
-          "slot_2_channel_b_invert": "Report slot 2 input B the other way round, for a normally closed contact.",
-          "slot_2_channel_b_repeat": "Keep reporting a repeat event while slot 2 input B stays held, for example to dim.",
-          "slot_3_channel_a_role": "Function connected to slot 3 input A.",
-          "slot_3_channel_a_device_class": "Device class used when slot 3 input A is a contact.",
-          "slot_3_channel_a_invert": "Report slot 3 input A the other way round, for a normally closed contact.",
-          "slot_3_channel_a_repeat": "Keep reporting a repeat event while slot 3 input A stays held, for example to dim.",
-          "slot_3_channel_b_role": "Function connected to slot 3 input B.",
-          "slot_3_channel_b_device_class": "Device class used when slot 3 input B is a contact.",
-          "slot_3_channel_b_invert": "Report slot 3 input B the other way round, for a normally closed contact.",
-          "slot_3_channel_b_repeat": "Keep reporting a repeat event while slot 3 input B stays held, for example to dim.",
-          "slot_4_channel_a_role": "Function connected to slot 4 input A.",
-          "slot_4_channel_a_device_class": "Device class used when slot 4 input A is a contact.",
-          "slot_4_channel_a_invert": "Report slot 4 input A the other way round, for a normally closed contact.",
-          "slot_4_channel_a_repeat": "Keep reporting a repeat event while slot 4 input A stays held, for example to dim.",
-          "slot_4_channel_b_role": "Function connected to slot 4 input B.",
-          "slot_4_channel_b_device_class": "Device class used when slot 4 input B is a contact.",
-          "slot_4_channel_b_invert": "Report slot 4 input B the other way round, for a normally closed contact.",
-          "slot_4_channel_b_repeat": "Keep reporting a repeat event while slot 4 input B stays held, for example to dim.",
-          "slot_5_channel_a_role": "Function connected to slot 5 input A.",
-          "slot_5_channel_a_device_class": "Device class used when slot 5 input A is a contact.",
-          "slot_5_channel_a_invert": "Report slot 5 input A the other way round, for a normally closed contact.",
-          "slot_5_channel_a_repeat": "Keep reporting a repeat event while slot 5 input A stays held, for example to dim.",
-          "slot_5_channel_b_role": "Function connected to slot 5 input B.",
-          "slot_5_channel_b_device_class": "Device class used when slot 5 input B is a contact.",
-          "slot_5_channel_b_invert": "Report slot 5 input B the other way round, for a normally closed contact.",
-          "slot_5_channel_b_repeat": "Keep reporting a repeat event while slot 5 input B stays held, for example to dim.",
-          "slot_6_channel_a_role": "Function connected to slot 6 input A.",
-          "slot_6_channel_a_device_class": "Device class used when slot 6 input A is a contact.",
-          "slot_6_channel_a_invert": "Report slot 6 input A the other way round, for a normally closed contact.",
-          "slot_6_channel_a_repeat": "Keep reporting a repeat event while slot 6 input A stays held, for example to dim.",
-          "slot_6_channel_b_role": "Function connected to slot 6 input B.",
-          "slot_6_channel_b_device_class": "Device class used when slot 6 input B is a contact.",
-          "slot_6_channel_b_invert": "Report slot 6 input B the other way round, for a normally closed contact.",
-          "slot_6_channel_b_repeat": "Keep reporting a repeat event while slot 6 input B stays held, for example to dim.",
-          "slot_7_channel_a_role": "Function connected to slot 7 input A.",
-          "slot_7_channel_a_device_class": "Device class used when slot 7 input A is a contact.",
-          "slot_7_channel_a_invert": "Report slot 7 input A the other way round, for a normally closed contact.",
-          "slot_7_channel_a_repeat": "Keep reporting a repeat event while slot 7 input A stays held, for example to dim.",
-          "slot_7_channel_b_role": "Function connected to slot 7 input B.",
-          "slot_7_channel_b_device_class": "Device class used when slot 7 input B is a contact.",
-          "slot_7_channel_b_invert": "Report slot 7 input B the other way round, for a normally closed contact.",
-          "slot_7_channel_b_repeat": "Keep reporting a repeat event while slot 7 input B stays held, for example to dim.",
-          "slot_8_channel_a_role": "Function connected to slot 8 input A.",
-          "slot_8_channel_a_device_class": "Device class used when slot 8 input A is a contact.",
-          "slot_8_channel_a_invert": "Report slot 8 input A the other way round, for a normally closed contact.",
-          "slot_8_channel_a_repeat": "Keep reporting a repeat event while slot 8 input A stays held, for example to dim.",
-          "slot_8_channel_b_role": "Function connected to slot 8 input B.",
-          "slot_8_channel_b_device_class": "Device class used when slot 8 input B is a contact.",
-          "slot_8_channel_b_invert": "Report slot 8 input B the other way round, for a normally closed contact.",
-          "slot_8_channel_b_repeat": "Keep reporting a repeat event while slot 8 input B stays held, for example to dim."
-        }
-      },
-      "sm117_select": {
-        "title": "Select SM117 module",
-        "data": {
-          "selected_module": "Module"
-        },
-        "data_description": {
-          "selected_module": "OneWire bus module to configure."
-        }
-      },
-      "sm117_config": {
-        "title": "Configure SM117 module: {module_name}",
-        "data": {
-          "module_name": "Module name"
-        },
-        "data_description": {
-          "module_name": "Name shown for this module and its connected OneWire devices."
-        }
-      },
-      "onewire_select": {
-        "title": "Select OneWire device",
-        "data": {
-          "selected_device": "Device"
-        },
-        "data_description": {
-          "selected_device": "Detected OneWire device to configure."
-        }
-      },
-      "onewire_config": {
-        "title": "Assign OneWire profile: {device_id}",
-        "data": {
-          "profile": "Profile"
-        },
-        "data_description": {
-          "profile": "Hardware and function connected to this OneWire address."
-        }
-      },
-      "onewire_settings": {
-        "title": "Configure OneWire device: {device_id}",
-        "data": {
-          "poll_interval": "Polling interval (s)",
-          "led_count": "LED count",
-          "channel_1_profile": "Channel A role",
-          "channel_1_device_class": "Channel A device class",
-          "channel_1_invert": "Invert channel A",
-          "channel_2_profile": "Channel B role",
-          "channel_2_device_class": "Channel B device class",
-          "channel_2_invert": "Invert channel B"
-        },
-        "data_description": {
-          "poll_interval": "Time between reads of this device.",
-          "led_count": "Number of addressable LEDs connected to the controller.",
-          "channel_1_profile": "Choose whether channel A is exposed as an input or output.",
-          "channel_1_device_class": "Device class used when channel A is an input.",
-          "channel_1_invert": "Report channel A the other way round, for a normally closed contact.",
-          "channel_2_profile": "Choose whether channel B is exposed as an input or output.",
-          "channel_2_device_class": "Device class used when channel B is an input.",
-          "channel_2_invert": "Report channel B the other way round, for a normally closed contact."
+          "topology_scan_interval": "How often the bus is searched for modules that disappeared. 0 scans only at startup and on request.",
+          "topology_missing_scans": "How many scans in a row a module has to be missing before it is reported."
         }
       }
     },
+    "error": {
+      "fields_updated": "The mode changed, so the form now shows the fields that belong to it. Check them and submit again."
+    },
     "abort": {
-      "integration_not_ready": "Integration is not ready yet",
-      "no_dm117_found": "No DM117 modules found",
-      "no_im117_found": "No IM117 modules found",
-      "no_om117_found": "No OM117 modules found",
-      "no_sm117_found": "No SM117 modules found",
-      "no_onewire_found": "No OneWire devices found"
+      "integration_not_ready": "The integration is not loaded yet",
+      "no_devices_found": "No devices were found on the bus"
     }
   }
 }

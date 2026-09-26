@@ -39,28 +39,48 @@ If the bridge is discovered through Zeroconf, confirm the discovered host and co
 
 ## Configure modules
 
-Open the integration and select **Configure**. Each options branch lists only hardware found during the latest scan.
+Open the integration and select **Configure**, then **Configure a device**. The
+list shows every module and 1-Wire device found during the latest scan; pick one
+to open its form. Each form lists repeated items — ports, output pairs, slots —
+as collapsible sections. Changes are collected until you select **Save and
+close**.
 
 ### IM117
 
-Give the module a meaningful name and assign each input one role:
+Give the module a meaningful name and open each input to assign one role:
 
 - **Push button** creates an event entity and automation device triggers.
-- **Switch** creates a binary sensor without a device class.
-- **Contact** creates a binary sensor with a selected door, window, motion, smoke, or similar device class.
+- **Contact or switch** creates a binary sensor, with an optional door, window, motion, smoke, or similar device class.
 - **Unused** creates no entity.
 
 ### OM117
 
-Configure each pair of outputs as independent switches, a roller shutter, a blind with slat tilt, or two pulse buttons. Cover timings and pulse duration can also be adjusted later through number entities.
+Open each pair of outputs and choose independent switches, a roller shutter, a
+blind with slat tilt, or two pulse buttons. The timing fields of the chosen mode
+appear once the mode is selected. Cover timings and pulse duration can also be
+adjusted later through number entities.
 
 ### DM117
 
-Assign each installed slot as unused, digital input, digital output, or 0-10 V dimmer. Home Assistant warns in Repairs if the module reports a different EEPROM slot type.
+Open each slot and select what is installed: unused, digital input, digital
+output, or 0-10 V dimmer. A slot switched to digital input also shows its two
+channels. Home Assistant warns in Repairs if the module reports a different
+EEPROM slot type.
 
 ### SM117 and 1-Wire
 
-Name each SM117 bus, then select a profile for every detected 1-Wire ROM ID. DS2413 channel A and B can be configured independently as inputs or outputs. DS28E17 LED controllers expose LED count and animation speed controls.
+Name each SM117 bus and each 1-Wire device. The profile is detected
+automatically and only needs to be changed to override it. DS2413 channel A and
+B can be configured independently as inputs or outputs. DS28E17 LED controllers
+expose LED count and animation speed controls.
+
+### Multisensor
+
+A DS28E17 board with any of the SHT41, SGP40, STCC4 and VEML7700 sensors is
+recognised as a Multisensor, and only the fitted sensors appear as entities. If
+it carries a CO2 sensor, let it run for a few minutes in fresh air and press
+**Calibrate CO2 sensor**; the reference concentration is set with the **CO2
+calibration reference** entity, 420 ppm by default.
 
 ## Verify the installation
 

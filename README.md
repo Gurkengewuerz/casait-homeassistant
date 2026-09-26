@@ -29,11 +29,38 @@ family code and given a default profile:
 | DS18B20 | `0x28` | `ds18b20_temp`            | temperature                                             |
 | DS2438  | `0x26` | `ds2438_hih5030_tept5600` | humidity, temperature, illuminance, voltage diagnostics |
 | DS2413  | `0x3A` | `ds2413_in`               | two channels, each independently an input or output     |
-| DS28E17 | `0x19` | `ds28e17_led`             | LED controller with a five-color palette                |
+| DS28E17 | `0x19` | detected, see below       | LED controller, or a Multisensor                        |
 
 The DS2438 profile can be switched to `ds2438_hih4030_tept5600` for the older
 humidity sensor. A DS2413 channel that should drive something is switched to the
 output role per channel.
+
+### DS28E17: LED controller or Multisensor
+
+The DS28E17 is a 1-Wire to I2C bridge, so its family code does not say what is
+behind it. The integration probes the I2C side once per setup:
+
+- if the LED controller firmware answers at `0x42`, the chip becomes an
+  **LED controller** (`ds28e17_led`);
+- otherwise it looks for the sensors of the **Multisensor** board
+  (`ds28e17_multisensor`) and creates entities only for the chips it finds.
+
+| Chip     | I2C address     | Provides                                                                |
+| -------- | --------------- | ----------------------------------------------------------------------- |
+| SHT41    | `0x44`          | temperature, humidity; also compensates the SGP40 and STCC4             |
+| SGP40    | `0x59`          | VOC index (Sensirion gas index algorithm), raw signal as a diagnostic   |
+| STCC4    | `0x64` / `0x65` | CO2, plus calibration, self test, conditioning, and a calibration reset |
+| VEML7700 | `0x10`          | illuminance with automatic gain and integration-time ranging            |
+
+A board can carry any subset of these chips. The profile can still be overridden
+per device in the options if detection ever picks the wrong one.
+
+The Multisensor is sampled every 10 seconds by the integration itself rather than
+polled by its entities: the VOC index algorithm has to be fed at a fixed rate,
+and the SHT41 reading of the same sample is handed to the SGP40 and STCC4 for
+humidity and temperature compensation. The sensors' measurement times are waited
+out with the bus released, so inputs are never held up behind them. The learned
+VOC baseline survives a Home Assistant restart of up to ten minutes.
 
 ## Supported functionality
 
@@ -41,14 +68,14 @@ Which entities a module produces depends on how you configure it.
 
 | Entity          | Created for                                                                                                                                         |
 | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `binary_sensor` | IM117 ports, DM117 input slots, and DS2413 input channels whose role is _contact_; plus a bridge connectivity sensor                                |
+| `binary_sensor` | IM117 ports, DM117 input slots, and DS2413 input channels whose role is _contact_; a bridge connectivity sensor; the CO2 self-test result           |
 | `event`         | the same inputs when their role is _button_, reporting `single_press`, `single_release`, `double_press`, `long_press`, `long_release`, and `repeat` |
 | `switch`        | OM117 outputs, DM117 output slots, DS2413 output channels                                                                                           |
 | `light`         | DM117 dimmer slots (12-bit, with transition), DS28E17 LED controllers                                                                               |
 | `cover`         | OM117 output pairs configured as a shutter or a blind, with time-based slat tilt                                                                    |
-| `sensor`        | DS18B20 and DS2438 readings, plus bridge diagnostics (latency, CRC and timeout counters, send spacing, poll-cycle duration)                         |
-| `number`        | cover travel and tilt times, pulse duration, LED count and animation speed                                                                          |
-| `button`        | **Rescan bus** on the bridge, and one button per OM117 pulse output                                                                                 |
+| `sensor`        | DS18B20, DS2438 and Multisensor readings, plus bridge diagnostics (latency, CRC and timeout counters, send spacing, poll-cycle duration)            |
+| `number`        | cover travel and tilt times, pulse duration, LED count and animation speed, CO2 calibration reference                                               |
+| `button`        | **Rescan bus** on the bridge, one button per OM117 pulse output, and the CO2 sensor maintenance commands                                            |
 
 Every digital input — IM117 port, DM117 input slot, DS2413 channel — is
 described the same way: a role (_contact_, _button_, or _unused_), an optional
@@ -126,26 +153,40 @@ edge:
 | `binary_sensor`, `switch` (DS2413) | 1 s      |
 | `light` (LED controller), `number` | 10 s     |
 | `sensor` (DS18B20, DS2438)         | 15 s     |
+| Multisensor (pushed, see above)    | 10 s     |
 
 Per-chip cache intervals are set from the profile and can be overridden per
 device in the options.
 
 ## Configuration options
 
-Open **Settings > Devices & services > casaIT : Smart Home > Configure**. Module
-options are collected and written in one go, so the integration reloads once when
-you save rather than after every module.
+Open **Settings > Devices & services > casaIT : Smart Home > Configure**. The menu
+has four entries:
 
-**Per module**
+- **Configure a device** lists every module and 1-Wire device of the last bus
+  scan in one list. Picking one opens a single form for it.
+- **Button timing** holds the gesture thresholds shared by all push buttons.
+- **Advanced: polling and bus** holds the poll cadence, transport limit and
+  topology watch.
+- **Save and close** writes everything at once, so the integration reloads a
+  single time however many devices you changed. Closing the dialog discards the
+  changes; devices with unsaved changes are marked with `*` in the list.
 
-- IM117: module name, and for each of the 8 ports a role, device class, inversion, and repeat
-- OM117: module name, and per output pair a mode — switch, pulse, shutter, or blind
-- DM117: module name, per slot a type (none, input, switch, dimmer), and input settings per channel
-- SM117: module name
-- 1-Wire: profile, DS2413 channel roles, per-device poll interval, initial LED count
-- Input modules: a debounce window (40 ms by default)
+Repeated groups — the 8 ports of an IM117, the 4 output pairs of an OM117, the 8
+slots of a DM117 — are collapsible sections, so a form stays short. Fields that
+only belong to one mode, such as the travel times of a shutter or the channels of
+a DM117 input slot, only appear while that mode is selected. When you change a
+mode, the form comes back once with the fields that now apply.
 
-**Global settings**
+**Per device**
+
+- IM117: name, debounce window, and per port a role, device class, inversion, and repeat
+- OM117: name, and per output pair a mode — switch, pulse, shutter, or blind — with its timings
+- DM117: name, debounce window, per slot the installed hardware, and for input slots both channels
+- SM117: name
+- 1-Wire: name, profile where there is a choice, poll interval, LED count, DS2413 channels
+
+**Button timing and advanced settings**
 
 | Setting                | Default   | Meaning                                                                   |
 | ---------------------- | --------- | ------------------------------------------------------------------------- |
@@ -182,6 +223,8 @@ a possible second press only adds latency.
   duration and releases on its own, exposed as a button entity.
 - **Room climate from one chip.** A DS2438 with the right profile reports humidity,
   temperature, and illuminance together.
+- **Ventilation on demand.** A Multisensor with an STCC4 reports CO2 and, with an
+  SGP40, a VOC index; either can drive a fan or a window reminder.
 
 ## Examples
 
@@ -269,6 +312,28 @@ automation:
 
 ## Service actions
 
+### Calibrate CO2 sensor
+
+`casait_smarthome.calibrate_co2` runs a forced recalibration of a Multisensor's
+STCC4. Expose the sensor to air of a known concentration for at least three
+minutes first — fresh outdoor air is about 420 ppm. The action returns the
+correction the sensor applied.
+
+```yaml
+action: casait_smarthome.calibrate_co2
+data:
+  device_id: <your Multisensor device id>
+  target_ppm: 420
+response_variable: calibration
+```
+
+The same calibration is available as the **Calibrate CO2 sensor** button, which
+uses the **CO2 calibration reference** number entity of the device as target.
+The device also offers a **self test** button with a result sensor, and — hidden
+by default — **conditioning** (recommended after long storage) and a reset of the
+calibration history. Each of these pauses the CO2 readings for a few seconds;
+conditioning for about 25 seconds.
+
 ### Scan devices
 
 `casait_smarthome.scan_devices` scans the I2C and 1-Wire buses and reloads the integration so newly connected hardware appears immediately. Devices that no longer answer are reported as a repair issue rather than deleted.
@@ -281,12 +346,12 @@ The bridge device also provides a **Rescan bus** button.
 
 ### Set LED palette
 
-`casait_smarthome.set_led_palette` writes up to five RGB colors to a DS28E17 LED controller. Color 1 is required; omitted colors are written as black.
+`casait_smarthome.set_led_palette` writes up to five RGB colors to a DS28E17 LED controller. Color 1 is required; omitted colors are written as black. The device is picked like any other device; its 1-Wire ROM ID is accepted as well.
 
 ```yaml
 action: casait_smarthome.set_led_palette
 data:
-  device_id: "1900000000000001"
+  device_id: <your LED controller device id>
   color_1: [255, 0, 0]
   color_2: [0, 0, 255]
 ```

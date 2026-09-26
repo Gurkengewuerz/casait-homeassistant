@@ -8,7 +8,7 @@ import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_PORT
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
 from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import (
     config_validation as cv,
@@ -19,7 +19,15 @@ from homeassistant.helpers import (
 from homeassistant.helpers.typing import ConfigType
 
 from .api import CasaITApi
-from .const import CONF_TIMEOUT, CONFIG_ENTRY_VERSION, DOMAIN, PLATFORMS, SERVICE_SCAN_DEVICES, SERVICE_SET_LED_PALETTE
+from .const import (
+    CONF_TIMEOUT,
+    CONFIG_ENTRY_VERSION,
+    DOMAIN,
+    PLATFORMS,
+    SERVICE_CALIBRATE_CO2,
+    SERVICE_SCAN_DEVICES,
+    SERVICE_SET_LED_PALETTE,
+)
 from .helpers import (
     build_device_identifier,
     get_configured_module_addresses,
@@ -29,12 +37,14 @@ from .helpers import (
     get_input_module_settings,
     get_module_name,
     get_om117_pair_configuration,
+    get_onewire_names,
     get_polling_settings,
     get_topology_settings,
     migrate_options_to_nested,
     migrated_device_identifiers,
     migrated_entity_identity,
 )
+from .multisensor import MultisensorCommandError
 from .services.i2cClasses.led_controller import Color, LEDConfig
 from .services.smbus_proxy import SMBus, SMBusProxyError
 
@@ -62,6 +72,31 @@ SET_LED_PALETTE_SCHEMA = vol.Schema(
         vol.Optional("color_5"): RGB_COLOR_SCHEMA,
     }
 )
+CALIBRATE_CO2_SCHEMA = vol.Schema(
+    {
+        vol.Required("device_id"): cv.string,
+        vol.Optional("target_ppm"): vol.All(vol.Coerce(int), vol.Range(min=300, max=5000)),
+    }
+)
+
+
+def _resolve_onewire_target(hass: HomeAssistant, target: str) -> tuple[CasaITApi, str] | None:
+    """Find the bridge and ROM ID behind a service target.
+
+    The target is a Home Assistant device ID, as the device picker sends it, or
+    a bare 1-Wire ROM ID for scripts written before the picker existed.
+    """
+
+    loaded = [entry for entry in hass.config_entries.async_entries(DOMAIN) if entry.state is ConfigEntryState.LOADED]
+    if (device := dr.async_get(hass).async_get(target)) is not None:
+        for entry in loaded:
+            prefix = build_device_identifier(entry.entry_id, "onewire", "")
+            for domain, identifier in device.identifiers:
+                if domain == DOMAIN and identifier.startswith(prefix):
+                    return entry.runtime_data, identifier.removeprefix(prefix)
+        return None
+    rom_id = target.strip().lower()
+    return next(((entry.runtime_data, rom_id) for entry in loaded if rom_id in entry.runtime_data.ow_devices), None)
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -81,21 +116,13 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     async def async_set_led_palette_service(call: ServiceCall) -> None:
         """Write up to five colors to one DS28E17 LED controller."""
 
-        device_id = call.data["device_id"]
-        api = next(
-            (
-                entry.runtime_data
-                for entry in hass.config_entries.async_entries(DOMAIN)
-                if entry.state is ConfigEntryState.LOADED and device_id in entry.runtime_data.ow_devices
-            ),
-            None,
-        )
-        if api is None:
+        if (resolved := _resolve_onewire_target(hass, call.data["device_id"])) is None:
             raise ServiceValidationError(
                 translation_domain=DOMAIN,
                 translation_key="led_controller_unavailable",
-                translation_placeholders={"device_id": device_id},
+                translation_placeholders={"device_id": call.data["device_id"]},
             )
+        api, device_id = resolved
 
         config = await api.read_led_config(device_id, use_cache=False) or LEDConfig.create_default()
         colors = [Color(*call.data[f"color_{index}"]) for index in range(1, 6) if f"color_{index}" in call.data]
@@ -107,6 +134,28 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         if not await api.write_led_config(device_id, config):
             raise HomeAssistantError(translation_domain=DOMAIN, translation_key="led_palette_update_failed")
 
+    async def async_calibrate_co2_service(call: ServiceCall) -> ServiceResponse:
+        """Run a forced recalibration of one Multisensor's CO2 sensor."""
+
+        resolved = _resolve_onewire_target(hass, call.data["device_id"])
+        if resolved is None or (parts := resolved[0].multisensor.components(resolved[1])) is None or not parts.stcc4:
+            raise ServiceValidationError(translation_domain=DOMAIN, translation_key="co2_sensor_unavailable")
+        api, device_id = resolved
+        target = call.data.get("target_ppm", api.multisensor.calibration_target(device_id))
+        try:
+            correction = await api.multisensor.async_forced_recalibration(device_id, target)
+        except MultisensorCommandError as err:
+            raise HomeAssistantError(translation_domain=DOMAIN, translation_key=err.reason) from err
+        return {"correction_ppm": correction}
+
+    if not hass.services.has_service(DOMAIN, SERVICE_CALIBRATE_CO2):
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_CALIBRATE_CO2,
+            async_calibrate_co2_service,
+            schema=CALIBRATE_CO2_SCHEMA,
+            supports_response=SupportsResponse.OPTIONAL,
+        )
     if not hass.services.has_service(DOMAIN, SERVICE_SCAN_DEVICES):
         hass.services.async_register(DOMAIN, SERVICE_SCAN_DEVICES, async_scan_devices_service, schema=vol.Schema({}))
     if not hass.services.has_service(DOMAIN, SERVICE_SET_LED_PALETTE):
@@ -308,6 +357,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> bo
             for module_kind in ("im117", "dm117")
         },
         topology_settings=get_topology_settings(entry.options),
+        onewire_names=get_onewire_names(entry.options),
     )
     entry.runtime_data = api
 

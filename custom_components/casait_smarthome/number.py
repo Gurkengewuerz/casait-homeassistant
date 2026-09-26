@@ -6,8 +6,14 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
 
-from homeassistant.components.number import NumberDeviceClass, NumberEntity, NumberMode
-from homeassistant.const import EntityCategory, UnitOfTime
+from homeassistant.components.number import (
+    NumberDeviceClass,
+    NumberEntity,
+    NumberEntityDescription,
+    NumberMode,
+    RestoreNumber,
+)
+from homeassistant.const import CONCENTRATION_PARTS_PER_MILLION, EntityCategory, UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -16,7 +22,15 @@ from homeassistant.helpers.restore_state import RestoreEntity
 
 from . import CasaITConfigEntry
 from .api import CasaITApi
-from .const import DOMAIN, OM117_MODE_BLIND, OM117_MODE_PULSE, OM117_MODE_SHUTTER
+from .const import (
+    DEFAULT_CO2_CALIBRATION_PPM,
+    DOMAIN,
+    OM117_MODE_BLIND,
+    OM117_MODE_PULSE,
+    OM117_MODE_SHUTTER,
+    OW_PROFILE_MULTISENSOR,
+)
+from .entity import CasaITMultisensorEntity
 from .helpers import (
     OM117PairConfig,
     build_bridge_slug,
@@ -99,6 +113,11 @@ async def async_setup_entry(
     configured_profiles = get_configured_onewire_profiles(entry.options)
     for device_id, meta in api.ow_devices.items():
         profile = configured_profiles.get(device_id) or default_onewire_profile(meta)
+        if profile == OW_PROFILE_MULTISENSOR:
+            parts = api.multisensor.components(device_id)
+            if parts is not None and parts.stcc4:
+                entities.append(CasaITCO2CalibrationTarget(api, entry, device_id, meta))
+            continue
         if profile != "ds28e17_led":
             continue
         entities.extend(
@@ -240,4 +259,46 @@ class CasaITLEDControllerNumber(NumberEntity):
             raise HomeAssistantError(translation_domain=DOMAIN, translation_key="led_update_failed")
         self._attr_native_value = int(getattr(config, self._field))
         self._attr_available = True
+        self.async_write_ha_state()
+
+
+CO2_CALIBRATION_TARGET = NumberEntityDescription(
+    key="co2_calibration_target",
+    translation_key="co2_calibration_target",
+    entity_category=EntityCategory.CONFIG,
+    device_class=NumberDeviceClass.CO2,
+    native_unit_of_measurement=CONCENTRATION_PARTS_PER_MILLION,
+    native_min_value=300,
+    native_max_value=5000,
+    native_step=1,
+    mode=NumberMode.BOX,
+)
+
+
+class CasaITCO2CalibrationTarget(CasaITMultisensorEntity, RestoreNumber):
+    """The reference CO2 concentration the calibrate button assumes.
+
+    Lives in Home Assistant only; the sensor is told the value when a
+    calibration actually runs.
+    """
+
+    def __init__(self, api: CasaITApi, entry: CasaITConfigEntry, device_id: str, meta: dict[str, Any]) -> None:
+        """Initialize the calibration target."""
+
+        super().__init__(api, entry, device_id, meta, CO2_CALIBRATION_TARGET, "number")
+        self._attr_native_value = DEFAULT_CO2_CALIBRATION_PPM
+
+    async def async_added_to_hass(self) -> None:
+        """Restore the last target."""
+
+        await super().async_added_to_hass()
+        if (data := await self.async_get_last_number_data()) is not None and data.native_value is not None:
+            self._attr_native_value = data.native_value
+        self._api.multisensor.set_calibration_target(self._device_id, int(self._attr_native_value or 0))
+
+    async def async_set_native_value(self, value: float) -> None:
+        """Store a new target."""
+
+        self._attr_native_value = value
+        self._api.multisensor.set_calibration_target(self._device_id, int(value))
         self.async_write_ha_state()

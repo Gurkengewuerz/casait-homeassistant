@@ -68,6 +68,9 @@
       },
       "ds2413_input": {
         "name": "Eingang {channel}"
+      },
+      "co2_self_test_result": {
+        "name": "CO2-Sensor-Selbsttest"
       }
     },
     "switch": {
@@ -103,6 +106,18 @@
       },
       "om117_pulse": {
         "name": "Impulsausgang {port}"
+      },
+      "co2_calibrate": {
+        "name": "CO2-Sensor kalibrieren"
+      },
+      "co2_self_test": {
+        "name": "CO2-Sensor-Selbsttest"
+      },
+      "co2_conditioning": {
+        "name": "CO2-Sensor konditionieren"
+      },
+      "co2_factory_reset": {
+        "name": "CO2-Kalibrierung zur\u00fccksetzen"
       }
     },
     "number": {
@@ -126,6 +141,9 @@
       },
       "led_count": {
         "name": "Anzahl LEDs"
+      },
+      "co2_calibration_target": {
+        "name": "CO2-Kalibrierreferenz"
       }
     },
     "event": {
@@ -199,6 +217,18 @@
       },
       "diagnostics": {
         "name": "Diagnose"
+      },
+      "co2": {
+        "name": "Kohlendioxid"
+      },
+      "voc_index": {
+        "name": "VOC-Index"
+      },
+      "voc_raw": {
+        "name": "VOC-Rohsignal"
+      },
+      "co2_calibration_correction": {
+        "name": "CO2-Kalibrierkorrektur"
       }
     }
   },
@@ -248,8 +278,8 @@
       "description": "Schreibt eine bis f\u00fcnf Farben f\u00fcr die Animationen des LED-Controllers.",
       "fields": {
         "device_id": {
-          "name": "1-Wire-Ger\u00e4te-ID",
-          "description": "ROM-ID des DS28E17-LED-Controllers."
+          "name": "LED-Controller",
+          "description": "Das LED-Controller-Ger\u00e4t. Die 1-Wire-ROM-ID wird ebenfalls akzeptiert."
         },
         "color_1": {
           "name": "Farbe 1",
@@ -270,6 +300,20 @@
         "color_5": {
           "name": "Farbe 5",
           "description": "F\u00fcnfte Lauflichtfarbe."
+        }
+      }
+    },
+    "calibrate_co2": {
+      "name": "CO2-Sensor kalibrieren",
+      "description": "Kalibriert den CO2-Sensor eines Multisensors auf eine bekannte Konzentration. Erst ausf\u00fchren, wenn der Sensor mindestens drei Minuten in Luft dieser Konzentration gemessen hat, etwa frische Au\u00dfenluft mit rund 420 ppm.",
+      "fields": {
+        "device_id": {
+          "name": "Multisensor",
+          "description": "Der Multisensor, dessen CO2-Sensor kalibriert wird."
+        },
+        "target_ppm": {
+          "name": "Referenzkonzentration",
+          "description": "CO2-Konzentration, der der Sensor ausgesetzt ist. Standard ist der Wert der Entit\u00e4t CO2-Kalibrierreferenz des Ger\u00e4ts."
         }
       }
     }
@@ -325,6 +369,18 @@
     },
     "led_palette_update_failed": {
       "message": "Die Palette des LED-Controllers konnte nicht aktualisiert werden."
+    },
+    "co2_sensor_unavailable": {
+      "message": "Dieses Ger\u00e4t hat keinen erreichbaren CO2-Sensor."
+    },
+    "co2_not_warmed_up": {
+      "message": "Der CO2-Sensor muss mindestens drei Minuten messen, bevor er kalibriert werden kann."
+    },
+    "co2_calibration_failed": {
+      "message": "Der CO2-Sensor hat die Kalibrierung abgelehnt."
+    },
+    "co2_command_failed": {
+      "message": "Der CO2-Sensor hat den Befehl nicht ausgef\u00fchrt."
     }
   },
   "issues": {
@@ -443,7 +499,8 @@
         "ds2438_hih4030_tept5600": "DS2438 mit HIH4030 und TEPT5600",
         "ds2438_hih5030_tept5600": "DS2438 mit HIH5030 und TEPT5600",
         "ds2413": "DS2413 mit Rollen je Kanal",
-        "ds28e17_led": "DS28E17-LED-Controller"
+        "ds28e17_led": "LED-Controller (DS28E17)",
+        "ds28e17_multisensor": "Multisensor (DS28E17)"
       }
     },
     "ds2413_channel_profile": {
@@ -457,109 +514,530 @@
     "step": {
       "init": {
         "title": "casaIT-Konfiguration",
-        "description": "Es k\u00f6nnen beliebig viele Module nacheinander konfiguriert werden. \u00c4nderungen werden erst mit \"Speichern und schlie\u00dfen\" \u00fcbernommen - beim Schlie\u00dfen des Dialogs gehen sie verloren.",
+        "description": "W\u00e4hle ein Ger\u00e4t zum Konfigurieren. \u00c4nderungen werden erst mit \u201eSpeichern und schlie\u00dfen\u201c \u00fcbernommen; Schlie\u00dfen des Dialogs verwirft sie.\n\nUngespeicherte \u00c4nderungen: {pending}",
         "menu_options": {
-          "im117_select": "IM117-Module konfigurieren",
-          "om117_select": "OM117-Module konfigurieren",
-          "dm117_select": "DM117-Module konfigurieren",
-          "sm117_select": "SM117-Module konfigurieren",
-          "onewire_select": "OneWire-Ger\u00e4te konfigurieren",
-          "global_settings": "Globale Einstellungen",
+          "device": "Ger\u00e4t konfigurieren",
+          "input_settings": "Taster-Timing",
+          "advanced_settings": "Erweitert: Abfrage und Bus",
           "save": "Speichern und schlie\u00dfen"
         }
       },
-      "im117_select": {
-        "title": "IM117-Modul ausw\u00e4hlen",
+      "device": {
+        "title": "Ger\u00e4t ausw\u00e4hlen",
         "data": {
-          "selected_module": "Modul"
+          "device": "Ger\u00e4t"
         },
         "data_description": {
-          "selected_module": "Zu konfigurierendes Eingangsmodul."
+          "device": "Alle Module und 1-Wire-Ger\u00e4te aus dem letzten Busscan. Ein * markiert ungespeicherte \u00c4nderungen."
         }
       },
-      "im117_config": {
-        "title": "IM117-Modul konfigurieren: {module_name}",
-        "description": "Lege fest, was an jedem Eingang angeschlossen ist. Taster melden Ereignisse, Kontakte einen dauerhaften Zustand.",
+      "im117": {
+        "title": "IM117 {device}",
+        "description": "Klappe einen Eingang auf, um festzulegen, was angeschlossen ist.",
         "data": {
-          "module_name": "Modulname",
-          "debounce_ms": "Entprellzeit (ms)",
-          "port_1_role": "Eingang 1",
-          "port_1_device_class": "Ger\u00e4teklasse Eingang 1",
-          "port_1_invert": "Eingang 1 invertieren",
-          "port_1_repeat": "Wiederholen, solange Eingang 1 gehalten wird",
-          "port_2_role": "Eingang 2",
-          "port_2_device_class": "Ger\u00e4teklasse Eingang 2",
-          "port_2_invert": "Eingang 2 invertieren",
-          "port_2_repeat": "Wiederholen, solange Eingang 2 gehalten wird",
-          "port_3_role": "Eingang 3",
-          "port_3_device_class": "Ger\u00e4teklasse Eingang 3",
-          "port_3_invert": "Eingang 3 invertieren",
-          "port_3_repeat": "Wiederholen, solange Eingang 3 gehalten wird",
-          "port_4_role": "Eingang 4",
-          "port_4_device_class": "Ger\u00e4teklasse Eingang 4",
-          "port_4_invert": "Eingang 4 invertieren",
-          "port_4_repeat": "Wiederholen, solange Eingang 4 gehalten wird",
-          "port_5_role": "Eingang 5",
-          "port_5_device_class": "Ger\u00e4teklasse Eingang 5",
-          "port_5_invert": "Eingang 5 invertieren",
-          "port_5_repeat": "Wiederholen, solange Eingang 5 gehalten wird",
-          "port_6_role": "Eingang 6",
-          "port_6_device_class": "Ger\u00e4teklasse Eingang 6",
-          "port_6_invert": "Eingang 6 invertieren",
-          "port_6_repeat": "Wiederholen, solange Eingang 6 gehalten wird",
-          "port_7_role": "Eingang 7",
-          "port_7_device_class": "Ger\u00e4teklasse Eingang 7",
-          "port_7_invert": "Eingang 7 invertieren",
-          "port_7_repeat": "Wiederholen, solange Eingang 7 gehalten wird",
-          "port_8_role": "Eingang 8",
-          "port_8_device_class": "Ger\u00e4teklasse Eingang 8",
-          "port_8_invert": "Eingang 8 invertieren",
-          "port_8_repeat": "Wiederholen, solange Eingang 8 gehalten wird"
+          "name": "Name",
+          "debounce_ms": "Entprellzeit (ms)"
         },
         "data_description": {
-          "module_name": "Angezeigter Name f\u00fcr dieses Modul und alle zugeh\u00f6rigen Entit\u00e4ten.",
-          "debounce_ms": "Wie lange ein Eingang nach einer \u00c4nderung ignoriert wird. Gilt f\u00fcr das ganze Modul.",
-          "port_1_role": "Funktion am Eingang 1.",
-          "port_1_device_class": "Ger\u00e4teklasse, wenn Eingang 1 als Kontakt verwendet wird.",
-          "port_1_invert": "Eingang 1 umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
-          "port_1_repeat": "Meldet weiter Wiederholungen, solange Eingang 1 gehalten wird, etwa zum Dimmen.",
-          "port_2_role": "Funktion am Eingang 2.",
-          "port_2_device_class": "Ger\u00e4teklasse, wenn Eingang 2 als Kontakt verwendet wird.",
-          "port_2_invert": "Eingang 2 umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
-          "port_2_repeat": "Meldet weiter Wiederholungen, solange Eingang 2 gehalten wird, etwa zum Dimmen.",
-          "port_3_role": "Funktion am Eingang 3.",
-          "port_3_device_class": "Ger\u00e4teklasse, wenn Eingang 3 als Kontakt verwendet wird.",
-          "port_3_invert": "Eingang 3 umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
-          "port_3_repeat": "Meldet weiter Wiederholungen, solange Eingang 3 gehalten wird, etwa zum Dimmen.",
-          "port_4_role": "Funktion am Eingang 4.",
-          "port_4_device_class": "Ger\u00e4teklasse, wenn Eingang 4 als Kontakt verwendet wird.",
-          "port_4_invert": "Eingang 4 umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
-          "port_4_repeat": "Meldet weiter Wiederholungen, solange Eingang 4 gehalten wird, etwa zum Dimmen.",
-          "port_5_role": "Funktion am Eingang 5.",
-          "port_5_device_class": "Ger\u00e4teklasse, wenn Eingang 5 als Kontakt verwendet wird.",
-          "port_5_invert": "Eingang 5 umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
-          "port_5_repeat": "Meldet weiter Wiederholungen, solange Eingang 5 gehalten wird, etwa zum Dimmen.",
-          "port_6_role": "Funktion am Eingang 6.",
-          "port_6_device_class": "Ger\u00e4teklasse, wenn Eingang 6 als Kontakt verwendet wird.",
-          "port_6_invert": "Eingang 6 umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
-          "port_6_repeat": "Meldet weiter Wiederholungen, solange Eingang 6 gehalten wird, etwa zum Dimmen.",
-          "port_7_role": "Funktion am Eingang 7.",
-          "port_7_device_class": "Ger\u00e4teklasse, wenn Eingang 7 als Kontakt verwendet wird.",
-          "port_7_invert": "Eingang 7 umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
-          "port_7_repeat": "Meldet weiter Wiederholungen, solange Eingang 7 gehalten wird, etwa zum Dimmen.",
-          "port_8_role": "Funktion am Eingang 8.",
-          "port_8_device_class": "Ger\u00e4teklasse, wenn Eingang 8 als Kontakt verwendet wird.",
-          "port_8_invert": "Eingang 8 umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
-          "port_8_repeat": "Meldet weiter Wiederholungen, solange Eingang 8 gehalten wird, etwa zum Dimmen."
+          "name": "Wird f\u00fcr dieses Ger\u00e4t und seine Entit\u00e4ten angezeigt. Leer lassen f\u00fcr den Standardnamen.",
+          "debounce_ms": "Wie lange ein Eingang nach einer \u00c4nderung ignoriert wird. Gilt f\u00fcr das ganze Modul."
+        },
+        "sections": {
+          "port_1": {
+            "name": "Eingang 1",
+            "data": {
+              "role": "Funktion",
+              "device_class": "Ger\u00e4teklasse",
+              "invert": "Invertieren",
+              "repeat": "Wiederholen beim Halten"
+            },
+            "data_description": {
+              "role": "Taster melden Ereignisse, Kontakte einen dauerhaften Zustand.",
+              "device_class": "Nur f\u00fcr Kontakte.",
+              "invert": "Eingang umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
+              "repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen."
+            }
+          },
+          "port_2": {
+            "name": "Eingang 2",
+            "data": {
+              "role": "Funktion",
+              "device_class": "Ger\u00e4teklasse",
+              "invert": "Invertieren",
+              "repeat": "Wiederholen beim Halten"
+            },
+            "data_description": {
+              "role": "Taster melden Ereignisse, Kontakte einen dauerhaften Zustand.",
+              "device_class": "Nur f\u00fcr Kontakte.",
+              "invert": "Eingang umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
+              "repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen."
+            }
+          },
+          "port_3": {
+            "name": "Eingang 3",
+            "data": {
+              "role": "Funktion",
+              "device_class": "Ger\u00e4teklasse",
+              "invert": "Invertieren",
+              "repeat": "Wiederholen beim Halten"
+            },
+            "data_description": {
+              "role": "Taster melden Ereignisse, Kontakte einen dauerhaften Zustand.",
+              "device_class": "Nur f\u00fcr Kontakte.",
+              "invert": "Eingang umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
+              "repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen."
+            }
+          },
+          "port_4": {
+            "name": "Eingang 4",
+            "data": {
+              "role": "Funktion",
+              "device_class": "Ger\u00e4teklasse",
+              "invert": "Invertieren",
+              "repeat": "Wiederholen beim Halten"
+            },
+            "data_description": {
+              "role": "Taster melden Ereignisse, Kontakte einen dauerhaften Zustand.",
+              "device_class": "Nur f\u00fcr Kontakte.",
+              "invert": "Eingang umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
+              "repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen."
+            }
+          },
+          "port_5": {
+            "name": "Eingang 5",
+            "data": {
+              "role": "Funktion",
+              "device_class": "Ger\u00e4teklasse",
+              "invert": "Invertieren",
+              "repeat": "Wiederholen beim Halten"
+            },
+            "data_description": {
+              "role": "Taster melden Ereignisse, Kontakte einen dauerhaften Zustand.",
+              "device_class": "Nur f\u00fcr Kontakte.",
+              "invert": "Eingang umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
+              "repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen."
+            }
+          },
+          "port_6": {
+            "name": "Eingang 6",
+            "data": {
+              "role": "Funktion",
+              "device_class": "Ger\u00e4teklasse",
+              "invert": "Invertieren",
+              "repeat": "Wiederholen beim Halten"
+            },
+            "data_description": {
+              "role": "Taster melden Ereignisse, Kontakte einen dauerhaften Zustand.",
+              "device_class": "Nur f\u00fcr Kontakte.",
+              "invert": "Eingang umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
+              "repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen."
+            }
+          },
+          "port_7": {
+            "name": "Eingang 7",
+            "data": {
+              "role": "Funktion",
+              "device_class": "Ger\u00e4teklasse",
+              "invert": "Invertieren",
+              "repeat": "Wiederholen beim Halten"
+            },
+            "data_description": {
+              "role": "Taster melden Ereignisse, Kontakte einen dauerhaften Zustand.",
+              "device_class": "Nur f\u00fcr Kontakte.",
+              "invert": "Eingang umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
+              "repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen."
+            }
+          },
+          "port_8": {
+            "name": "Eingang 8",
+            "data": {
+              "role": "Funktion",
+              "device_class": "Ger\u00e4teklasse",
+              "invert": "Invertieren",
+              "repeat": "Wiederholen beim Halten"
+            },
+            "data_description": {
+              "role": "Taster melden Ereignisse, Kontakte einen dauerhaften Zustand.",
+              "device_class": "Nur f\u00fcr Kontakte.",
+              "invert": "Eingang umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
+              "repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen."
+            }
+          }
         }
       },
-      "global_settings": {
-        "title": "Globale Einstellungen",
-        "description": "Diese Werte gelten f\u00fcr die gesamte Bridge.",
+      "om117": {
+        "title": "OM117 {device}",
+        "description": "Klappe ein Ausgangspaar auf, um festzulegen, was es ansteuert. Zeitfelder erscheinen passend zum Modus.",
+        "data": {
+          "name": "Name"
+        },
+        "data_description": {
+          "name": "Wird f\u00fcr dieses Ger\u00e4t und seine Entit\u00e4ten angezeigt. Leer lassen f\u00fcr den Standardnamen."
+        },
+        "sections": {
+          "pair_1": {
+            "name": "Ausg\u00e4nge 1 und 2",
+            "data": {
+              "mode": "Modus",
+              "open_time": "\u00d6ffnungszeit (s)",
+              "close_time": "Schlie\u00dfzeit (s)",
+              "overrun_time": "Nachlauf (s)",
+              "tilt_time": "Volle Lamellenlaufzeit (s)",
+              "pulse_duration": "Impulsdauer (s)"
+            },
+            "data_description": {
+              "mode": "Zwei einzelne Ausg\u00e4nge oder gemeinsam als Rollladen, Jalousie oder Impulsausg\u00e4nge.",
+              "open_time": "Zeit bis zum vollst\u00e4ndigen \u00d6ffnen.",
+              "close_time": "Zeit bis zum vollst\u00e4ndigen Schlie\u00dfen.",
+              "overrun_time": "Zus\u00e4tzliche Motorlaufzeit in der Endlage.",
+              "tilt_time": "Zeit, bis die Lamellen von geschlossen auf offen gedreht sind.",
+              "pulse_duration": "Wie lange ein Impulsausgang eingeschaltet bleibt."
+            }
+          },
+          "pair_2": {
+            "name": "Ausg\u00e4nge 3 und 4",
+            "data": {
+              "mode": "Modus",
+              "open_time": "\u00d6ffnungszeit (s)",
+              "close_time": "Schlie\u00dfzeit (s)",
+              "overrun_time": "Nachlauf (s)",
+              "tilt_time": "Volle Lamellenlaufzeit (s)",
+              "pulse_duration": "Impulsdauer (s)"
+            },
+            "data_description": {
+              "mode": "Zwei einzelne Ausg\u00e4nge oder gemeinsam als Rollladen, Jalousie oder Impulsausg\u00e4nge.",
+              "open_time": "Zeit bis zum vollst\u00e4ndigen \u00d6ffnen.",
+              "close_time": "Zeit bis zum vollst\u00e4ndigen Schlie\u00dfen.",
+              "overrun_time": "Zus\u00e4tzliche Motorlaufzeit in der Endlage.",
+              "tilt_time": "Zeit, bis die Lamellen von geschlossen auf offen gedreht sind.",
+              "pulse_duration": "Wie lange ein Impulsausgang eingeschaltet bleibt."
+            }
+          },
+          "pair_3": {
+            "name": "Ausg\u00e4nge 5 und 6",
+            "data": {
+              "mode": "Modus",
+              "open_time": "\u00d6ffnungszeit (s)",
+              "close_time": "Schlie\u00dfzeit (s)",
+              "overrun_time": "Nachlauf (s)",
+              "tilt_time": "Volle Lamellenlaufzeit (s)",
+              "pulse_duration": "Impulsdauer (s)"
+            },
+            "data_description": {
+              "mode": "Zwei einzelne Ausg\u00e4nge oder gemeinsam als Rollladen, Jalousie oder Impulsausg\u00e4nge.",
+              "open_time": "Zeit bis zum vollst\u00e4ndigen \u00d6ffnen.",
+              "close_time": "Zeit bis zum vollst\u00e4ndigen Schlie\u00dfen.",
+              "overrun_time": "Zus\u00e4tzliche Motorlaufzeit in der Endlage.",
+              "tilt_time": "Zeit, bis die Lamellen von geschlossen auf offen gedreht sind.",
+              "pulse_duration": "Wie lange ein Impulsausgang eingeschaltet bleibt."
+            }
+          },
+          "pair_4": {
+            "name": "Ausg\u00e4nge 7 und 8",
+            "data": {
+              "mode": "Modus",
+              "open_time": "\u00d6ffnungszeit (s)",
+              "close_time": "Schlie\u00dfzeit (s)",
+              "overrun_time": "Nachlauf (s)",
+              "tilt_time": "Volle Lamellenlaufzeit (s)",
+              "pulse_duration": "Impulsdauer (s)"
+            },
+            "data_description": {
+              "mode": "Zwei einzelne Ausg\u00e4nge oder gemeinsam als Rollladen, Jalousie oder Impulsausg\u00e4nge.",
+              "open_time": "Zeit bis zum vollst\u00e4ndigen \u00d6ffnen.",
+              "close_time": "Zeit bis zum vollst\u00e4ndigen Schlie\u00dfen.",
+              "overrun_time": "Zus\u00e4tzliche Motorlaufzeit in der Endlage.",
+              "tilt_time": "Zeit, bis die Lamellen von geschlossen auf offen gedreht sind.",
+              "pulse_duration": "Wie lange ein Impulsausgang eingeschaltet bleibt."
+            }
+          }
+        }
+      },
+      "dm117": {
+        "title": "DM117 {device}",
+        "description": "Klappe einen Steckplatz auf, um die Best\u00fcckung festzulegen. Eingangssteckpl\u00e4tze zeigen zus\u00e4tzlich ihre zwei Kan\u00e4le.",
+        "data": {
+          "name": "Name",
+          "debounce_ms": "Entprellzeit (ms)"
+        },
+        "data_description": {
+          "name": "Wird f\u00fcr dieses Ger\u00e4t und seine Entit\u00e4ten angezeigt. Leer lassen f\u00fcr den Standardnamen.",
+          "debounce_ms": "Wie lange ein Eingang nach einer \u00c4nderung ignoriert wird. Gilt f\u00fcr das ganze Modul."
+        },
+        "sections": {
+          "slot_1": {
+            "name": "Steckplatz 1",
+            "data": {
+              "type": "Best\u00fcckung",
+              "a_role": "Kanal A: Funktion",
+              "a_device_class": "Kanal A: Ger\u00e4teklasse",
+              "a_invert": "Kanal A invertieren",
+              "a_repeat": "Kanal A: Wiederholen beim Halten",
+              "b_role": "Kanal B: Funktion",
+              "b_device_class": "Kanal B: Ger\u00e4teklasse",
+              "b_invert": "Kanal B invertieren",
+              "b_repeat": "Kanal B: Wiederholen beim Halten"
+            },
+            "data_description": {
+              "type": "Was in diesem Steckplatz steckt.",
+              "a_role": "Taster melden Ereignisse, Kontakte einen dauerhaften Zustand.",
+              "a_device_class": "Nur f\u00fcr Kontakte.",
+              "a_invert": "Eingang umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
+              "a_repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen.",
+              "b_role": "Taster melden Ereignisse, Kontakte einen dauerhaften Zustand.",
+              "b_device_class": "Nur f\u00fcr Kontakte.",
+              "b_invert": "Eingang umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
+              "b_repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen."
+            }
+          },
+          "slot_2": {
+            "name": "Steckplatz 2",
+            "data": {
+              "type": "Best\u00fcckung",
+              "a_role": "Kanal A: Funktion",
+              "a_device_class": "Kanal A: Ger\u00e4teklasse",
+              "a_invert": "Kanal A invertieren",
+              "a_repeat": "Kanal A: Wiederholen beim Halten",
+              "b_role": "Kanal B: Funktion",
+              "b_device_class": "Kanal B: Ger\u00e4teklasse",
+              "b_invert": "Kanal B invertieren",
+              "b_repeat": "Kanal B: Wiederholen beim Halten"
+            },
+            "data_description": {
+              "type": "Was in diesem Steckplatz steckt.",
+              "a_role": "Taster melden Ereignisse, Kontakte einen dauerhaften Zustand.",
+              "a_device_class": "Nur f\u00fcr Kontakte.",
+              "a_invert": "Eingang umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
+              "a_repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen.",
+              "b_role": "Taster melden Ereignisse, Kontakte einen dauerhaften Zustand.",
+              "b_device_class": "Nur f\u00fcr Kontakte.",
+              "b_invert": "Eingang umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
+              "b_repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen."
+            }
+          },
+          "slot_3": {
+            "name": "Steckplatz 3",
+            "data": {
+              "type": "Best\u00fcckung",
+              "a_role": "Kanal A: Funktion",
+              "a_device_class": "Kanal A: Ger\u00e4teklasse",
+              "a_invert": "Kanal A invertieren",
+              "a_repeat": "Kanal A: Wiederholen beim Halten",
+              "b_role": "Kanal B: Funktion",
+              "b_device_class": "Kanal B: Ger\u00e4teklasse",
+              "b_invert": "Kanal B invertieren",
+              "b_repeat": "Kanal B: Wiederholen beim Halten"
+            },
+            "data_description": {
+              "type": "Was in diesem Steckplatz steckt.",
+              "a_role": "Taster melden Ereignisse, Kontakte einen dauerhaften Zustand.",
+              "a_device_class": "Nur f\u00fcr Kontakte.",
+              "a_invert": "Eingang umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
+              "a_repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen.",
+              "b_role": "Taster melden Ereignisse, Kontakte einen dauerhaften Zustand.",
+              "b_device_class": "Nur f\u00fcr Kontakte.",
+              "b_invert": "Eingang umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
+              "b_repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen."
+            }
+          },
+          "slot_4": {
+            "name": "Steckplatz 4",
+            "data": {
+              "type": "Best\u00fcckung",
+              "a_role": "Kanal A: Funktion",
+              "a_device_class": "Kanal A: Ger\u00e4teklasse",
+              "a_invert": "Kanal A invertieren",
+              "a_repeat": "Kanal A: Wiederholen beim Halten",
+              "b_role": "Kanal B: Funktion",
+              "b_device_class": "Kanal B: Ger\u00e4teklasse",
+              "b_invert": "Kanal B invertieren",
+              "b_repeat": "Kanal B: Wiederholen beim Halten"
+            },
+            "data_description": {
+              "type": "Was in diesem Steckplatz steckt.",
+              "a_role": "Taster melden Ereignisse, Kontakte einen dauerhaften Zustand.",
+              "a_device_class": "Nur f\u00fcr Kontakte.",
+              "a_invert": "Eingang umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
+              "a_repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen.",
+              "b_role": "Taster melden Ereignisse, Kontakte einen dauerhaften Zustand.",
+              "b_device_class": "Nur f\u00fcr Kontakte.",
+              "b_invert": "Eingang umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
+              "b_repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen."
+            }
+          },
+          "slot_5": {
+            "name": "Steckplatz 5",
+            "data": {
+              "type": "Best\u00fcckung",
+              "a_role": "Kanal A: Funktion",
+              "a_device_class": "Kanal A: Ger\u00e4teklasse",
+              "a_invert": "Kanal A invertieren",
+              "a_repeat": "Kanal A: Wiederholen beim Halten",
+              "b_role": "Kanal B: Funktion",
+              "b_device_class": "Kanal B: Ger\u00e4teklasse",
+              "b_invert": "Kanal B invertieren",
+              "b_repeat": "Kanal B: Wiederholen beim Halten"
+            },
+            "data_description": {
+              "type": "Was in diesem Steckplatz steckt.",
+              "a_role": "Taster melden Ereignisse, Kontakte einen dauerhaften Zustand.",
+              "a_device_class": "Nur f\u00fcr Kontakte.",
+              "a_invert": "Eingang umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
+              "a_repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen.",
+              "b_role": "Taster melden Ereignisse, Kontakte einen dauerhaften Zustand.",
+              "b_device_class": "Nur f\u00fcr Kontakte.",
+              "b_invert": "Eingang umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
+              "b_repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen."
+            }
+          },
+          "slot_6": {
+            "name": "Steckplatz 6",
+            "data": {
+              "type": "Best\u00fcckung",
+              "a_role": "Kanal A: Funktion",
+              "a_device_class": "Kanal A: Ger\u00e4teklasse",
+              "a_invert": "Kanal A invertieren",
+              "a_repeat": "Kanal A: Wiederholen beim Halten",
+              "b_role": "Kanal B: Funktion",
+              "b_device_class": "Kanal B: Ger\u00e4teklasse",
+              "b_invert": "Kanal B invertieren",
+              "b_repeat": "Kanal B: Wiederholen beim Halten"
+            },
+            "data_description": {
+              "type": "Was in diesem Steckplatz steckt.",
+              "a_role": "Taster melden Ereignisse, Kontakte einen dauerhaften Zustand.",
+              "a_device_class": "Nur f\u00fcr Kontakte.",
+              "a_invert": "Eingang umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
+              "a_repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen.",
+              "b_role": "Taster melden Ereignisse, Kontakte einen dauerhaften Zustand.",
+              "b_device_class": "Nur f\u00fcr Kontakte.",
+              "b_invert": "Eingang umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
+              "b_repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen."
+            }
+          },
+          "slot_7": {
+            "name": "Steckplatz 7",
+            "data": {
+              "type": "Best\u00fcckung",
+              "a_role": "Kanal A: Funktion",
+              "a_device_class": "Kanal A: Ger\u00e4teklasse",
+              "a_invert": "Kanal A invertieren",
+              "a_repeat": "Kanal A: Wiederholen beim Halten",
+              "b_role": "Kanal B: Funktion",
+              "b_device_class": "Kanal B: Ger\u00e4teklasse",
+              "b_invert": "Kanal B invertieren",
+              "b_repeat": "Kanal B: Wiederholen beim Halten"
+            },
+            "data_description": {
+              "type": "Was in diesem Steckplatz steckt.",
+              "a_role": "Taster melden Ereignisse, Kontakte einen dauerhaften Zustand.",
+              "a_device_class": "Nur f\u00fcr Kontakte.",
+              "a_invert": "Eingang umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
+              "a_repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen.",
+              "b_role": "Taster melden Ereignisse, Kontakte einen dauerhaften Zustand.",
+              "b_device_class": "Nur f\u00fcr Kontakte.",
+              "b_invert": "Eingang umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
+              "b_repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen."
+            }
+          },
+          "slot_8": {
+            "name": "Steckplatz 8",
+            "data": {
+              "type": "Best\u00fcckung",
+              "a_role": "Kanal A: Funktion",
+              "a_device_class": "Kanal A: Ger\u00e4teklasse",
+              "a_invert": "Kanal A invertieren",
+              "a_repeat": "Kanal A: Wiederholen beim Halten",
+              "b_role": "Kanal B: Funktion",
+              "b_device_class": "Kanal B: Ger\u00e4teklasse",
+              "b_invert": "Kanal B invertieren",
+              "b_repeat": "Kanal B: Wiederholen beim Halten"
+            },
+            "data_description": {
+              "type": "Was in diesem Steckplatz steckt.",
+              "a_role": "Taster melden Ereignisse, Kontakte einen dauerhaften Zustand.",
+              "a_device_class": "Nur f\u00fcr Kontakte.",
+              "a_invert": "Eingang umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
+              "a_repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen.",
+              "b_role": "Taster melden Ereignisse, Kontakte einen dauerhaften Zustand.",
+              "b_device_class": "Nur f\u00fcr Kontakte.",
+              "b_invert": "Eingang umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
+              "b_repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen."
+            }
+          }
+        }
+      },
+      "sm117": {
+        "title": "SM117 {device}",
+        "data": {
+          "name": "Name"
+        },
+        "data_description": {
+          "name": "Wird f\u00fcr dieses Ger\u00e4t und seine Entit\u00e4ten angezeigt. Leer lassen f\u00fcr den Standardnamen."
+        }
+      },
+      "onewire": {
+        "title": "1-Wire {device}",
+        "description": "Erkannt: {details}",
+        "data": {
+          "name": "Name",
+          "profile": "Profil",
+          "poll_interval": "Abfrageintervall (s)",
+          "led_count": "Anzahl LEDs"
+        },
+        "data_description": {
+          "name": "Wird f\u00fcr dieses Ger\u00e4t und seine Entit\u00e4ten angezeigt. Leer lassen f\u00fcr den Standardnamen.",
+          "profile": "Was an dieser 1-Wire-Adresse angeschlossen ist. Wird automatisch erkannt; nur zum \u00dcbersteuern \u00e4ndern.",
+          "poll_interval": "Zeit zwischen zwei Abfragen dieses Ger\u00e4ts.",
+          "led_count": "Anzahl der am Controller angeschlossenen adressierbaren LEDs."
+        },
+        "sections": {
+          "channel_1": {
+            "name": "Kanal A",
+            "data": {
+              "direction": "Richtung",
+              "device_class": "Ger\u00e4teklasse",
+              "invert": "Invertieren"
+            },
+            "data_description": {
+              "direction": "Kanal als Eingang lesen oder als Ausgang schalten.",
+              "device_class": "Nur f\u00fcr Kontakte.",
+              "invert": "Eingang umgekehrt melden, etwa f\u00fcr einen \u00d6ffner."
+            }
+          },
+          "channel_2": {
+            "name": "Kanal B",
+            "data": {
+              "direction": "Richtung",
+              "device_class": "Ger\u00e4teklasse",
+              "invert": "Invertieren"
+            },
+            "data_description": {
+              "direction": "Kanal als Eingang lesen oder als Ausgang schalten.",
+              "device_class": "Nur f\u00fcr Kontakte.",
+              "invert": "Eingang umgekehrt melden, etwa f\u00fcr einen \u00d6ffner."
+            }
+          }
+        }
+      },
+      "input_settings": {
+        "title": "Taster-Timing",
+        "description": "Gilt f\u00fcr alle Eing\u00e4nge mit der Funktion Taster.",
         "data": {
           "long_press_ms": "Schwelle f\u00fcr langen Druck (ms)",
           "double_click_ms": "Doppelklick-Zeitfenster (ms)",
-          "repeat_interval_ms": "Wiederholintervall (ms)",
+          "repeat_interval_ms": "Wiederholintervall (ms)"
+        },
+        "data_description": {
+          "long_press_ms": "Wird ein Taster mindestens so lange gehalten, wird ein langer Druck gemeldet.",
+          "double_click_ms": "Wartezeit auf einen zweiten Druck. Mit 0 werden einzelne Tastendr\u00fccke sofort gemeldet.",
+          "repeat_interval_ms": "Abstand zwischen Wiederholungen, solange ein Taster mit Wiederholung gehalten wird."
+        }
+      },
+      "advanced_settings": {
+        "title": "Erweitert: Abfrage und Bus",
+        "description": "Nur \u00e4ndern, wenn die Diagnosesensoren der Bridge darauf hindeuten.",
+        "data": {
           "fast_poll_interval_ms": "Schnelles Abfrageintervall (ms)",
           "slow_poll_interval": "Langsames Abfrageintervall (s)",
           "max_send_interval_ms": "Maximaler Sendeabstand (ms)",
@@ -567,328 +1045,20 @@
           "topology_missing_scans": "Scans, bis ein Ger\u00e4t als verschwunden gilt"
         },
         "data_description": {
-          "long_press_ms": "Wird ein Taster mindestens so lange gehalten, wird ein langer Druck gemeldet.",
-          "double_click_ms": "Wartezeit auf einen zweiten Druck. Mit 0 werden einzelne Tastendr\u00fccke sofort gemeldet.",
-          "repeat_interval_ms": "Abstand zwischen Wiederholungen, solange ein Taster mit Wiederholung gehalten wird.",
-          "fast_poll_interval_ms": "Pause zwischen den Abfragezyklen der Eing\u00e4nge.",
-          "slow_poll_interval": "Intervall f\u00fcr Konsistenzpr\u00fcfungen reiner Ausgangsmodule.",
+          "fast_poll_interval_ms": "Pause zwischen zwei Abfragen der Eing\u00e4nge.",
+          "slow_poll_interval": "Wie oft reine Ausgangsmodule zur Kontrolle zur\u00fcckgelesen werden.",
           "max_send_interval_ms": "Gr\u00f6\u00dfter Abstand, den der adaptive Bridge-Transport nach Kommunikationsfehlern verwenden darf.",
-          "topology_scan_interval": "Wie oft der Bus nach verschwundenen Modulen abgesucht wird. Mit 0 wird nur beim Start und auf Anforderung gescannt.",
-          "topology_missing_scans": "Wie oft ein Modul hintereinander fehlen muss, bevor es gemeldet wird. Verhindert, dass ein einzelner ausgelasteter Scan ein Modul verwirft."
-        }
-      },
-      "om117_select": {
-        "title": "OM117-Modul ausw\u00e4hlen",
-        "data": {
-          "selected_module": "Modul"
-        },
-        "data_description": {
-          "selected_module": "Zu konfigurierendes Ausgangsmodul."
-        }
-      },
-      "om117_config": {
-        "title": "OM117-Modul konfigurieren: {module_name}",
-        "data": {
-          "module_name": "Modulname",
-          "pair_1_mode": "Modus Paar 1",
-          "pair_2_mode": "Modus Paar 2",
-          "pair_3_mode": "Modus Paar 3",
-          "pair_4_mode": "Modus Paar 4"
-        },
-        "data_description": {
-          "module_name": "Angezeigter Name f\u00fcr dieses Modul und alle zugeh\u00f6rigen Entit\u00e4ten.",
-          "pair_1_mode": "Ausg\u00e4nge 1 und 2 einzeln oder gemeinsam als Jalousie verwenden.",
-          "pair_2_mode": "Ausg\u00e4nge 3 und 4 einzeln oder gemeinsam als Jalousie verwenden.",
-          "pair_3_mode": "Ausg\u00e4nge 5 und 6 einzeln oder gemeinsam als Jalousie verwenden.",
-          "pair_4_mode": "Ausg\u00e4nge 7 und 8 einzeln oder gemeinsam als Jalousie verwenden."
-        }
-      },
-      "om117_timing": {
-        "title": "Ausgangszeiten konfigurieren: {module_name}",
-        "data": {
-          "pair_1_open_time": "\u00d6ffnungszeit Paar 1 (s)",
-          "pair_1_close_time": "Schlie\u00dfzeit Paar 1 (s)",
-          "pair_1_overrun_time": "Nachlauf Paar 1 (s)",
-          "pair_1_tilt_time": "Volle Lamellenlaufzeit Paar 1 (s)",
-          "pair_1_pulse_duration": "Impulsdauer Paar 1 (s)",
-          "pair_2_open_time": "\u00d6ffnungszeit Paar 2 (s)",
-          "pair_2_close_time": "Schlie\u00dfzeit Paar 2 (s)",
-          "pair_2_overrun_time": "Nachlauf Paar 2 (s)",
-          "pair_2_tilt_time": "Volle Lamellenlaufzeit Paar 2 (s)",
-          "pair_2_pulse_duration": "Impulsdauer Paar 2 (s)",
-          "pair_3_open_time": "\u00d6ffnungszeit Paar 3 (s)",
-          "pair_3_close_time": "Schlie\u00dfzeit Paar 3 (s)",
-          "pair_3_overrun_time": "Nachlauf Paar 3 (s)",
-          "pair_3_tilt_time": "Volle Lamellenlaufzeit Paar 3 (s)",
-          "pair_3_pulse_duration": "Impulsdauer Paar 3 (s)",
-          "pair_4_open_time": "\u00d6ffnungszeit Paar 4 (s)",
-          "pair_4_close_time": "Schlie\u00dfzeit Paar 4 (s)",
-          "pair_4_overrun_time": "Nachlauf Paar 4 (s)",
-          "pair_4_tilt_time": "Volle Lamellenlaufzeit Paar 4 (s)",
-          "pair_4_pulse_duration": "Impulsdauer Paar 4 (s)"
-        },
-        "data_description": {
-          "pair_1_open_time": "Zeit, die Paar 1 zum vollst\u00e4ndigen \u00d6ffnen ben\u00f6tigt.",
-          "pair_1_close_time": "Zeit, die Paar 1 zum vollst\u00e4ndigen Schlie\u00dfen ben\u00f6tigt.",
-          "pair_1_overrun_time": "Zus\u00e4tzliche Motorlaufzeit in der Endlage f\u00fcr Paar 1.",
-          "pair_1_tilt_time": "Zeit f\u00fcr den vollst\u00e4ndigen Lamellenweg von Paar 1.",
-          "pair_1_pulse_duration": "Dauer, f\u00fcr die ein Impulsausgang von Paar 1 aktiv bleibt.",
-          "pair_2_open_time": "Zeit, die Paar 2 zum vollst\u00e4ndigen \u00d6ffnen ben\u00f6tigt.",
-          "pair_2_close_time": "Zeit, die Paar 2 zum vollst\u00e4ndigen Schlie\u00dfen ben\u00f6tigt.",
-          "pair_2_overrun_time": "Zus\u00e4tzliche Motorlaufzeit in der Endlage f\u00fcr Paar 2.",
-          "pair_2_tilt_time": "Zeit f\u00fcr den vollst\u00e4ndigen Lamellenweg von Paar 2.",
-          "pair_2_pulse_duration": "Dauer, f\u00fcr die ein Impulsausgang von Paar 2 aktiv bleibt.",
-          "pair_3_open_time": "Zeit, die Paar 3 zum vollst\u00e4ndigen \u00d6ffnen ben\u00f6tigt.",
-          "pair_3_close_time": "Zeit, die Paar 3 zum vollst\u00e4ndigen Schlie\u00dfen ben\u00f6tigt.",
-          "pair_3_overrun_time": "Zus\u00e4tzliche Motorlaufzeit in der Endlage f\u00fcr Paar 3.",
-          "pair_3_tilt_time": "Zeit f\u00fcr den vollst\u00e4ndigen Lamellenweg von Paar 3.",
-          "pair_3_pulse_duration": "Dauer, f\u00fcr die ein Impulsausgang von Paar 3 aktiv bleibt.",
-          "pair_4_open_time": "Zeit, die Paar 4 zum vollst\u00e4ndigen \u00d6ffnen ben\u00f6tigt.",
-          "pair_4_close_time": "Zeit, die Paar 4 zum vollst\u00e4ndigen Schlie\u00dfen ben\u00f6tigt.",
-          "pair_4_overrun_time": "Zus\u00e4tzliche Motorlaufzeit in der Endlage f\u00fcr Paar 4.",
-          "pair_4_tilt_time": "Zeit f\u00fcr den vollst\u00e4ndigen Lamellenweg von Paar 4.",
-          "pair_4_pulse_duration": "Dauer, f\u00fcr die ein Impulsausgang von Paar 4 aktiv bleibt."
-        }
-      },
-      "dm117_select": {
-        "title": "DM117-Modul ausw\u00e4hlen",
-        "data": {
-          "selected_module": "Modul"
-        },
-        "data_description": {
-          "selected_module": "Zu konfigurierendes Digitalmodul."
-        }
-      },
-      "dm117_config": {
-        "title": "DM117-Modul konfigurieren: {module_name}",
-        "data": {
-          "module_name": "Modulname",
-          "slot_1": "Steckplatz 1",
-          "slot_2": "Steckplatz 2",
-          "slot_3": "Steckplatz 3",
-          "slot_4": "Steckplatz 4",
-          "slot_5": "Steckplatz 5",
-          "slot_6": "Steckplatz 6",
-          "slot_7": "Steckplatz 7",
-          "slot_8": "Steckplatz 8"
-        },
-        "data_description": {
-          "module_name": "Angezeigter Name f\u00fcr dieses Modul und alle zugeh\u00f6rigen Entit\u00e4ten.",
-          "slot_1": "In Steckplatz 1 installierte Hardware.",
-          "slot_2": "In Steckplatz 2 installierte Hardware.",
-          "slot_3": "In Steckplatz 3 installierte Hardware.",
-          "slot_4": "In Steckplatz 4 installierte Hardware.",
-          "slot_5": "In Steckplatz 5 installierte Hardware.",
-          "slot_6": "In Steckplatz 6 installierte Hardware.",
-          "slot_7": "In Steckplatz 7 installierte Hardware.",
-          "slot_8": "In Steckplatz 8 installierte Hardware."
-        }
-      },
-      "dm117_input_config": {
-        "title": "DM117-Eing\u00e4nge konfigurieren: {module_name}",
-        "description": "Lege fest, was an den Kan\u00e4len der Eingangssteckpl\u00e4tze angeschlossen ist.",
-        "data": {
-          "debounce_ms": "Entprellzeit (ms)",
-          "slot_1_channel_a_role": "Steckplatz 1 Eingang A",
-          "slot_1_channel_a_device_class": "Ger\u00e4teklasse Steckplatz 1 Eingang A",
-          "slot_1_channel_a_invert": "Steckplatz 1 Eingang A invertieren",
-          "slot_1_channel_a_repeat": "Wiederholen, solange Steckplatz 1 Eingang A gehalten wird",
-          "slot_1_channel_b_role": "Steckplatz 1 Eingang B",
-          "slot_1_channel_b_device_class": "Ger\u00e4teklasse Steckplatz 1 Eingang B",
-          "slot_1_channel_b_invert": "Steckplatz 1 Eingang B invertieren",
-          "slot_1_channel_b_repeat": "Wiederholen, solange Steckplatz 1 Eingang B gehalten wird",
-          "slot_2_channel_a_role": "Steckplatz 2 Eingang A",
-          "slot_2_channel_a_device_class": "Ger\u00e4teklasse Steckplatz 2 Eingang A",
-          "slot_2_channel_a_invert": "Steckplatz 2 Eingang A invertieren",
-          "slot_2_channel_a_repeat": "Wiederholen, solange Steckplatz 2 Eingang A gehalten wird",
-          "slot_2_channel_b_role": "Steckplatz 2 Eingang B",
-          "slot_2_channel_b_device_class": "Ger\u00e4teklasse Steckplatz 2 Eingang B",
-          "slot_2_channel_b_invert": "Steckplatz 2 Eingang B invertieren",
-          "slot_2_channel_b_repeat": "Wiederholen, solange Steckplatz 2 Eingang B gehalten wird",
-          "slot_3_channel_a_role": "Steckplatz 3 Eingang A",
-          "slot_3_channel_a_device_class": "Ger\u00e4teklasse Steckplatz 3 Eingang A",
-          "slot_3_channel_a_invert": "Steckplatz 3 Eingang A invertieren",
-          "slot_3_channel_a_repeat": "Wiederholen, solange Steckplatz 3 Eingang A gehalten wird",
-          "slot_3_channel_b_role": "Steckplatz 3 Eingang B",
-          "slot_3_channel_b_device_class": "Ger\u00e4teklasse Steckplatz 3 Eingang B",
-          "slot_3_channel_b_invert": "Steckplatz 3 Eingang B invertieren",
-          "slot_3_channel_b_repeat": "Wiederholen, solange Steckplatz 3 Eingang B gehalten wird",
-          "slot_4_channel_a_role": "Steckplatz 4 Eingang A",
-          "slot_4_channel_a_device_class": "Ger\u00e4teklasse Steckplatz 4 Eingang A",
-          "slot_4_channel_a_invert": "Steckplatz 4 Eingang A invertieren",
-          "slot_4_channel_a_repeat": "Wiederholen, solange Steckplatz 4 Eingang A gehalten wird",
-          "slot_4_channel_b_role": "Steckplatz 4 Eingang B",
-          "slot_4_channel_b_device_class": "Ger\u00e4teklasse Steckplatz 4 Eingang B",
-          "slot_4_channel_b_invert": "Steckplatz 4 Eingang B invertieren",
-          "slot_4_channel_b_repeat": "Wiederholen, solange Steckplatz 4 Eingang B gehalten wird",
-          "slot_5_channel_a_role": "Steckplatz 5 Eingang A",
-          "slot_5_channel_a_device_class": "Ger\u00e4teklasse Steckplatz 5 Eingang A",
-          "slot_5_channel_a_invert": "Steckplatz 5 Eingang A invertieren",
-          "slot_5_channel_a_repeat": "Wiederholen, solange Steckplatz 5 Eingang A gehalten wird",
-          "slot_5_channel_b_role": "Steckplatz 5 Eingang B",
-          "slot_5_channel_b_device_class": "Ger\u00e4teklasse Steckplatz 5 Eingang B",
-          "slot_5_channel_b_invert": "Steckplatz 5 Eingang B invertieren",
-          "slot_5_channel_b_repeat": "Wiederholen, solange Steckplatz 5 Eingang B gehalten wird",
-          "slot_6_channel_a_role": "Steckplatz 6 Eingang A",
-          "slot_6_channel_a_device_class": "Ger\u00e4teklasse Steckplatz 6 Eingang A",
-          "slot_6_channel_a_invert": "Steckplatz 6 Eingang A invertieren",
-          "slot_6_channel_a_repeat": "Wiederholen, solange Steckplatz 6 Eingang A gehalten wird",
-          "slot_6_channel_b_role": "Steckplatz 6 Eingang B",
-          "slot_6_channel_b_device_class": "Ger\u00e4teklasse Steckplatz 6 Eingang B",
-          "slot_6_channel_b_invert": "Steckplatz 6 Eingang B invertieren",
-          "slot_6_channel_b_repeat": "Wiederholen, solange Steckplatz 6 Eingang B gehalten wird",
-          "slot_7_channel_a_role": "Steckplatz 7 Eingang A",
-          "slot_7_channel_a_device_class": "Ger\u00e4teklasse Steckplatz 7 Eingang A",
-          "slot_7_channel_a_invert": "Steckplatz 7 Eingang A invertieren",
-          "slot_7_channel_a_repeat": "Wiederholen, solange Steckplatz 7 Eingang A gehalten wird",
-          "slot_7_channel_b_role": "Steckplatz 7 Eingang B",
-          "slot_7_channel_b_device_class": "Ger\u00e4teklasse Steckplatz 7 Eingang B",
-          "slot_7_channel_b_invert": "Steckplatz 7 Eingang B invertieren",
-          "slot_7_channel_b_repeat": "Wiederholen, solange Steckplatz 7 Eingang B gehalten wird",
-          "slot_8_channel_a_role": "Steckplatz 8 Eingang A",
-          "slot_8_channel_a_device_class": "Ger\u00e4teklasse Steckplatz 8 Eingang A",
-          "slot_8_channel_a_invert": "Steckplatz 8 Eingang A invertieren",
-          "slot_8_channel_a_repeat": "Wiederholen, solange Steckplatz 8 Eingang A gehalten wird",
-          "slot_8_channel_b_role": "Steckplatz 8 Eingang B",
-          "slot_8_channel_b_device_class": "Ger\u00e4teklasse Steckplatz 8 Eingang B",
-          "slot_8_channel_b_invert": "Steckplatz 8 Eingang B invertieren",
-          "slot_8_channel_b_repeat": "Wiederholen, solange Steckplatz 8 Eingang B gehalten wird"
-        },
-        "data_description": {
-          "debounce_ms": "Wie lange ein Eingang nach einer \u00c4nderung ignoriert wird. Gilt f\u00fcr das ganze Modul.",
-          "slot_1_channel_a_role": "Funktion an Steckplatz 1 Eingang A.",
-          "slot_1_channel_a_device_class": "Ger\u00e4teklasse, wenn Steckplatz 1 Eingang A als Kontakt verwendet wird.",
-          "slot_1_channel_a_invert": "Steckplatz 1 Eingang A umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
-          "slot_1_channel_a_repeat": "Meldet weiter Wiederholungen, solange Steckplatz 1 Eingang A gehalten wird, etwa zum Dimmen.",
-          "slot_1_channel_b_role": "Funktion an Steckplatz 1 Eingang B.",
-          "slot_1_channel_b_device_class": "Ger\u00e4teklasse, wenn Steckplatz 1 Eingang B als Kontakt verwendet wird.",
-          "slot_1_channel_b_invert": "Steckplatz 1 Eingang B umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
-          "slot_1_channel_b_repeat": "Meldet weiter Wiederholungen, solange Steckplatz 1 Eingang B gehalten wird, etwa zum Dimmen.",
-          "slot_2_channel_a_role": "Funktion an Steckplatz 2 Eingang A.",
-          "slot_2_channel_a_device_class": "Ger\u00e4teklasse, wenn Steckplatz 2 Eingang A als Kontakt verwendet wird.",
-          "slot_2_channel_a_invert": "Steckplatz 2 Eingang A umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
-          "slot_2_channel_a_repeat": "Meldet weiter Wiederholungen, solange Steckplatz 2 Eingang A gehalten wird, etwa zum Dimmen.",
-          "slot_2_channel_b_role": "Funktion an Steckplatz 2 Eingang B.",
-          "slot_2_channel_b_device_class": "Ger\u00e4teklasse, wenn Steckplatz 2 Eingang B als Kontakt verwendet wird.",
-          "slot_2_channel_b_invert": "Steckplatz 2 Eingang B umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
-          "slot_2_channel_b_repeat": "Meldet weiter Wiederholungen, solange Steckplatz 2 Eingang B gehalten wird, etwa zum Dimmen.",
-          "slot_3_channel_a_role": "Funktion an Steckplatz 3 Eingang A.",
-          "slot_3_channel_a_device_class": "Ger\u00e4teklasse, wenn Steckplatz 3 Eingang A als Kontakt verwendet wird.",
-          "slot_3_channel_a_invert": "Steckplatz 3 Eingang A umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
-          "slot_3_channel_a_repeat": "Meldet weiter Wiederholungen, solange Steckplatz 3 Eingang A gehalten wird, etwa zum Dimmen.",
-          "slot_3_channel_b_role": "Funktion an Steckplatz 3 Eingang B.",
-          "slot_3_channel_b_device_class": "Ger\u00e4teklasse, wenn Steckplatz 3 Eingang B als Kontakt verwendet wird.",
-          "slot_3_channel_b_invert": "Steckplatz 3 Eingang B umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
-          "slot_3_channel_b_repeat": "Meldet weiter Wiederholungen, solange Steckplatz 3 Eingang B gehalten wird, etwa zum Dimmen.",
-          "slot_4_channel_a_role": "Funktion an Steckplatz 4 Eingang A.",
-          "slot_4_channel_a_device_class": "Ger\u00e4teklasse, wenn Steckplatz 4 Eingang A als Kontakt verwendet wird.",
-          "slot_4_channel_a_invert": "Steckplatz 4 Eingang A umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
-          "slot_4_channel_a_repeat": "Meldet weiter Wiederholungen, solange Steckplatz 4 Eingang A gehalten wird, etwa zum Dimmen.",
-          "slot_4_channel_b_role": "Funktion an Steckplatz 4 Eingang B.",
-          "slot_4_channel_b_device_class": "Ger\u00e4teklasse, wenn Steckplatz 4 Eingang B als Kontakt verwendet wird.",
-          "slot_4_channel_b_invert": "Steckplatz 4 Eingang B umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
-          "slot_4_channel_b_repeat": "Meldet weiter Wiederholungen, solange Steckplatz 4 Eingang B gehalten wird, etwa zum Dimmen.",
-          "slot_5_channel_a_role": "Funktion an Steckplatz 5 Eingang A.",
-          "slot_5_channel_a_device_class": "Ger\u00e4teklasse, wenn Steckplatz 5 Eingang A als Kontakt verwendet wird.",
-          "slot_5_channel_a_invert": "Steckplatz 5 Eingang A umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
-          "slot_5_channel_a_repeat": "Meldet weiter Wiederholungen, solange Steckplatz 5 Eingang A gehalten wird, etwa zum Dimmen.",
-          "slot_5_channel_b_role": "Funktion an Steckplatz 5 Eingang B.",
-          "slot_5_channel_b_device_class": "Ger\u00e4teklasse, wenn Steckplatz 5 Eingang B als Kontakt verwendet wird.",
-          "slot_5_channel_b_invert": "Steckplatz 5 Eingang B umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
-          "slot_5_channel_b_repeat": "Meldet weiter Wiederholungen, solange Steckplatz 5 Eingang B gehalten wird, etwa zum Dimmen.",
-          "slot_6_channel_a_role": "Funktion an Steckplatz 6 Eingang A.",
-          "slot_6_channel_a_device_class": "Ger\u00e4teklasse, wenn Steckplatz 6 Eingang A als Kontakt verwendet wird.",
-          "slot_6_channel_a_invert": "Steckplatz 6 Eingang A umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
-          "slot_6_channel_a_repeat": "Meldet weiter Wiederholungen, solange Steckplatz 6 Eingang A gehalten wird, etwa zum Dimmen.",
-          "slot_6_channel_b_role": "Funktion an Steckplatz 6 Eingang B.",
-          "slot_6_channel_b_device_class": "Ger\u00e4teklasse, wenn Steckplatz 6 Eingang B als Kontakt verwendet wird.",
-          "slot_6_channel_b_invert": "Steckplatz 6 Eingang B umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
-          "slot_6_channel_b_repeat": "Meldet weiter Wiederholungen, solange Steckplatz 6 Eingang B gehalten wird, etwa zum Dimmen.",
-          "slot_7_channel_a_role": "Funktion an Steckplatz 7 Eingang A.",
-          "slot_7_channel_a_device_class": "Ger\u00e4teklasse, wenn Steckplatz 7 Eingang A als Kontakt verwendet wird.",
-          "slot_7_channel_a_invert": "Steckplatz 7 Eingang A umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
-          "slot_7_channel_a_repeat": "Meldet weiter Wiederholungen, solange Steckplatz 7 Eingang A gehalten wird, etwa zum Dimmen.",
-          "slot_7_channel_b_role": "Funktion an Steckplatz 7 Eingang B.",
-          "slot_7_channel_b_device_class": "Ger\u00e4teklasse, wenn Steckplatz 7 Eingang B als Kontakt verwendet wird.",
-          "slot_7_channel_b_invert": "Steckplatz 7 Eingang B umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
-          "slot_7_channel_b_repeat": "Meldet weiter Wiederholungen, solange Steckplatz 7 Eingang B gehalten wird, etwa zum Dimmen.",
-          "slot_8_channel_a_role": "Funktion an Steckplatz 8 Eingang A.",
-          "slot_8_channel_a_device_class": "Ger\u00e4teklasse, wenn Steckplatz 8 Eingang A als Kontakt verwendet wird.",
-          "slot_8_channel_a_invert": "Steckplatz 8 Eingang A umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
-          "slot_8_channel_a_repeat": "Meldet weiter Wiederholungen, solange Steckplatz 8 Eingang A gehalten wird, etwa zum Dimmen.",
-          "slot_8_channel_b_role": "Funktion an Steckplatz 8 Eingang B.",
-          "slot_8_channel_b_device_class": "Ger\u00e4teklasse, wenn Steckplatz 8 Eingang B als Kontakt verwendet wird.",
-          "slot_8_channel_b_invert": "Steckplatz 8 Eingang B umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
-          "slot_8_channel_b_repeat": "Meldet weiter Wiederholungen, solange Steckplatz 8 Eingang B gehalten wird, etwa zum Dimmen."
-        }
-      },
-      "sm117_select": {
-        "title": "SM117-Modul ausw\u00e4hlen",
-        "data": {
-          "selected_module": "Modul"
-        },
-        "data_description": {
-          "selected_module": "Zu konfigurierendes OneWire-Busmodul."
-        }
-      },
-      "sm117_config": {
-        "title": "SM117-Modul konfigurieren: {module_name}",
-        "data": {
-          "module_name": "Modulname"
-        },
-        "data_description": {
-          "module_name": "Angezeigter Name f\u00fcr dieses Modul und die verbundenen OneWire-Ger\u00e4te."
-        }
-      },
-      "onewire_select": {
-        "title": "OneWire-Ger\u00e4t ausw\u00e4hlen",
-        "data": {
-          "selected_device": "Ger\u00e4t"
-        },
-        "data_description": {
-          "selected_device": "Zu konfigurierendes, erkanntes OneWire-Ger\u00e4t."
-        }
-      },
-      "onewire_config": {
-        "title": "OneWire-Profil zuweisen: {device_id}",
-        "data": {
-          "profile": "Profil"
-        },
-        "data_description": {
-          "profile": "Hardware und Funktion an dieser OneWire-Adresse."
-        }
-      },
-      "onewire_settings": {
-        "title": "OneWire-Ger\u00e4t konfigurieren: {device_id}",
-        "data": {
-          "poll_interval": "Abfrageintervall (s)",
-          "led_count": "Anzahl LEDs",
-          "channel_1_profile": "Rolle Kanal A",
-          "channel_1_device_class": "Ger\u00e4teklasse Kanal A",
-          "channel_1_invert": "Kanal A invertieren",
-          "channel_2_profile": "Rolle Kanal B",
-          "channel_2_device_class": "Ger\u00e4teklasse Kanal B",
-          "channel_2_invert": "Kanal B invertieren"
-        },
-        "data_description": {
-          "poll_interval": "Zeit zwischen den Abfragen dieses Ger\u00e4ts.",
-          "led_count": "Anzahl der am Controller angeschlossenen adressierbaren LEDs.",
-          "channel_1_profile": "W\u00e4hle, ob Kanal A als Ein- oder Ausgang bereitgestellt wird.",
-          "channel_1_device_class": "Ger\u00e4teklasse, wenn Kanal A als Eingang verwendet wird.",
-          "channel_1_invert": "Kanal A umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
-          "channel_2_profile": "W\u00e4hle, ob Kanal B als Ein- oder Ausgang bereitgestellt wird.",
-          "channel_2_device_class": "Ger\u00e4teklasse, wenn Kanal B als Eingang verwendet wird.",
-          "channel_2_invert": "Kanal B umgekehrt melden, etwa f\u00fcr einen \u00d6ffner."
+          "topology_scan_interval": "Wie oft der Bus nach verschwundenen Modulen abgesucht wird. Mit 0 nur beim Start und auf Anforderung.",
+          "topology_missing_scans": "Wie oft ein Modul hintereinander fehlen muss, bevor es gemeldet wird."
         }
       }
     },
+    "error": {
+      "fields_updated": "Der Modus hat sich ge\u00e4ndert, deshalb zeigt das Formular jetzt die passenden Felder. Bitte pr\u00fcfen und erneut absenden."
+    },
     "abort": {
-      "integration_not_ready": "Die Integration ist noch nicht bereit",
-      "no_dm117_found": "Keine DM117-Module gefunden",
-      "no_im117_found": "Keine IM117-Module gefunden",
-      "no_om117_found": "Keine OM117-Module gefunden",
-      "no_sm117_found": "Keine SM117-Module gefunden",
-      "no_onewire_found": "Keine OneWire-Ger\u00e4te gefunden"
+      "integration_not_ready": "Die Integration ist noch nicht geladen",
+      "no_devices_found": "Auf dem Bus wurden keine Ger\u00e4te gefunden"
     }
   }
 }

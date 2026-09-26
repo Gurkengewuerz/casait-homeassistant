@@ -8,10 +8,12 @@ import time
 from typing import Any
 
 from .ds18b20 import DS18B20
+from .ds28e17 import DS28E17
 from .ds2413 import DS2413
 from .ds2438 import DS2438
 from .ds2482 import DS2482
 from .led_controller import LEDConfig, LEDController
+from .multisensor import Multisensor
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -29,7 +31,7 @@ class OneWireType(enum.Enum):
     DS18XB20 = "DS18XB20"  # temperature sensor
     DS2438 = "DS2438"  # a/d-c sensor
     DS2413 = "DS2413"  # 1-wire dual channel addressable switch
-    DS28E17 = "DS28E17"  # 1-wire memory
+    DS28E17 = "DS28E17"  # 1-wire to I2C bridge
 
 
 class OneWireBus:
@@ -55,6 +57,8 @@ class OneWireBus:
         self.ds18b20 = DS18B20(self)
         self.ds2413 = DS2413(self)
         self.led_controller = LEDController(self)
+        self.ds28e17 = DS28E17(self)
+        self.multisensor = Multisensor(self.ds28e17)
         self.last_scan_time = 0
         self._interval_cache: dict[str, int] = {}
         self._timeout_cache: dict[str, tuple[float, int]] = {}

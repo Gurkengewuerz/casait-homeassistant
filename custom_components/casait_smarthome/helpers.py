@@ -58,6 +58,8 @@ from .const import (
     OPT_SLOW_POLL_INTERVAL,
     OPT_TOPOLOGY_MISSING_SCANS,
     OPT_TOPOLOGY_SCAN_INTERVAL,
+    OW_PROFILE_LED,
+    OW_PROFILE_MULTISENSOR,
 )
 from .services.i2cClasses.dm117 import DeviceType
 
@@ -895,16 +897,24 @@ def set_onewire_device(
     device_id: str,
     profile: str,
     *,
+    name: str | None = None,
     led_count: int | None = None,
     poll_interval: int | None = None,
     ds2413_channels: Mapping[int, str] | None = None,
 ) -> dict[str, Any]:
-    """Return options with one 1-Wire device's configuration replaced."""
+    """Return options with one 1-Wire device's configuration replaced.
+
+    The name survives unless a new one is given; everything else is replaced.
+    """
 
     updated = deepcopy(dict(options))
     device = _mutable_section(updated, OPT_ONEWIRE, device_id)
+    previous_name = device.get(OPT_NAME)
     device.clear()
     device["profile"] = profile
+    if previous_name:
+        device[OPT_NAME] = previous_name
+    _set_module_name(device, name)
     if led_count is not None:
         device["led_count"] = led_count
     if poll_interval is not None:
@@ -983,24 +993,42 @@ def migrate_options_to_nested(options: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def default_onewire_profile(meta: Mapping[str, Any]) -> str | None:
-    """Return the default OneWire profile for the provided metadata."""
+    """Return the profile a 1-Wire chip gets when none is configured.
 
+    Probing beats the family code: a DS28E17 is either an LED controller or a
+    Multisensor, and only what answers behind it tells which.
+    """
+
+    if detected := meta.get("detected_profile"):
+        return str(detected)
     family_code = meta.get("family_code")
     if family_code is None:
         return None
     return DEFAULT_OW_PROFILE.get(family_code)
 
 
+# What a DS28E17 board is called, by profile. The other chips are sold as the
+# bare chip and keep its name.
+ONEWIRE_BOARD_MODELS = {
+    OW_PROFILE_LED: "LED controller",
+    OW_PROFILE_MULTISENSOR: "Multisensor",
+}
+
+
 def build_onewire_device_info(config_entry_id: str, device_id: str, meta: Mapping[str, Any]) -> DeviceInfo:
     """Return DeviceInfo for a 1-Wire device linked through its SM117 bus."""
 
     bus_address = meta.get("bus_address")
-    device_type = str(meta.get("device_type") or "").strip()
+    chip = str(meta.get("device_type") or "").strip() or "OneWire"
+    board = ONEWIRE_BOARD_MODELS.get(str(meta.get("detected_profile") or ""))
+    name = str(meta.get(OPT_NAME) or "").strip() or f"{board or chip} {device_id}"
     device_info = DeviceInfo(
         identifiers={(DOMAIN, build_device_identifier(config_entry_id, "onewire", device_id))},
-        name=f"{device_type or 'OneWire'} {device_id}",
-        model=device_type or "OneWire",
-        manufacturer="Maxim Integrated",
+        name=name,
+        model=board or chip,
+        model_id=chip,
+        manufacturer="casaIT" if board else "Maxim Integrated",
+        serial_number=device_id,
     )
     if bus_address is not None:
         device_info["via_device"] = (
@@ -1008,3 +1036,13 @@ def build_onewire_device_info(config_entry_id: str, device_id: str, meta: Mappin
             build_device_identifier(config_entry_id, "sm117", f"{int(bus_address):02x}"),
         )
     return device_info
+
+
+def get_onewire_names(options: Mapping[str, Any]) -> dict[str, str]:
+    """Return the configured display names of 1-Wire devices."""
+
+    return {
+        device_id: name
+        for device_id, config in _onewire_entries(options).items()
+        if (name := str(config.get(OPT_NAME, "")).strip())
+    }
