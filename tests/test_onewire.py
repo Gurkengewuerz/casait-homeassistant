@@ -122,6 +122,7 @@ class FakeApi:
         self.state_update_signal = "casait_test"
         self.ow_devices = devices
         self.multisensor = SimpleNamespace(state=lambda device_id: None)
+        self.restorer = SimpleNamespace(check_ds2413=lambda *_: None, check_led=lambda *_: None)
         self.calls: list[tuple[str, str]] = []
         self._answers = answers
 

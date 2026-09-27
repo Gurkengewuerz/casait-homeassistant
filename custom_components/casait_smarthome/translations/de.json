@@ -518,6 +518,12 @@
         "manual": "Nur \u00fcber die Aktion Referenzfahrt",
         "off": "Aus"
       }
+    },
+    "power_on": {
+      "options": {
+        "restore": "Letzten Zustand wiederherstellen",
+        "off": "Aus bleiben"
+      }
     }
   },
   "options": {
@@ -679,10 +685,12 @@
         "title": "OM117 {device}",
         "description": "Klappe ein Ausgangspaar auf, um festzulegen, was es ansteuert. Zeitfelder erscheinen passend zum Modus.",
         "data": {
-          "name": "Name"
+          "name": "Name",
+          "power_on": "Nach einem Stromausfall"
         },
         "data_description": {
-          "name": "Wird f\u00fcr dieses Ger\u00e4t und seine Entit\u00e4ten angezeigt. Leer lassen f\u00fcr den Standardnamen."
+          "name": "Wird f\u00fcr dieses Ger\u00e4t und seine Entit\u00e4ten angezeigt. Leer lassen f\u00fcr den Standardnamen.",
+          "power_on": "Was die Schaltausg\u00e4nge tun, wenn das Modul ohne Strom war. Rolll\u00e4den, Jalousien und Impulsausg\u00e4nge bleiben immer aus."
         },
         "sections": {
           "pair_1": {
@@ -776,11 +784,13 @@
         "description": "Klappe einen Steckplatz auf, um die Best\u00fcckung festzulegen. Eingangssteckpl\u00e4tze zeigen zus\u00e4tzlich ihre zwei Kan\u00e4le.",
         "data": {
           "name": "Name",
-          "debounce_ms": "Entprellzeit (ms)"
+          "debounce_ms": "Entprellzeit (ms)",
+          "power_on": "Nach einem Stromausfall"
         },
         "data_description": {
           "name": "Wird f\u00fcr dieses Ger\u00e4t und seine Entit\u00e4ten angezeigt. Leer lassen f\u00fcr den Standardnamen.",
-          "debounce_ms": "Wie lange ein Eingang nach einer \u00c4nderung ignoriert wird. Gilt f\u00fcr das ganze Modul."
+          "debounce_ms": "Wie lange ein Eingang nach einer \u00c4nderung ignoriert wird. Gilt f\u00fcr das ganze Modul.",
+          "power_on": "Was die Ausgangs- und Dimmer-Slots tun, wenn das Modul ohne Strom war."
         },
         "sections": {
           "slot_1": {
@@ -999,12 +1009,14 @@
         "description": "Erkannt: {details}",
         "data": {
           "name": "Name",
+          "power_on": "Nach einem Stromausfall",
           "profile": "Profil",
           "poll_interval": "Abfrageintervall (s)",
           "led_count": "Anzahl LEDs"
         },
         "data_description": {
           "name": "Wird f\u00fcr dieses Ger\u00e4t und seine Entit\u00e4ten angezeigt. Leer lassen f\u00fcr den Standardnamen.",
+          "power_on": "Was die Ausg\u00e4nge tun, wenn der Chip ohne Strom war.",
           "profile": "Was an dieser 1-Wire-Adresse angeschlossen ist. Wird automatisch erkannt; nur zum \u00dcbersteuern \u00e4ndern.",
           "poll_interval": "Zeit zwischen zwei Abfragen dieses Ger\u00e4ts.",
           "led_count": "Anzahl der am Controller angeschlossenen adressierbaren LEDs."

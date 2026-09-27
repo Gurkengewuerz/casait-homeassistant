@@ -518,6 +518,12 @@
         "manual": "Only with the reference run action",
         "off": "Off"
       }
+    },
+    "power_on": {
+      "options": {
+        "restore": "Restore the last state",
+        "off": "Stay off"
+      }
     }
   },
   "options": {
@@ -679,10 +685,12 @@
         "title": "OM117 {device}",
         "description": "Open an output pair to set what it drives. Timing fields appear for the selected mode.",
         "data": {
-          "name": "Name"
+          "name": "Name",
+          "power_on": "After a power failure"
         },
         "data_description": {
-          "name": "Shown for this device and its entities. Leave empty for the default."
+          "name": "Shown for this device and its entities. Leave empty for the default.",
+          "power_on": "What the switch outputs do when the module was without power. Shutters, blinds and pulse outputs always stay off."
         },
         "sections": {
           "pair_1": {
@@ -776,11 +784,13 @@
         "description": "Open a slot to set its hardware. Input slots also show their two channels.",
         "data": {
           "name": "Name",
-          "debounce_ms": "Debounce time (ms)"
+          "debounce_ms": "Debounce time (ms)",
+          "power_on": "After a power failure"
         },
         "data_description": {
           "name": "Shown for this device and its entities. Leave empty for the default.",
-          "debounce_ms": "How long an input is ignored after it changed. Applies to the whole module."
+          "debounce_ms": "How long an input is ignored after it changed. Applies to the whole module.",
+          "power_on": "What the output and dimmer slots do when the module was without power."
         },
         "sections": {
           "slot_1": {
@@ -999,12 +1009,14 @@
         "description": "Detected: {details}",
         "data": {
           "name": "Name",
+          "power_on": "After a power failure",
           "profile": "Profile",
           "poll_interval": "Poll interval (s)",
           "led_count": "Number of LEDs"
         },
         "data_description": {
           "name": "Shown for this device and its entities. Leave empty for the default.",
+          "power_on": "What the outputs do when the chip was without power.",
           "profile": "What is connected at this 1-Wire address. Detected automatically; change it only to override.",
           "poll_interval": "Time between two reads of this device.",
           "led_count": "Addressable LEDs connected to the controller."

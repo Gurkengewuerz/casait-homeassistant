@@ -65,6 +65,11 @@ position: automatically, by running into the nearer end position before a move
 that ends close to it, only through the `casait_smarthome.reference_run` action,
 or not at all. Reference runs need an overrun time above zero.
 
+**After a power failure** decides what the switch outputs do when the module was
+without power: restore their last state, which is the default, or stay off.
+Shutters, blinds and pulse outputs always stay off. DM117 modules, DS2413 chips
+and LED controllers have the same option.
+
 ### DM117
 
 Open each slot and select what is installed: unused, digital input, digital

@@ -243,6 +243,10 @@ class SMBus:
         self._io_errors = 0
         self._frames = 0
         self._last_rtt = 0.0
+        # Counts the TCP connections opened so far. The bridge forgets per-client
+        # state such as the input scanner with every connection, so callers compare
+        # this against the value they set that state up under.
+        self.connection_generation = 0
 
     @classmethod
     async def connect(
@@ -277,6 +281,7 @@ class SMBus:
                 sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                 sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
         self._reader, self._writer = reader, writer
+        self.connection_generation += 1
         _LOGGER.info("Connected to SMBus bridge at %s:%s", self.host, self.port)
 
     @staticmethod

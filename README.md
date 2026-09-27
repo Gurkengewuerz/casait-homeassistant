@@ -162,6 +162,32 @@ row.
 
 The interval can be changed per device in the options.
 
+## Restarts and power failures
+
+Home Assistant and the bridge can restart in any order; neither has to be up
+first.
+
+- **Home Assistant restarts, the bus keeps running.** The modules hold their
+  outputs while Home Assistant is away. After the restart the integration reads
+  what they actually do, and covers restore their last position. A cover that was
+  moving during the restart references itself on its next move.
+- **The bridge restarts, or its connection drops.** The integration reconnects on
+  its own, hands the inputs to the bridge's scanner again and reads every module
+  in full before it writes anything, so a command never builds on a stale output
+  state.
+- **The bridge is not reachable when Home Assistant starts.** Setup is retried
+  with a growing delay until the bridge answers; after three failed attempts a
+  repair issue says so.
+- **The modules lost power.** Output modules start with every output off. The
+  integration remembers the state it last commanded, also across restarts of
+  Home Assistant, and notices the difference on the next read of the outputs
+  (within the slow cycle, 5 s by default). Each output module, DS2413 and LED
+  controller has an option **After a power failure**: restore the last state
+  (default) or stay off. A DM117 that lost its slot configuration is configured
+  again first. Shutters, blinds and pulse outputs are never switched on again;
+  a cover that was moving loses its position and references itself on its next
+  move.
+
 ## Configuration options
 
 Open **Settings > Devices & services > casaIT : Smart Home > Configure**. The menu
@@ -357,6 +383,20 @@ The device also offers a **self test** button with a result sensor, and — hidd
 by default — **conditioning** (recommended after long storage) and a reset of the
 calibration history. Each of these pauses the CO2 readings for a few seconds;
 conditioning for about 25 seconds.
+
+### Reference run
+
+`casait_smarthome.reference_run` runs shutters and blinds into the nearer end
+position, which clears the drift of their calculated position, and by default
+back to where they were. It needs an overrun time above zero.
+
+```yaml
+action: casait_smarthome.reference_run
+target:
+  entity_id: cover.living_room_shutter
+data:
+  return_to_position: true
+```
 
 ### Scan devices
 

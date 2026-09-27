@@ -22,6 +22,7 @@ OPT_PORTS: Final = "ports"
 OPT_INPUTS: Final = "inputs"
 OPT_NAME: Final = "name"
 OPT_DEBOUNCE_MS: Final = "debounce_ms"
+OPT_POWER_ON: Final = "power_on"
 
 # I2C address ranges for device scanning
 I2C_ADDR_RANGES: Final = [
@@ -141,6 +142,9 @@ DEFAULT_BLIND_CLOSE_TIME: Final = 25.0
 DEFAULT_BLIND_OVERRUN_TIME: Final = 2.0
 DEFAULT_BLIND_TILT_TIME: Final = 1.5
 DEFAULT_PULSE_DURATION: Final = 0.5
+POWER_ON_RESTORE: Final = "restore"
+POWER_ON_OFF: Final = "off"
+POWER_ON_POLICIES: Final = (POWER_ON_RESTORE, POWER_ON_OFF)
 COVER_REFERENCE_AUTO: Final = "auto"
 COVER_REFERENCE_MANUAL: Final = "manual"
 COVER_REFERENCE_OFF: Final = "off"

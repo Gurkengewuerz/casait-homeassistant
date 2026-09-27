@@ -361,6 +361,7 @@ class CasaITOneWireScheduler:
                 self._failed(device_id, "no pin levels")
             else:
                 self._succeeded(device_id, pins)
+                self._api.restorer.check_ds2413(device_id, pins)
 
         return run
 
@@ -371,6 +372,7 @@ class CasaITOneWireScheduler:
                 self._failed(device_id, "no configuration")
             else:
                 self._succeeded(device_id, config)
+                self._api.restorer.check_led(device_id, config)
 
         return run
 

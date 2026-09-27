@@ -54,6 +54,7 @@ from .const import (
     OPT_ONEWIRE,
     OPT_PAIRS,
     OPT_PORTS,
+    OPT_POWER_ON,
     OPT_REPEAT_INTERVAL_MS,
     OPT_SETTINGS,
     OPT_SLOTS,
@@ -62,6 +63,8 @@ from .const import (
     OPT_TOPOLOGY_SCAN_INTERVAL,
     OW_PROFILE_LED,
     OW_PROFILE_MULTISENSOR,
+    POWER_ON_POLICIES,
+    POWER_ON_RESTORE,
 )
 from .services.i2cClasses.dm117 import DeviceType
 
@@ -733,6 +736,46 @@ def _set_module_name(section: dict[str, Any], name: str | None) -> None:
         section.pop(OPT_NAME, None)
 
 
+def power_on_key(kind: str, ident: int | str) -> str:
+    """Return the key a module or 1-Wire chip has in the power-on policies."""
+
+    return f"{kind}:{ident}"
+
+
+def get_power_on_policies(options: Mapping[str, Any]) -> dict[str, str]:
+    """Return what each output module does after it lost power, keyed by power_on_key.
+
+    Modules without an explicit choice are left out; they restore their last state.
+    """
+
+    policies: dict[str, str] = {}
+    for kind in ("om117", "dm117"):
+        for address, module in _module_entries(options, kind).items():
+            if (policy := module.get(OPT_POWER_ON)) in POWER_ON_POLICIES:
+                policies[power_on_key(kind, address)] = str(policy)
+    for device_id, config in _onewire_entries(options).items():
+        if (policy := config.get(OPT_POWER_ON)) in POWER_ON_POLICIES:
+            policies[power_on_key("onewire", device_id)] = str(policy)
+    return policies
+
+
+def get_power_on_policy(options: Mapping[str, Any], kind: str, ident: int | str) -> str:
+    """Return one module's power-on policy, restoring by default."""
+
+    return get_power_on_policies(options).get(power_on_key(kind, ident), POWER_ON_RESTORE)
+
+
+def set_power_on_policy(options: Mapping[str, Any], kind: str, ident: int | str, policy: str) -> dict[str, Any]:
+    """Return options with one module's power-on policy replaced."""
+
+    updated = deepcopy(dict(options))
+    path = (OPT_ONEWIRE, str(ident)) if kind == "onewire" else (OPT_MODULES, kind, str(ident))
+    section = _mutable_section(updated, *path)
+    if policy in POWER_ON_POLICIES:
+        section[OPT_POWER_ON] = policy
+    return updated
+
+
 def set_module_name(options: Mapping[str, Any], module_kind: str, address: int, name: str) -> dict[str, Any]:
     """Return options with the display name for one I2C module replaced."""
 
@@ -919,10 +962,13 @@ def set_onewire_device(
     updated = deepcopy(dict(options))
     device = _mutable_section(updated, OPT_ONEWIRE, device_id)
     previous_name = device.get(OPT_NAME)
+    previous_power_on = device.get(OPT_POWER_ON)
     device.clear()
     device["profile"] = profile
     if previous_name:
         device[OPT_NAME] = previous_name
+    if previous_power_on:
+        device[OPT_POWER_ON] = previous_power_on
     _set_module_name(device, name)
     if led_count is not None:
         device["led_count"] = led_count

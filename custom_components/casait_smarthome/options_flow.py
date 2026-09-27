@@ -54,12 +54,14 @@ from .const import (
     OPT_FAST_POLL_INTERVAL_MS,
     OPT_LONG_PRESS_MS,
     OPT_MAX_SEND_INTERVAL_MS,
+    OPT_POWER_ON,
     OPT_REPEAT_INTERVAL_MS,
     OPT_SLOW_POLL_INTERVAL,
     OPT_TOPOLOGY_MISSING_SCANS,
     OPT_TOPOLOGY_SCAN_INTERVAL,
     OW_PROFILE_LED,
     OW_PROFILE_MULTISENSOR,
+    POWER_ON_POLICIES,
 )
 from .helpers import (
     ONEWIRE_BOARD_MODELS,
@@ -85,6 +87,7 @@ from .helpers import (
     get_om117_pair_configuration,
     get_onewire_names,
     get_polling_settings,
+    get_power_on_policy,
     get_topology_settings,
     set_dm117_inputs,
     set_dm117_slots,
@@ -95,6 +98,7 @@ from .helpers import (
     set_om117_pairs,
     set_onewire_device,
     set_polling_settings,
+    set_power_on_policy,
     set_topology_settings,
 )
 
@@ -137,6 +141,10 @@ def _box(minimum: float, maximum: float, step: float = 1) -> NumberSelector:
 
 def _select(options: list[str], translation_key: str) -> SelectSelector:
     return SelectSelector(SelectSelectorConfig(options=options, translation_key=translation_key))
+
+
+def _power_on() -> SelectSelector:
+    return _select(list(POWER_ON_POLICIES), "power_on")
 
 
 def _collapsed(fields: dict[Any, Any]) -> section:
@@ -378,6 +386,7 @@ class OptionsFlowHandler(OptionsFlowWithReload):
         schema: dict[Any, Any] = {
             vol.Optional(NAME_FIELD, description={"suggested_value": name}): TextSelector(),
             vol.Required(OPT_DEBOUNCE_MS, default=settings.debounce_ms): _box(0, 255),
+            vol.Required(OPT_POWER_ON, default=get_power_on_policy(self._options, "dm117", address)): _power_on(),
         }
         for port in range(8):
             schema[vol.Required(f"port_{port + 1}")] = _collapsed(
@@ -416,6 +425,7 @@ class OptionsFlowHandler(OptionsFlowWithReload):
                     reference_mode=str(data.get("reference_mode", current.reference_mode)),
                 )
             options = set_om117_pairs(self._options, address, pairs, name=str(user_input.get(NAME_FIELD, "")))
+            options = set_power_on_policy(options, "om117", address, str(user_input.get(OPT_POWER_ON, "")))
             changed = any(pairs[pair].mode != existing.get(pair, OM117PairConfig()).mode for pair in range(4))
             needs_timing = any(config.mode != OM117_MODE_SWITCH for config in pairs.values())
             return await self._refresh_or_stage(
@@ -429,7 +439,10 @@ class OptionsFlowHandler(OptionsFlowWithReload):
     def _show_om117(self, address: int, errors: dict[str, str] | None = None) -> ConfigFlowResult:
         existing = get_om117_pair_configuration(self._options).get(address, {})
         name = get_module_name(self._options, "om117", address, "")
-        schema: dict[Any, Any] = {vol.Optional(NAME_FIELD, description={"suggested_value": name}): TextSelector()}
+        schema: dict[Any, Any] = {
+            vol.Optional(NAME_FIELD, description={"suggested_value": name}): TextSelector(),
+            vol.Required(OPT_POWER_ON, default=get_power_on_policy(self._options, "om117", address)): _power_on(),
+        }
         for pair in range(4):
             config = existing.get(pair, OM117PairConfig())
             fields: dict[Any, Any] = {vol.Required("mode", default=config.mode): _select(OM117_MODES, "om117_mode")}
@@ -479,6 +492,7 @@ class OptionsFlowHandler(OptionsFlowWithReload):
 
             options = set_dm117_slots(self._options, address, new_types, name=str(user_input.get(NAME_FIELD, "")))
             options = set_dm117_inputs(options, address, new_inputs, debounce_ms=int(user_input[OPT_DEBOUNCE_MS]))
+            options = set_power_on_policy(options, "dm117", address, str(user_input.get(OPT_POWER_ON, "")))
             became_input = any(
                 kind == "binary_input" and slot_types.get(slot) != "binary_input" for slot, kind in new_types.items()
             )
@@ -586,6 +600,8 @@ class OptionsFlowHandler(OptionsFlowWithReload):
         )
         if channels is not None:
             options = set_ds2413_inputs(options, device_id, inputs)
+        if OPT_POWER_ON in user_input and new_profile in {OW_PROFILE_LED, "ds2413"}:
+            options = set_power_on_policy(options, "onewire", device_id, str(user_input[OPT_POWER_ON]))
 
         return await self._refresh_or_stage(
             options,
@@ -618,6 +634,9 @@ class OptionsFlowHandler(OptionsFlowWithReload):
             )
             schema[vol.Required("poll_interval", default=interval)] = _box(1, 3600)
 
+        if profile in {OW_PROFILE_LED, "ds2413"}:
+            policy = get_power_on_policy(self._options, "onewire", device_id)
+            schema[vol.Required(OPT_POWER_ON, default=policy)] = _power_on()
         if profile == OW_PROFILE_LED:
             count = get_configured_led_counts(self._options).get(device_id, DEFAULT_LED_COUNT)
             schema[vol.Required("led_count", default=count)] = _box(1, 255)

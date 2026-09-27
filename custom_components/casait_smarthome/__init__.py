@@ -42,6 +42,7 @@ from .helpers import (
     get_om117_pair_configuration,
     get_onewire_names,
     get_polling_settings,
+    get_power_on_policies,
     get_topology_settings,
     migrate_options_to_nested,
     migrated_device_identifiers,
@@ -375,6 +376,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> bo
         },
         topology_settings=get_topology_settings(entry.options),
         onewire_names=get_onewire_names(entry.options),
+        power_on_policies=get_power_on_policies(entry.options),
     )
     entry.runtime_data = api
 

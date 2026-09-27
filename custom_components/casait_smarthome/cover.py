@@ -194,6 +194,9 @@ class CasaITBlindCover(CoverEntity, RestoreEntity):
         self.async_on_remove(
             async_dispatcher_connect(self.hass, self._api.address_signal(self._address), self._handle_state_update)
         )
+        self.async_on_remove(
+            async_dispatcher_connect(self.hass, self._api.power_loss_signal(self._address), self._handle_power_loss)
+        )
 
     async def async_will_remove_from_hass(self) -> None:
         """Stop movement when entity is removed."""
@@ -540,6 +543,15 @@ class CasaITBlindCover(CoverEntity, RestoreEntity):
                 _LOGGER.error("Failed to release blind outputs on 0x%02x pair %s", self._address, self._pair_index + 1)
             else:
                 raise HomeAssistantError(translation_domain=DOMAIN, translation_key="cover_write_failed")
+
+    @callback
+    def _handle_power_loss(self) -> None:
+        """Stop tracking a move whose motor stopped with the module's power."""
+
+        if self._movement_task is None:
+            return
+        self._uncertainty = POSITION_UNKNOWN
+        self.hass.async_create_task(self._stop_motion(), f"casait_blind_power_loss_{self._address}_{self._pair_index}")
 
     @callback
     def _handle_state_update(self) -> None:

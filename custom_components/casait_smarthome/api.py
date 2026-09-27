@@ -37,6 +37,7 @@ from .helpers import (
 from .multisensor import CasaITMultisensorManager
 from .onewire import CasaITOneWireScheduler
 from .outputs import CasaITOutputWriter
+from .restore import CasaITOutputRestorer
 from .services.i2cClasses.dm117 import DM117, DeviceType, DM117PortConfig, PortConfig
 from .services.i2cClasses.ds28e17 import DS28E17Error
 from .services.i2cClasses.edge_tracker import EdgeTracker
@@ -87,6 +88,7 @@ class CasaITApi:
         input_debounce_ms: Mapping[str, Mapping[int, int]] | None = None,
         topology_settings: TopologySettings | None = None,
         onewire_names: Mapping[str, str] | None = None,
+        power_on_policies: Mapping[str, str] | None = None,
     ) -> None:
         """Initialize the API."""
         self.hass = hass
@@ -147,6 +149,10 @@ class CasaITApi:
         self._frames_last_cycle = 0
         # Addresses the bridge samples for us; empty means Home Assistant reads them.
         self._scan_addresses: list[int] = []
+        # Whether the bridge accepted the scanner command; None until probed once.
+        self._scanner_supported: bool | None = None
+        # The bridge connection the session state above was set up on.
+        self._session_generation = 0
         self._stop_event: asyncio.Event | None = None
         self._poll_task: asyncio.Task | None = None
         self._init_done = asyncio.Event()
@@ -158,6 +164,7 @@ class CasaITApi:
         self.multisensor = CasaITMultisensorManager(self)
         self.onewire = CasaITOneWireScheduler(self)
         self.outputs = CasaITOutputWriter(self)
+        self.restorer = CasaITOutputRestorer(self, power_on_policies)
 
     def start_initialization(self, dm_config: Mapping[int, Mapping[int, DeviceType]] | None = None) -> None:
         """Kick off asynchronous initialization for initial scans and polling."""
@@ -189,6 +196,7 @@ class CasaITApi:
 
         try:
             self._dm_config = {address: dict(slots) for address, slots in (dm_config or {}).items()}
+            await self.restorer.async_load()
 
             await self.scan_devices()
 
@@ -245,6 +253,7 @@ class CasaITApi:
                 | dict(sorted(self._ow_missing_scans.items())),
             },
             "multisensors": self.multisensor.diagnostic_data,
+            "power_on": self.restorer.diagnostics(),
             "onewire_schedule": self.onewire.diagnostic_data,
             "transport": self.bus.stats,
         }
@@ -312,6 +321,23 @@ class CasaITApi:
         """Return the dispatcher signal carrying state changes for one module."""
 
         return f"{self.state_update_signal}_{address:02x}"
+
+    def power_loss_signal(self, address: int) -> str:
+        """Return the dispatcher signal telling that an output module was reset."""
+
+        return f"{self.state_update_signal}_power_loss_{address:02x}"
+
+    def dm117_slot_types(self, address: int) -> dict[int, DeviceType]:
+        """Return the slot types configured for one DM117."""
+
+        return dict(self._dm_config.get(address, {}))
+
+    @staticmethod
+    def is_output_module(address: int) -> bool:
+        """Return True when a PCF8574 address belongs to an OM117."""
+
+        output_range = get_address_range("OM117")
+        return output_range is not None and output_range[0] <= address <= output_range[1]
 
     def edge_signal(self, address: int) -> str:
         """Return the dispatcher signal carrying input edges for one module."""
@@ -456,6 +482,7 @@ class CasaITApi:
             return
 
         await self._async_start_input_scanner()
+        self._session_generation = self.bus.connection_generation
 
         self._stop_event = asyncio.Event()
         self._poll_task = self.hass.async_create_background_task(self._poll_loop(), "casait_poll_loop")
@@ -513,6 +540,9 @@ class CasaITApi:
         slow_due = 0.0
         while not self._stop_event.is_set():
             try:
+                if self.bus.connection_generation != self._session_generation:
+                    await self._async_resume_session()
+                    slow_due = 0.0
                 include_slow = time.monotonic() >= slow_due
                 self._poll_idle.clear()
                 await self._poll_cycle(include_slow=include_slow)
@@ -575,8 +605,31 @@ class CasaITApi:
             self._last_fast_cycle = duration
         self._sync_bridge_connection_issue()
 
-    async def _async_start_input_scanner(self) -> None:
+    async def _async_resume_session(self) -> None:
+        """Set the bridge up again after it was reconnected, typically after a reboot.
+
+        The bridge keeps nothing for a client across connections: the input scanner
+        is gone and the output modules may have lost power along with it. Cached
+        output bytes are therefore dropped, so no write builds on a stale one, and
+        the caller follows up with a full read of every module.
+        """
+
+        generation = self.bus.connection_generation
+        _LOGGER.info("Bridge connection was re-established; setting up the session again")
+        for device in self.im117_om117.values():
+            device.last_value = -1
+            device.invalidate()
+        # A scanner that worked before is supported; if setting it up fails now,
+        # the bridge is still unreachable and the next cycle tries again.
+        if self._scanner_supported and not await self._async_start_input_scanner():
+            return
+        self._session_generation = generation
+
+    async def _async_start_input_scanner(self) -> bool:
         """Hand the input addresses to the bridge, if it can sample them itself.
+
+        Returns True when the bridge now samples the inputs. Otherwise the drivers
+        keep their full debounce window, as Home Assistant reads the inputs itself.
 
         Probed once per config entry. A bridge on older firmware does not answer the
         command, so this costs the transport's whole retry budget once before falling
@@ -585,8 +638,11 @@ class CasaITApi:
 
         self._scan_addresses = []
         addresses = sorted(self._fast_pcf_addresses())
+        for address in addresses:
+            if (device := self.im117_om117.get(address)) is not None:
+                device.debounce_time = self.debounce_time("im117", address)
         if not addresses:
-            return
+            return False
 
         period_ms = max(1, min(255, round(self._poll_interval * 1000)))
         # One debounce value covers every scanned address, so the bridge gets the
@@ -598,10 +654,12 @@ class CasaITApi:
                 accepted = await self.bus.scan_config(addresses, period_ms, debounce_ms)
         except Exception:
             _LOGGER.exception("Failed to configure the bridge input scanner")
-            return
+            return False
 
+        if self._scanner_supported is None:
+            self._scanner_supported = accepted
         if not accepted:
-            return
+            return False
 
         self._scan_addresses = addresses
         # The bridge debounces with a clock that is not subject to network jitter,
@@ -617,6 +675,7 @@ class CasaITApi:
             len(addresses),
             period_ms,
         )
+        return True
 
     async def _fetch_scanned_inputs(self) -> None:
         """Collect and publish the transitions the bridge latched for us."""
@@ -870,6 +929,8 @@ class CasaITApi:
         self._clear_read_error("PCF8574", address)
         previous = self._pcf_states.get(address)
         self._pcf_states[address] = reading.port_states
+        if self.is_output_module(address):
+            self.restorer.check_pcf(address, reading.value)
 
         if reading.edges:
             async_dispatcher_send(self.hass, self.edge_signal(address), reading.edges)
@@ -910,6 +971,11 @@ class CasaITApi:
         self._clear_read_error("DM117", address)
         previous = self._dm117_states.get(address)
         self._dm117_states[address] = dict(port_states)
+        slots_lost = any(
+            device.last_port_types.get(slot) is not expected
+            for slot, expected in self._dm_config.get(address, {}).items()
+        )
+        self.restorer.check_dm117(address, port_states, slots_lost)
 
         if edges := self._dm117_input_edges(address, port_states):
             async_dispatcher_send(self.hass, self.edge_signal(address), edges)
@@ -1319,6 +1385,7 @@ class CasaITApi:
             pins = await bus.ds2413.set_state(device_id, channel, value)
         if pins is None:
             return False
+        self.restorer.note_ds2413_written(device_id, channel, value)
         self.onewire.set_value(device_id, pins)
         return True
 
@@ -1342,6 +1409,7 @@ class CasaITApi:
         async with self.write_access():
             written = await bus.write_led_config(device_id, config)
         if written:
+            self.restorer.note_led_written(device_id, config)
             self.onewire.set_value(device_id, config)
         return written
 
@@ -1368,6 +1436,8 @@ class CasaITApi:
             return
         # The write was read back, so the driver's port_states are authoritative.
         # Polling again would only add latency.
+        if self.is_output_module(address):
+            self.restorer.note_pcf_written(address, device.last_value)
         previous = self._pcf_states.get(address)
         self._pcf_states[address] = list(device.port_states)
         if previous != device.port_states:
@@ -1390,6 +1460,7 @@ class CasaITApi:
         # For a ramped dimmer that is the target value, which is what HA should show.
         states = dict(self._dm117_states.get(address) or {})
         states[config.port] = device.last_values.get(config.port, 0)
+        self.restorer.note_dm117_written(address, config.port, states[config.port])
         previous = self._dm117_states.get(address)
         self._dm117_states[address] = states
         if previous != states:
