@@ -19,7 +19,7 @@ class FakeBridge:
 
     connection_generation = 1
 
-    def __init__(self, chips: dict[int, int], *, boot_id: int | None = None) -> None:
+    def __init__(self, chips: dict[int, int], *, boot_id: int = 1) -> None:
         self.chips = dict(chips)
         self.frames: list[list[tuple[str, int, int]]] = []
         self.stuck: set[int] = set()
@@ -28,10 +28,10 @@ class FakeBridge:
         self.timers: list[list[int]] = []
 
     async def ping_info(self) -> BridgeInfo | None:
-        return BridgeInfo(boot_id=self.boot_id, uptime_s=0 if self.boot_id is not None else None)
+        return BridgeInfo(boot_id=self.boot_id, uptime_s=0)
 
     async def timed_output(self, addr: int, mask: int, value: int, revert: int, duration_ms: int) -> int:
-        if self.boot_id is None or addr not in self.chips:
+        if addr not in self.chips:
             raise OSError("timer refused")
         self.timers = [timer for timer in self.timers if timer[0] != addr or timer[1] & ~mask]
         for timer in self.timers:

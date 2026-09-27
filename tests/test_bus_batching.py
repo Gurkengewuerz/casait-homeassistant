@@ -410,7 +410,7 @@ class ScanBus(FakeBus):
 
 
 @pytest.mark.unit
-async def test_old_firmware_falls_back_to_polling(hass) -> None:
+async def test_a_refused_scanner_leaves_the_inputs_to_the_poll_loop(hass) -> None:
     bus = ScanBus(accept=False)
     api = CasaITApi(hass, bus, "entry-test")
     device = _pcf(api, 0x38, bus)

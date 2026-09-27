@@ -157,8 +157,6 @@ class CasaITApi:
         self._frames_last_cycle = 0
         # Addresses the bridge samples for us; empty means Home Assistant reads them.
         self._scan_addresses: list[int] = []
-        # Whether the bridge accepted the scanner command; None until probed once.
-        self._scanner_supported: bool | None = None
         # The bridge connection the session state above was set up on.
         self._session_generation = 0
         # Set when the bridge reports that its scanner is not configured.
@@ -268,7 +266,6 @@ class CasaITApi:
                 if self.bridge_info and self.bridge_info.boot_id is not None
                 else None,
                 "uptime_s": self.bridge_info.uptime_s if self.bridge_info else None,
-                "timed_outputs": bool(self.bridge_info and self.bridge_info.supports_timed_outputs),
                 "active_output_timers": self.outputs.diagnostics(),
             },
             "multisensors": self.multisensor.diagnostic_data,
@@ -501,7 +498,8 @@ class CasaITApi:
             return
 
         self.bridge_info = await self.bus.ping_info()
-        await self._async_start_input_scanner()
+        if not await self._async_start_input_scanner():
+            self._scanner_lost = True
         self._session_generation = self.bus.connection_generation
 
         self._stop_event = asyncio.Event()
@@ -637,7 +635,12 @@ class CasaITApi:
         """
 
         generation = self.bus.connection_generation
-        if (info := await self.bus.ping_info()) is None:
+        try:
+            info = await self.bus.ping_info()
+        except SMBusProxyError:
+            _LOGGER.exception("Bridge answers with firmware this integration cannot work with")
+            return
+        if info is None:
             return
         previous, self.bridge_info = self.bridge_info, info
         if previous is not None and info.boot_id is not None and info.boot_id == previous.boot_id:
@@ -649,22 +652,19 @@ class CasaITApi:
             device.invalidate()
             if self.is_output_module(address):
                 device.last_value = -1
-        # A scanner that worked before is supported; if setting it up fails now,
-        # the bridge is still unreachable and the next cycle tries again.
-        if self._scanner_supported and not await self._async_start_input_scanner():
+        # If setting the scanner up fails, the bridge is still unreachable and the
+        # next cycle tries again; until then the inputs are read directly.
+        if not await self._async_start_input_scanner():
             return
         self._scanner_lost = False
         self._session_generation = generation
 
     async def _async_start_input_scanner(self) -> bool:
-        """Hand the input addresses to the bridge, if it can sample them itself.
+        """Hand the input addresses to the bridge, which samples them on its own.
 
-        Returns True when the bridge now samples the inputs. Otherwise the drivers
-        keep their full debounce window, as Home Assistant reads the inputs itself.
-
-        Probed once per config entry. A bridge on older firmware does not answer the
-        command, so this costs the transport's whole retry budget once before falling
-        back to reading the inputs here - which is why it is never retried.
+        Returns True when the bridge samples every input module, or there is none.
+        Until it does, the poll loop reads the inputs itself with the drivers' full
+        debounce window.
         """
 
         self._scan_addresses = []
@@ -673,7 +673,7 @@ class CasaITApi:
             if (device := self.im117_om117.get(address)) is not None:
                 device.debounce_time = self.debounce_time("im117", address)
         if not addresses:
-            return False
+            return True
 
         period_ms = max(1, min(255, round(self._poll_interval * 1000)))
         # One debounce value covers every scanned address, so the bridge gets the
@@ -683,13 +683,12 @@ class CasaITApi:
         try:
             async with self.write_access():
                 accepted = await self.bus.scan_config(addresses, period_ms, debounce_ms)
-        except Exception:
-            _LOGGER.exception("Failed to configure the bridge input scanner")
+        except OSError as exc:
+            _LOGGER.warning("Could not set up the bridge input scanner: %s", exc)
             return False
 
-        if self._scanner_supported is None:
-            self._scanner_supported = accepted
         if not accepted:
+            _LOGGER.error("Bridge refused the input scanner for %s", ", ".join(f"0x{a:02X}" for a in addresses))
             return False
 
         self._scan_addresses = addresses

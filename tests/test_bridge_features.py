@@ -17,6 +17,7 @@ from custom_components.casait_smarthome.services.i2cClasses.pcf8574 import PCF85
 from custom_components.casait_smarthome.services.smbus_proxy import (
     CMD_TIMED_OUTPUT,
     SCAN_FLAG_UNCONFIGURED,
+    BridgeFirmwareError,
     BridgeInfo,
     SMBus,
 )
@@ -28,7 +29,7 @@ UP = 1 << PCF8574_MAPPED_PORTS[0]
 class ScanBridge(FakeBridge):
     """Bridge double that answers scanner commands."""
 
-    def __init__(self, chips: dict[int, int], *, boot_id: int | None = 0x1234) -> None:
+    def __init__(self, chips: dict[int, int], *, boot_id: int = 0x1234) -> None:
         super().__init__(chips, boot_id=boot_id)
         self.scan_configs = 0
         self.fetch_flags = 0
@@ -69,7 +70,7 @@ def _responding(payloads: list[bytes], sent: list[bytes]):
 
 
 @pytest.mark.unit
-async def test_ping_reports_boot_id_and_uptime_or_nothing_on_old_firmware() -> None:
+async def test_ping_reports_boot_id_and_uptime_and_refuses_old_firmware() -> None:
     bus = SMBus()
     sent: list[bytes] = []
     bus._send_command = _responding(  # type: ignore[method-assign]  # noqa: SLF001
@@ -77,9 +78,8 @@ async def test_ping_reports_boot_id_and_uptime_or_nothing_on_old_firmware() -> N
     )
 
     assert await bus.ping_info() == BridgeInfo(boot_id=0xDEADBEEF, uptime_s=256)
-    old = await bus.ping_info()
-    assert old == BridgeInfo()
-    assert not old.supports_timed_outputs
+    with pytest.raises(BridgeFirmwareError):
+        await bus.ping_info()
     assert await bus.ping_info() is None
 
 
@@ -155,17 +155,19 @@ async def test_an_unconfigured_scanner_is_set_up_again_without_a_reconnect(hass)
 
 
 @pytest.mark.unit
-async def test_old_firmware_gets_no_timer(hass) -> None:
+async def test_a_refused_timer_leaves_the_outputs_alone(hass) -> None:
     bridge = FakeBridge({0x20: 0xFF})
     api = await _api(hass, bridge, 0x20)
+    bridge.chips.pop(0x20)
 
     assert not await api.async_arm_output_timer(0x20, UP, 0, UP, 5)
-    assert bridge.chips[0x20] == 0xFF
+    assert not await api.async_arm_output_timer(0x21, UP, 0, UP, 5)
+    assert api.outputs.diagnostics() == {}
 
 
 @pytest.mark.unit
 async def test_a_write_after_a_timer_ran_out_does_not_switch_it_on_again(hass) -> None:
-    bridge = FakeBridge({0x20: 0xFF}, boot_id=1)
+    bridge = FakeBridge({0x20: 0xFF})
     api = await _api(hass, bridge, 0x20)
     assert await api.async_arm_output_timer(0x20, UP, 0, UP, 0.05)
     assert bridge.chips[0x20] == 0xFF & ~UP
@@ -179,7 +181,7 @@ async def test_a_write_after_a_timer_ran_out_does_not_switch_it_on_again(hass) -
 
 @pytest.mark.unit
 async def test_a_write_that_changes_timer_bits_takes_them_back(hass) -> None:
-    bridge = FakeBridge({0x20: 0xFF}, boot_id=1)
+    bridge = FakeBridge({0x20: 0xFF})
     api = await _api(hass, bridge, 0x20)
     assert await api.async_arm_output_timer(0x20, UP, 0, UP, 30)
 
@@ -191,7 +193,7 @@ async def test_a_write_that_changes_timer_bits_takes_them_back(hass) -> None:
 
 @pytest.mark.unit
 async def test_a_neighbouring_write_keeps_the_timer(hass) -> None:
-    bridge = FakeBridge({0x20: 0xFF}, boot_id=1)
+    bridge = FakeBridge({0x20: 0xFF})
     api = await _api(hass, bridge, 0x20)
     assert await api.async_arm_output_timer(0x20, UP, 0, UP, 30)
 
@@ -203,7 +205,7 @@ async def test_a_neighbouring_write_keeps_the_timer(hass) -> None:
 
 @pytest.mark.unit
 async def test_bits_a_timer_released_are_not_mistaken_for_a_power_cut(hass) -> None:
-    bridge = FakeBridge({0x20: 0xFF}, boot_id=1)
+    bridge = FakeBridge({0x20: 0xFF})
     api = await _api(hass, bridge, 0x20)
     api.om117_pair_configuration = {0x20: {0: OM117PairConfig(mode=OM117_MODE_SHUTTER)}}
     assert await api.async_arm_output_timer(0x20, UP, 0, UP, 0.01)
@@ -218,7 +220,7 @@ async def test_bits_a_timer_released_are_not_mistaken_for_a_power_cut(hass) -> N
 
 @pytest.mark.unit
 async def test_a_cover_hands_its_stop_to_the_bridge(hass) -> None:
-    bridge = FakeBridge({0x20: 0xFF}, boot_id=1)
+    bridge = FakeBridge({0x20: 0xFF})
     api = await _api(hass, bridge, 0x20)
     config = OM117PairConfig(mode=OM117_MODE_SHUTTER, open_time=2.0, close_time=2.0, overrun_time=0.5)
     cover = CasaITBlindCover(api, ENTRY, 0x20, 0, config)

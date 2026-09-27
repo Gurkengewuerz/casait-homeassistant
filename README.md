@@ -174,10 +174,10 @@ first.
 - **The bridge restarts, or its connection drops.** The integration reconnects on
   its own, hands the inputs to the bridge's scanner again and reads every module
   in full before it writes anything, so a command never builds on a stale output
-  state. Current bridge firmware tells the two cases apart by a boot id in its
-  ping, keeps scanning the inputs for 15 seconds without a client so presses
-  during a short network drop arrive afterwards, and reports a scanner it lost,
-  which the integration then sets up again.
+  state. The bridge tells the two cases apart by a boot id in its ping, keeps
+  scanning the inputs for 15 seconds without a client so presses during a short
+  network drop arrive afterwards, and reports a scanner it lost, which the
+  integration then sets up again.
 - **The bridge is not reachable when Home Assistant starts.** Setup is retried
   with a growing delay until the bridge answers; after three failed attempts a
   repair issue says so.
@@ -190,12 +190,14 @@ first.
   again first. Shutters, blinds and pulse outputs are never switched on again;
   a cover that was moving loses its position and references itself on its next
   move.
-- **Covers stop on the bridge.** With current bridge firmware every cover move
-  hands its stop time to the bridge, which releases the relay on its own clock.
-  The stop no longer depends on network delay, and a move ends on time even if
-  Home Assistant restarts in the middle of it; the bridge also releases every
-  such relay as soon as no client is connected. Older firmware keeps stopping
-  from Home Assistant as before.
+- **Covers stop on the bridge.** Every cover move hands its stop time to the
+  bridge, which releases the relay on its own clock. The stop no longer depends on
+  network delay, and a move ends on time even if Home Assistant restarts in the
+  middle of it; the bridge also releases every such relay as soon as no client is
+  connected.
+- **The bridge needs current firmware.** The integration relies on the input
+  scanner, output timers and the boot id in the ping. A bridge with older firmware
+  is refused during setup with a request to update it.
 
 ## Configuration options
 

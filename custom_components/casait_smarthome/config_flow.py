@@ -25,7 +25,7 @@ from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 
 from .const import CONF_TIMEOUT, CONFIG_ENTRY_VERSION, DOMAIN
 from .options_flow import OptionsFlowHandler
-from .services.smbus_proxy import DEFAULT_PORT, DEFAULT_TIMEOUT, SMBus, SMBusProxyError
+from .services.smbus_proxy import DEFAULT_PORT, DEFAULT_TIMEOUT, BridgeFirmwareError, SMBus, SMBusProxyError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -66,8 +66,10 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
     bus: SMBus | None = None
     try:
         bus = await SMBus.connect(data[CONF_HOST], data[CONF_PORT], data[CONF_TIMEOUT])
-        if not await bus.ping():
+        if await bus.ping_info() is None:
             raise CannotConnect
+    except BridgeFirmwareError as exc:
+        raise FirmwareOutdated from exc
     except (SMBusProxyError, OSError) as exc:
         raise CannotConnect from exc
     finally:
@@ -111,6 +113,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
             try:
                 info = await validate_input(self.hass, data)
+            except FirmwareOutdated:
+                errors["base"] = "firmware_outdated"
             except CannotConnect:
                 errors["base"] = "cannot_connect"
             except Exception:
@@ -131,6 +135,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._async_abort_entries_match({CONF_HOST: data[CONF_HOST], CONF_PORT: data[CONF_PORT]})
             try:
                 info = await validate_input(self.hass, data)
+            except FirmwareOutdated:
+                errors["base"] = "firmware_outdated"
             except CannotConnect:
                 errors["base"] = "cannot_connect"
             except Exception:
@@ -217,6 +223,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data = _normalize_bridge_data(user_input)
             try:
                 info = await validate_input(self.hass, data)
+            except FirmwareOutdated:
+                errors["base"] = "firmware_outdated"
             except CannotConnect:
                 errors["base"] = "cannot_connect"
             except Exception:
@@ -235,3 +243,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 class CannotConnect(HomeAssistantError):
     """Error to indicate we cannot connect."""
+
+
+class FirmwareOutdated(HomeAssistantError):
+    """Error to indicate the bridge runs firmware this integration cannot work with."""

@@ -67,6 +67,8 @@ SCAN_FLAG_OVERFLOW = 0x01
 SCAN_FLAG_UNCONFIGURED = 0x02
 # The bridge refuses longer timers.
 MAX_TIMED_OUTPUT_MS = 3_600_000
+# [status][command][0xAA][boot id, 4 bytes][uptime in s, 4 bytes]
+PING_RESPONSE_SIZE = 11
 
 # Default configuration from environment variables
 DEFAULT_PORT = 8555
@@ -97,18 +99,15 @@ class BridgeInfo:
     """What a ping tells about the bridge.
 
     ``boot_id`` changes with every start of the bridge, so a reconnect with the same
-    id was only the network. Firmware that predates it answers the ping without,
-    which also means it lacks the commands that came with it, such as timed outputs.
+    id was only the network.
     """
 
-    boot_id: int | None = None
-    uptime_s: int | None = None
+    boot_id: int
+    uptime_s: int
 
-    @property
-    def supports_timed_outputs(self) -> bool:
-        """Return True when the firmware knows CMD_TIMED_OUTPUT."""
 
-        return self.boot_id is not None
+class BridgeFirmwareError(SMBusProxyError):
+    """The bridge answers, but runs firmware this integration cannot work with."""
 
 
 class I2CBatchError(OSError):
@@ -641,10 +640,7 @@ class SMBus:
     async def scan_config(self, addresses: list[int], period_ms: int, debounce_ms: int) -> bool:
         """Hand the bridge the input addresses to sample on its own.
 
-        Returns False when the bridge does not implement the scanner, which is the
-        signal for the caller to keep polling the inputs itself. A firmware without
-        this command does not answer at all, so the probe costs the full retry budget
-        once - never call it from a path that runs repeatedly.
+        Returns False when the bridge refused the configuration.
 
         Args:
             addresses: PCF8574 addresses to sample, in the order fetch results index
@@ -663,9 +659,8 @@ class SMBus:
         payload = bytes([CMD_SCAN_CONFIG, period_ms & 0xFF, debounce_ms & 0xFF, len(addresses), *addresses])
         try:
             response = await self._send_command(payload)
-        except SMBusProxyError:
-            _LOGGER.info("Bridge does not support autonomous input scanning; polling inputs from Home Assistant")
-            return False
+        except SMBusProxyError as e:
+            raise OSError(str(e)) from e
         return bool(response) and response[0] == 0x00
 
     async def scan_fetch(self) -> tuple[int, list[tuple[int, int]]]:
@@ -696,13 +691,13 @@ class SMBus:
         entries = response[3 : 3 + count * 2]
         return flags, [(entries[index], entries[index + 1]) for index in range(0, count * 2, 2)]
 
-    async def ping(self) -> bool:
-        """Send a keep-alive ping to the bridge."""
-
-        return await self.ping_info() is not None
-
     async def ping_info(self) -> BridgeInfo | None:
-        """Ping the bridge and return what it reports about itself, None if it did not answer."""
+        """Ping the bridge and return what it reports about itself, None if it did not answer.
+
+        Raises:
+            BridgeFirmwareError: If the bridge answers, but with firmware too old for
+                this integration
+        """
 
         try:
             response = await self._send_command(bytes([CMD_PING]))
@@ -710,11 +705,9 @@ class SMBus:
             return None
         if len(response) < 3 or response[0] != 0x00 or response[1] != CMD_PING:
             return None
-        if len(response) >= 11:
-            return BridgeInfo(
-                boot_id=int.from_bytes(response[3:7], "big"), uptime_s=int.from_bytes(response[7:11], "big")
-            )
-        return BridgeInfo()
+        if len(response) < PING_RESPONSE_SIZE:
+            raise BridgeFirmwareError("The bridge firmware is too old for this integration")
+        return BridgeInfo(boot_id=int.from_bytes(response[3:7], "big"), uptime_s=int.from_bytes(response[7:11], "big"))
 
     async def timed_output(self, addr: int, mask: int, value: int, revert: int, duration_ms: int) -> int:
         """Set the ``mask`` bits of a PCF8574 to ``value`` and have the bridge restore ``revert`` later.

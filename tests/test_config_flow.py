@@ -22,6 +22,7 @@ from custom_components.casait_smarthome.helpers import (
     get_input_module_settings,
     get_module_name,
 )
+from custom_components.casait_smarthome.services.smbus_proxy import BridgeFirmwareError
 from homeassistant import config_entries
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.data_entry_flow import FlowResultType
@@ -44,6 +45,27 @@ async def test_user_flow_creates_entry(hass) -> None:
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["data"] == {CONF_HOST: "bridge.local", CONF_PORT: 8555, CONF_TIMEOUT: 2.0}
+
+
+@pytest.mark.unit
+async def test_user_flow_names_outdated_bridge_firmware(hass) -> None:
+    bus = SimpleNamespace(
+        ping_info=AsyncMock(side_effect=BridgeFirmwareError("old")),
+        close=AsyncMock(),
+    )
+    with patch(
+        "custom_components.casait_smarthome.config_flow.SMBus.connect",
+        AsyncMock(return_value=bus),
+    ):
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_HOST: "bridge.local", CONF_PORT: 8555, CONF_TIMEOUT: 2.0},
+        )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "firmware_outdated"}
+    bus.close.assert_awaited_once()
 
 
 @pytest.mark.unit

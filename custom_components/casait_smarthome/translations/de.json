@@ -45,7 +45,8 @@
     },
     "error": {
       "cannot_connect": "Verbindung zu einer kompatiblen casaIT-Bridge fehlgeschlagen",
-      "unknown": "Unerwarteter Fehler"
+      "unknown": "Unerwarteter Fehler",
+      "firmware_outdated": "Die Bridge hat eine zu alte Firmware; bitte die Bridge aktualisieren"
     },
     "abort": {
       "already_configured": "Diese Bridge ist bereits konfiguriert",
@@ -358,6 +359,9 @@
     },
     "reference_needs_overrun": {
       "message": "Eine Referenzfahrt ben\u00f6tigt eine Nachlaufzeit gr\u00f6\u00dfer als null."
+    },
+    "bridge_firmware_outdated": {
+      "message": "Die Firmware der Bridge ist zu alt f\u00fcr diese Integration. Bitte die Bridge-Firmware aktualisieren."
     }
   },
   "issues": {

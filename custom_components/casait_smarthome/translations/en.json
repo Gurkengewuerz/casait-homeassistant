@@ -45,7 +45,8 @@
     },
     "error": {
       "cannot_connect": "Failed to connect to a compatible casaIT bridge",
-      "unknown": "Unexpected error"
+      "unknown": "Unexpected error",
+      "firmware_outdated": "The bridge runs firmware that is too old; update the bridge"
     },
     "abort": {
       "already_configured": "This bridge is already configured",
@@ -358,6 +359,9 @@
     },
     "reference_needs_overrun": {
       "message": "A reference run needs an overrun time greater than zero."
+    },
+    "bridge_firmware_outdated": {
+      "message": "The bridge runs firmware that is too old for this integration. Update the bridge firmware."
     }
   },
   "issues": {

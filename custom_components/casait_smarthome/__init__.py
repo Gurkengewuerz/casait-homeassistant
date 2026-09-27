@@ -10,7 +10,7 @@ from homeassistant.components.cover import DOMAIN as COVER_DOMAIN
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
-from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError, ServiceValidationError
+from homeassistant.exceptions import ConfigEntryError, ConfigEntryNotReady, HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import (
     config_validation as cv,
     device_registry as dr,
@@ -50,7 +50,7 @@ from .helpers import (
 )
 from .multisensor import MultisensorCommandError
 from .services.i2cClasses.led_controller import Color, LEDConfig
-from .services.smbus_proxy import SMBus, SMBusProxyError
+from .services.smbus_proxy import BridgeFirmwareError, SMBus, SMBusProxyError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -343,12 +343,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> bo
         raise ConfigEntryNotReady(f"Failed to connect to SMBus proxy: {err}") from err
 
     try:
-        responded = await bus.ping()
+        responded = await bus.ping_info()
+    except BridgeFirmwareError as err:
+        await bus.close()
+        raise ConfigEntryError(translation_domain=DOMAIN, translation_key="bridge_firmware_outdated") from err
     except (SMBusProxyError, OSError) as err:
         await bus.close()
         _record_bridge_setup_failure(hass, entry)
         raise ConfigEntryNotReady(f"Failed to ping SMBus proxy: {err}") from err
-    if not responded:
+    if responded is None:
         await bus.close()
         _record_bridge_setup_failure(hass, entry)
         raise ConfigEntryNotReady("SMBus proxy did not respond to ping")

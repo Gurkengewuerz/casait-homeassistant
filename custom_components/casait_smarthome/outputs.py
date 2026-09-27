@@ -5,8 +5,7 @@ module gets its new port byte back to back on the bridge, then each is read
 back once to verify it. Shutters driven by one group call or one automation
 therefore start and stop together instead of one network round trip apart.
 
-On firmware that has output timers, a caller can also hand the bridge the
-moment to switch bits back. The writer mirrors those timers, so a byte it
+A caller can also hand the bridge the moment to switch bits back. The writer mirrors those timers, so a byte it
 composes after one ran out does not switch the bits on again.
 """
 
@@ -83,14 +82,14 @@ class CasaITOutputWriter:
     async def async_arm_timer(self, address: int, mask: int, value: int, revert: int, seconds: float) -> bool:
         """Set bits of a module and have the bridge restore them after ``seconds``.
 
-        Returns False, without touching anything, when the bridge has no timers or
-        refused this one; the caller then stops the outputs itself as before.
+        Returns False, without touching anything, when the bridge refused the
+        timer; the caller stops the outputs itself either way.
         """
 
         info = self._api.bridge_info
         device = self._api.im117_om117.get(address)
         duration_ms = round(seconds * 1000)
-        if info is None or not info.supports_timed_outputs or device is None:
+        if info is None or device is None:
             return False
         if not 0 < duration_ms <= MAX_TIMED_OUTPUT_MS:
             return False

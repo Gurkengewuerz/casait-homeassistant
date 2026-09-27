@@ -107,20 +107,6 @@ async def test_a_failed_scanner_setup_is_retried_on_the_next_cycle(hass) -> None
 
     assert api._session_generation != bridge.connection_generation  # noqa: SLF001
     assert api._scan_addresses == []  # noqa: SLF001
-    assert api._scanner_supported  # noqa: SLF001
-
-
-@pytest.mark.unit
-async def test_a_bridge_without_scanner_is_not_probed_again(hass) -> None:
-    bridge = ScanningBridge({0x38: 0xFF}, scanner=False)
-    api = _api(hass, bridge, 0x38)
-    assert not await api._async_start_input_scanner()  # noqa: SLF001
-
-    bridge.connection_generation += 1
-    await api._async_resume_session()  # noqa: SLF001
-
-    assert bridge.scan_configs == [[0x38]]
-    assert api._session_generation == bridge.connection_generation  # noqa: SLF001
 
 
 # ---------------------------------------------------------------------------
