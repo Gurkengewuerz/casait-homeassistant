@@ -231,6 +231,11 @@
       "co2_calibration_correction": {
         "name": "CO2 calibration correction"
       }
+    },
+    "update": {
+      "bridge_firmware": {
+        "name": "Firmware"
+      }
     }
   },
   "services": {
@@ -362,6 +367,27 @@
     },
     "bridge_firmware_outdated": {
       "message": "The bridge runs firmware that is too old for this integration. Update the bridge firmware."
+    },
+    "firmware_release_unknown": {
+      "message": "There is no stable bridge firmware release {version}."
+    },
+    "firmware_releases_unavailable": {
+      "message": "The firmware releases could not be loaded."
+    },
+    "firmware_download_failed": {
+      "message": "The firmware could not be downloaded."
+    },
+    "firmware_checksum_mismatch": {
+      "message": "The downloaded firmware does not match the checksum of its release."
+    },
+    "firmware_invalid_image": {
+      "message": "The downloaded file is not a bridge firmware image."
+    },
+    "firmware_upload_failed": {
+      "message": "The bridge did not accept the firmware."
+    },
+    "firmware_not_confirmed": {
+      "message": "The bridge did not come back with the new firmware."
     }
   },
   "issues": {

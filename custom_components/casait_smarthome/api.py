@@ -13,6 +13,7 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr, issue_registry as ir
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .const import (
@@ -25,6 +26,7 @@ from .const import (
     OW_PROFILE_MULTISENSOR,
     SIGNAL_STATE_UPDATED,
 )
+from .firmware import FirmwareError, async_upload_image, normalize_version
 from .health import LinkHealth
 from .helpers import (
     OM117PairConfig,
@@ -64,6 +66,10 @@ PCF_REARM_SETTLE_MS = 5
 # Capping them per cycle bounds that cost; a deferred re-arm keeps its flag and is
 # picked up by one of the next cycles, which is harmless for a periodic safety net.
 MAX_REARMS_PER_CYCLE = 2
+
+
+FIRMWARE_RESTART_TIMEOUT = 120.0
+FIRMWARE_RESTART_POLL = 2.0
 
 
 @dataclass
@@ -266,6 +272,7 @@ class CasaITApi:
                 if self.bridge_info and self.bridge_info.boot_id is not None
                 else None,
                 "uptime_s": self.bridge_info.uptime_s if self.bridge_info else None,
+                "firmware": self.bridge_info.version if self.bridge_info else None,
                 "active_output_timers": self.outputs.diagnostics(),
             },
             "multisensors": self.multisensor.diagnostic_data,
@@ -1471,6 +1478,35 @@ class CasaITApi:
         """
 
         return await self.outputs.async_arm_timer(address, mask, value, revert, seconds)
+
+    async def async_install_firmware(self, image: bytes, version: str, progress: Callable[[float], None]) -> None:
+        """Flash the bridge and wait until it runs ``version``.
+
+        Polling stops first: the bridge drops every client when the upload starts
+        and nothing can reach the bus until it is back. The caller reloads the
+        entry afterwards, whatever the outcome, to set everything up again.
+        """
+
+        previous = self.bridge_info.boot_id if self.bridge_info else None
+        await self.stop_polling()
+        await async_upload_image(async_get_clientsession(self.hass), self.bus.host, image, progress)
+
+        deadline = time.monotonic() + FIRMWARE_RESTART_TIMEOUT
+        while time.monotonic() < deadline:
+            await asyncio.sleep(FIRMWARE_RESTART_POLL)
+            try:
+                info = await self.bus.ping_info()
+            except SMBusProxyError as err:
+                raise FirmwareError("firmware_not_confirmed") from err
+            if info is None or info.boot_id == previous:
+                continue
+            self.bridge_info = info
+            if normalize_version(info.version) != normalize_version(version):
+                _LOGGER.error("Bridge restarted with firmware %s instead of %s", info.version, version)
+                raise FirmwareError("firmware_not_confirmed")
+            _LOGGER.info("Bridge runs firmware %s", info.version)
+            return
+        raise FirmwareError("firmware_not_confirmed")
 
     def publish_pcf_write(self, address: int) -> None:
         """Publish the port states of a module whose write was just verified."""

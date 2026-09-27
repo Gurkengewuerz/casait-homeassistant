@@ -74,10 +74,15 @@ async def test_ping_reports_boot_id_and_uptime_and_refuses_old_firmware() -> Non
     bus = SMBus()
     sent: list[bytes] = []
     bus._send_command = _responding(  # type: ignore[method-assign]  # noqa: SLF001
-        [bytes([0x00, 0x11, 0xAA, 0xDE, 0xAD, 0xBE, 0xEF, 0, 0, 1, 0]), bytes([0x00, 0x11, 0xAA]), b""], sent
+        [
+            bytes([0x00, 0x11, 0xAA, 0xDE, 0xAD, 0xBE, 0xEF, 0, 0, 1, 0, 6]) + b"v0.0.1",
+            bytes([0x00, 0x11, 0xAA, 0xDE, 0xAD, 0xBE, 0xEF, 0, 0, 1, 0]),
+            b"",
+        ],
+        sent,
     )
 
-    assert await bus.ping_info() == BridgeInfo(boot_id=0xDEADBEEF, uptime_s=256)
+    assert await bus.ping_info() == BridgeInfo(boot_id=0xDEADBEEF, uptime_s=256, version="v0.0.1")
     with pytest.raises(BridgeFirmwareError):
         await bus.ping_info()
     assert await bus.ping_info() is None
@@ -129,7 +134,7 @@ async def test_a_changed_boot_id_is_logged_as_a_restart(hass, caplog) -> None:
     await api._async_resume_session()  # noqa: SLF001
 
     assert "Bridge restarted" in caplog.text
-    assert api.bridge_info == BridgeInfo(boot_id=0x9999, uptime_s=0)
+    assert api.bridge_info == BridgeInfo(boot_id=0x9999, uptime_s=0, version="v0.0.1")
 
 
 @pytest.mark.unit

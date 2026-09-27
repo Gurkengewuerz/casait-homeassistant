@@ -371,6 +371,32 @@ automation:
   answer it.
 - **No YAML configuration.** Setup is config-flow only, per Home Assistant policy.
 
+## Bridge firmware updates
+
+The bridge device has a **Firmware** update entity. It shows the firmware the
+bridge runs, as it reports in every ping, and the newest stable release from the
+[casaIT modules releases](https://git.mc8051.de/casaIT/modules/releases), checked
+every six hours. Pre-releases and drafts are ignored.
+
+Any firmware other than the newest release counts as an update, not only an
+older one: a bridge running a development build, whose version is a commit hash,
+gets back to the official release with one click on **Install**. An older
+release is installed with the `update.install` action and its version:
+
+```yaml
+action: update.install
+target:
+  entity_id: update.bridge_<id>_firmware
+data:
+  version: v0.0.1
+```
+
+An installation downloads `cb32.bin` of that release, checks it against the
+release's `SHA256SUMS.txt`, and sends it to the bridge's OTA endpoint. Polling
+stops while the bridge flashes and restarts, which releases every output timer
+and pauses the inputs. The update counts as done once the bridge answers again
+with a new boot id and the installed version; the integration then reloads.
+
 ## Service actions
 
 ### Calibrate CO2 sensor

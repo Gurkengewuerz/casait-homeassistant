@@ -402,6 +402,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> bo
         name="casaIT bridge",
         manufacturer="casaIT",
         model="SMBus proxy",
+        sw_version=api.bridge_info.version if api.bridge_info else None,
     )
     for address in api.sm117:
         device_registry.async_get_or_create(

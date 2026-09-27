@@ -74,9 +74,9 @@ async def test_send_command_frames_request_and_response() -> None:
 
 @pytest.mark.unit
 async def test_ping_checks_the_echoed_command() -> None:
-    bus, _ = _bus(_frame(bytes([0x00, smbus_proxy.CMD_PING, 0xAA, 0, 0, 0, 7, 0, 0, 0, 9])))
+    bus, _ = _bus(_frame(bytes([0x00, smbus_proxy.CMD_PING, 0xAA, 0, 0, 0, 7, 0, 0, 0, 9, 7]) + b"1afd286"))
 
-    assert await bus.ping_info() == smbus_proxy.BridgeInfo(boot_id=7, uptime_s=9)
+    assert await bus.ping_info() == smbus_proxy.BridgeInfo(boot_id=7, uptime_s=9, version="1afd286")
 
 
 @pytest.mark.unit

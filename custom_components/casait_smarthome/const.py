@@ -33,7 +33,17 @@ I2C_ADDR_RANGES: Final = [
 ]
 
 # Platforms
-PLATFORMS: Final = ["binary_sensor", "button", "cover", "event", "light", "number", "sensor", "switch"]
+PLATFORMS: Final = [
+    "binary_sensor",
+    "button",
+    "cover",
+    "event",
+    "light",
+    "number",
+    "sensor",
+    "switch",
+    "update",
+]
 
 # What a digital input is wired to. IM117 ports, DM117 input slots and DS2413
 # input channels share this vocabulary. The default keeps every discovered input

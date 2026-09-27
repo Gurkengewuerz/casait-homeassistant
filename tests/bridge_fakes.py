@@ -19,16 +19,17 @@ class FakeBridge:
 
     connection_generation = 1
 
-    def __init__(self, chips: dict[int, int], *, boot_id: int = 1) -> None:
+    def __init__(self, chips: dict[int, int], *, boot_id: int = 1, version: str = "v0.0.1") -> None:
         self.chips = dict(chips)
         self.frames: list[list[tuple[str, int, int]]] = []
         self.stuck: set[int] = set()
         self.boot_id = boot_id
+        self.version = version
         # [addr, mask, value, revert, duration_ms] of every timer the firmware holds.
         self.timers: list[list[int]] = []
 
     async def ping_info(self) -> BridgeInfo | None:
-        return BridgeInfo(boot_id=self.boot_id, uptime_s=0)
+        return BridgeInfo(boot_id=self.boot_id, uptime_s=0, version=self.version)
 
     async def timed_output(self, addr: int, mask: int, value: int, revert: int, duration_ms: int) -> int:
         if addr not in self.chips:

@@ -67,8 +67,8 @@ SCAN_FLAG_OVERFLOW = 0x01
 SCAN_FLAG_UNCONFIGURED = 0x02
 # The bridge refuses longer timers.
 MAX_TIMED_OUTPUT_MS = 3_600_000
-# [status][command][0xAA][boot id, 4 bytes][uptime in s, 4 bytes]
-PING_RESPONSE_SIZE = 11
+# [status][command][0xAA][boot id, 4 bytes][uptime in s, 4 bytes][version length][version]
+PING_HEADER_SIZE = 12
 
 # Default configuration from environment variables
 DEFAULT_PORT = 8555
@@ -99,11 +99,13 @@ class BridgeInfo:
     """What a ping tells about the bridge.
 
     ``boot_id`` changes with every start of the bridge, so a reconnect with the same
-    id was only the network.
+    id was only the network. ``version`` is the release tag the firmware was built
+    from, or a commit hash for a build between releases.
     """
 
     boot_id: int
     uptime_s: int
+    version: str
 
 
 class BridgeFirmwareError(SMBusProxyError):
@@ -705,9 +707,13 @@ class SMBus:
             return None
         if len(response) < 3 or response[0] != 0x00 or response[1] != CMD_PING:
             return None
-        if len(response) < PING_RESPONSE_SIZE:
+        if len(response) < PING_HEADER_SIZE or len(response) < PING_HEADER_SIZE + response[11]:
             raise BridgeFirmwareError("The bridge firmware is too old for this integration")
-        return BridgeInfo(boot_id=int.from_bytes(response[3:7], "big"), uptime_s=int.from_bytes(response[7:11], "big"))
+        return BridgeInfo(
+            boot_id=int.from_bytes(response[3:7], "big"),
+            uptime_s=int.from_bytes(response[7:11], "big"),
+            version=response[PING_HEADER_SIZE : PING_HEADER_SIZE + response[11]].decode("ascii", "replace"),
+        )
 
     async def timed_output(self, addr: int, mask: int, value: int, revert: int, duration_ms: int) -> int:
         """Set the ``mask`` bits of a PCF8574 to ``value`` and have the bridge restore ``revert`` later.

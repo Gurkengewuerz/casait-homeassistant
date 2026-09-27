@@ -231,6 +231,11 @@
       "co2_calibration_correction": {
         "name": "CO2-Kalibrierkorrektur"
       }
+    },
+    "update": {
+      "bridge_firmware": {
+        "name": "Firmware"
+      }
     }
   },
   "services": {
@@ -362,6 +367,27 @@
     },
     "bridge_firmware_outdated": {
       "message": "Die Firmware der Bridge ist zu alt f\u00fcr diese Integration. Bitte die Bridge-Firmware aktualisieren."
+    },
+    "firmware_release_unknown": {
+      "message": "Es gibt kein stabiles Bridge-Firmware-Release {version}."
+    },
+    "firmware_releases_unavailable": {
+      "message": "Die Firmware-Releases konnten nicht geladen werden."
+    },
+    "firmware_download_failed": {
+      "message": "Die Firmware konnte nicht heruntergeladen werden."
+    },
+    "firmware_checksum_mismatch": {
+      "message": "Die heruntergeladene Firmware passt nicht zur Pr\u00fcfsumme ihres Releases."
+    },
+    "firmware_invalid_image": {
+      "message": "Die heruntergeladene Datei ist kein Firmware-Image der Bridge."
+    },
+    "firmware_upload_failed": {
+      "message": "Die Bridge hat die Firmware nicht angenommen."
+    },
+    "firmware_not_confirmed": {
+      "message": "Die Bridge ist nicht mit der neuen Firmware zur\u00fcckgekommen."
     }
   },
   "issues": {
