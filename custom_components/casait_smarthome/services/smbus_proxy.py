@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from dataclasses import dataclass
 import logging
 import socket
 import time
@@ -32,6 +33,9 @@ CMD_PING = 0x11
 # the input latency stops depending on the network round trip.
 CMD_SCAN_CONFIG = 0x12
 CMD_SCAN_FETCH = 0x13
+# Sets PCF8574 bits and has the bridge put them back after a duration, so a cover
+# stops on time even when Home Assistant is late or gone.
+CMD_TIMED_OUTPUT = 0x14
 
 # Batch sub-opcodes, numbered like the top-level commands so both sides stay readable
 BOP_WRITE_BYTE = 0x01
@@ -59,6 +63,10 @@ MAX_SCAN_ADDRESSES = 32
 MAX_SCAN_ENTRIES = (MAX_FRAME_PAYLOAD - 3) // 2
 # Set by the bridge when its transition queue overflowed and snapshots were dropped.
 SCAN_FLAG_OVERFLOW = 0x01
+# Set by the bridge when no scanner is configured, for example after it restarted.
+SCAN_FLAG_UNCONFIGURED = 0x02
+# The bridge refuses longer timers.
+MAX_TIMED_OUTPUT_MS = 3_600_000
 
 # Default configuration from environment variables
 DEFAULT_PORT = 8555
@@ -82,6 +90,25 @@ MAINTENANCE_BACKOFF = 0.5
 
 class SMBusProxyError(Exception):
     """Exception raised for SMBus proxy errors."""
+
+
+@dataclass(frozen=True)
+class BridgeInfo:
+    """What a ping tells about the bridge.
+
+    ``boot_id`` changes with every start of the bridge, so a reconnect with the same
+    id was only the network. Firmware that predates it answers the ping without,
+    which also means it lacks the commands that came with it, such as timed outputs.
+    """
+
+    boot_id: int | None = None
+    uptime_s: int | None = None
+
+    @property
+    def supports_timed_outputs(self) -> bool:
+        """Return True when the firmware knows CMD_TIMED_OUTPUT."""
+
+        return self.boot_id is not None
 
 
 class I2CBatchError(OSError):
@@ -672,8 +699,45 @@ class SMBus:
     async def ping(self) -> bool:
         """Send a keep-alive ping to the bridge."""
 
+        return await self.ping_info() is not None
+
+    async def ping_info(self) -> BridgeInfo | None:
+        """Ping the bridge and return what it reports about itself, None if it did not answer."""
+
         try:
             response = await self._send_command(bytes([CMD_PING]))
-            return len(response) >= 3 and response[0] == 0x00 and response[1] == CMD_PING
         except SMBusProxyError:
-            return False
+            return None
+        if len(response) < 3 or response[0] != 0x00 or response[1] != CMD_PING:
+            return None
+        if len(response) >= 11:
+            return BridgeInfo(
+                boot_id=int.from_bytes(response[3:7], "big"), uptime_s=int.from_bytes(response[7:11], "big")
+            )
+        return BridgeInfo()
+
+    async def timed_output(self, addr: int, mask: int, value: int, revert: int, duration_ms: int) -> int:
+        """Set the ``mask`` bits of a PCF8574 to ``value`` and have the bridge restore ``revert`` later.
+
+        The other bits keep what the bridge reads from the chip. A later plain write
+        that sets one of the bits differently takes that bit back from the timer.
+
+        Returns:
+            The port byte the bridge wrote and read back
+
+        Raises:
+            OSError: If the bridge refused the timer or the chip did not confirm it
+        """
+
+        if not 0 < duration_ms <= MAX_TIMED_OUTPUT_MS:
+            raise ValueError(f"Timer must be between 1 and {MAX_TIMED_OUTPUT_MS} ms, got {duration_ms}")
+        payload = bytes([CMD_TIMED_OUTPUT, addr, mask & 0xFF, value & 0xFF, revert & 0xFF]) + duration_ms.to_bytes(
+            4, "big"
+        )
+        try:
+            response = await self._send_command(payload)
+        except SMBusProxyError as e:
+            raise OSError(str(e)) from e
+        if len(response) < 2 or response[0] != 0x00:
+            raise OSError(f"Bridge refused the output timer for 0x{addr:02X}")
+        return response[1]

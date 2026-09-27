@@ -6,6 +6,7 @@ from custom_components.casait_smarthome.services.smbus_proxy import (
     BOP_DELAY,
     BOP_READ_BYTE,
     BOP_WRITE_BYTE,
+    BridgeInfo,
     I2CBatch,
     I2CBatchError,
 )
@@ -16,10 +17,43 @@ class FakeBridge:
 
     stats = {"connected": True}
 
-    def __init__(self, chips: dict[int, int]) -> None:
+    connection_generation = 1
+
+    def __init__(self, chips: dict[int, int], *, boot_id: int | None = None) -> None:
         self.chips = dict(chips)
         self.frames: list[list[tuple[str, int, int]]] = []
         self.stuck: set[int] = set()
+        self.boot_id = boot_id
+        # [addr, mask, value, revert, duration_ms] of every timer the firmware holds.
+        self.timers: list[list[int]] = []
+
+    async def ping_info(self) -> BridgeInfo | None:
+        return BridgeInfo(boot_id=self.boot_id, uptime_s=0 if self.boot_id is not None else None)
+
+    async def timed_output(self, addr: int, mask: int, value: int, revert: int, duration_ms: int) -> int:
+        if self.boot_id is None or addr not in self.chips:
+            raise OSError("timer refused")
+        self.timers = [timer for timer in self.timers if timer[0] != addr or timer[1] & ~mask]
+        for timer in self.timers:
+            if timer[0] == addr:
+                timer[1] &= ~mask
+        written = (self.chips[addr] & ~mask) | (value & mask)
+        self.chips[addr] = written
+        self.timers.append([addr, mask, value & mask, revert & mask, duration_ms])
+        return written
+
+    def expire_timers(self) -> None:
+        """Let every timer run out, as the firmware's loop would."""
+
+        for addr, mask, _value, revert, _ms in self.timers:
+            self.chips[addr] = (self.chips[addr] & ~mask) | revert
+        self.timers = []
+
+    def _note_write(self, addr: int, value: int) -> None:
+        for timer in self.timers:
+            if timer[0] == addr:
+                timer[1] &= ~((value ^ timer[2]) & timer[1])
+        self.timers = [timer for timer in self.timers if timer[1]]
 
     async def read_byte(self, addr: int) -> int:
         if addr not in self.chips:
@@ -39,6 +73,7 @@ class FakeBridge:
                     raise I2CBatchError("write failed", op)
                 if addr not in self.stuck:
                     self.chips[addr] = value
+                self._note_write(addr, value)
                 frame.append(("write", addr, value))
                 index += 3
             elif code == BOP_READ_BYTE:

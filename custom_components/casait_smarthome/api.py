@@ -45,7 +45,15 @@ from .services.i2cClasses.led_controller import LEDConfig
 from .services.i2cClasses.multisensor import MultisensorComponents
 from .services.i2cClasses.oneWireBus import OneWireBus
 from .services.i2cClasses.pcf8574 import PCF8574, PCF8574Reading
-from .services.smbus_proxy import SCAN_FLAG_OVERFLOW, I2CBatch, I2CBatchError, SMBus, SMBusProxyError
+from .services.smbus_proxy import (
+    SCAN_FLAG_OVERFLOW,
+    SCAN_FLAG_UNCONFIGURED,
+    BridgeInfo,
+    I2CBatch,
+    I2CBatchError,
+    SMBus,
+    SMBusProxyError,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -153,6 +161,9 @@ class CasaITApi:
         self._scanner_supported: bool | None = None
         # The bridge connection the session state above was set up on.
         self._session_generation = 0
+        # Set when the bridge reports that its scanner is not configured.
+        self._scanner_lost = False
+        self.bridge_info: BridgeInfo | None = None
         self._stop_event: asyncio.Event | None = None
         self._poll_task: asyncio.Task | None = None
         self._init_done = asyncio.Event()
@@ -251,6 +262,14 @@ class CasaITApi:
                     f"{code} 0x{address:02X}": count for (code, address), count in sorted(self._missing_scans.items())
                 }
                 | dict(sorted(self._ow_missing_scans.items())),
+            },
+            "bridge": {
+                "boot_id": f"{self.bridge_info.boot_id:08X}"
+                if self.bridge_info and self.bridge_info.boot_id is not None
+                else None,
+                "uptime_s": self.bridge_info.uptime_s if self.bridge_info else None,
+                "timed_outputs": bool(self.bridge_info and self.bridge_info.supports_timed_outputs),
+                "active_output_timers": self.outputs.diagnostics(),
             },
             "multisensors": self.multisensor.diagnostic_data,
             "power_on": self.restorer.diagnostics(),
@@ -481,6 +500,7 @@ class CasaITApi:
         if self._poll_task:
             return
 
+        self.bridge_info = await self.bus.ping_info()
         await self._async_start_input_scanner()
         self._session_generation = self.bus.connection_generation
 
@@ -540,7 +560,7 @@ class CasaITApi:
         slow_due = 0.0
         while not self._stop_event.is_set():
             try:
-                if self.bus.connection_generation != self._session_generation:
+                if self._scanner_lost or self.bus.connection_generation != self._session_generation:
                     await self._async_resume_session()
                     slow_due = 0.0
                 include_slow = time.monotonic() >= slow_due
@@ -606,23 +626,34 @@ class CasaITApi:
         self._sync_bridge_connection_issue()
 
     async def _async_resume_session(self) -> None:
-        """Set the bridge up again after it was reconnected, typically after a reboot.
+        """Set the bridge up again after a reconnect, or after it lost its scanner.
 
-        The bridge keeps nothing for a client across connections: the input scanner
-        is gone and the output modules may have lost power along with it. Cached
-        output bytes are therefore dropped, so no write builds on a stale one, and
-        the caller follows up with a full read of every module.
+        The ping tells a restart of the bridge, which may have cut the modules'
+        power as well, from a network drop. Either way the bridge released every
+        output timer when the connection went, so cached output bytes are dropped
+        and the caller follows up with a full read. Input modules keep their state:
+        a bridge that kept scanning hands over the edges from the gap as a
+        continuation of it.
         """
 
         generation = self.bus.connection_generation
-        _LOGGER.info("Bridge connection was re-established; setting up the session again")
-        for device in self.im117_om117.values():
-            device.last_value = -1
+        if (info := await self.bus.ping_info()) is None:
+            return
+        previous, self.bridge_info = self.bridge_info, info
+        if previous is not None and info.boot_id is not None and info.boot_id == previous.boot_id:
+            _LOGGER.info("Bridge connection was re-established; setting up the session again")
+        else:
+            _LOGGER.warning("Bridge restarted; setting up the session again and re-reading every module")
+        self.outputs.forget_timers()
+        for address, device in self.im117_om117.items():
             device.invalidate()
+            if self.is_output_module(address):
+                device.last_value = -1
         # A scanner that worked before is supported; if setting it up fails now,
         # the bridge is still unreachable and the next cycle tries again.
         if self._scanner_supported and not await self._async_start_input_scanner():
             return
+        self._scanner_lost = False
         self._session_generation = generation
 
     async def _async_start_input_scanner(self) -> bool:
@@ -694,6 +725,11 @@ class CasaITApi:
             return
 
         self._frames_last_cycle += 1
+
+        if flags & SCAN_FLAG_UNCONFIGURED:
+            _LOGGER.warning("Bridge no longer scans the inputs; setting its scanner up again")
+            self._scanner_lost = True
+            return
 
         if flags & SCAN_FLAG_OVERFLOW:
             # Snapshots were dropped, so the edges no longer form a complete
@@ -1428,6 +1464,14 @@ class CasaITApi:
         if address not in self.im117_om117:
             return False
         return await self.outputs.async_write(address, changes)
+
+    async def async_arm_output_timer(self, address: int, mask: int, value: int, revert: int, seconds: float) -> bool:
+        """Have the bridge restore ``revert`` on the ``mask`` bits of a module after ``seconds``.
+
+        Returns False when the bridge cannot do it, which leaves stopping to the caller.
+        """
+
+        return await self.outputs.async_arm_timer(address, mask, value, revert, seconds)
 
     def publish_pcf_write(self, address: int) -> None:
         """Publish the port states of a module whose write was just verified."""

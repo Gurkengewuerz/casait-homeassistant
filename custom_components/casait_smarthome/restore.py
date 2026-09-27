@@ -204,7 +204,9 @@ class CasaITOutputRestorer:
             self._pcf[address] = value
             self._save()
             return
-        if commanded == value or not self._due(f"pcf:{address}"):
+        # Bits under a bridge timer may already be back off before our own stop lands.
+        held = self._api.outputs.timer_bits(address)
+        if not (commanded ^ value) & ~held & 0xFF or not self._due(f"pcf:{address}"):
             return
 
         switches = self.switch_mask(self._api.om117_pair_configuration.get(address, {}))

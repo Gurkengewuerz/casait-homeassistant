@@ -472,6 +472,8 @@ class CasaITBlindCover(CoverEntity, RestoreEntity):
         duration = max(0.01, travel_time * (abs(target - start) + extra) / 100)
         started = time.monotonic()
         arrived = referenced = False
+        overrun = self._pair_config.overrun_time if into_end else 0.0
+        await self._arm_stop(direction, duration + overrun, started)
 
         def advance() -> float:
             progress = min(1.0, (time.monotonic() - started) / duration)
@@ -506,6 +508,7 @@ class CasaITBlindCover(CoverEntity, RestoreEntity):
 
         started = time.monotonic()
         duration = max(0.01, self._pair_config.tilt_time * abs(target - start) / 100)
+        await self._arm_stop(self._active_direction, duration, started)
         try:
             while True:
                 progress = min(1.0, (time.monotonic() - started) / duration)
@@ -524,6 +527,24 @@ class CasaITBlindCover(CoverEntity, RestoreEntity):
                 self._target_tilt_position = None
                 self._active_direction = None
             self.async_write_ha_state()
+
+    async def _arm_stop(self, direction: str | None, seconds: float, started: float) -> None:
+        """Have the bridge release the running relay when this movement is due to end.
+
+        The movement task still stops the relay itself; the bridge only makes the
+        stop independent of network delay, and of Home Assistant going away mid-move.
+        Firmware without timers leaves the stop to the task alone.
+        """
+
+        motor = _motor_direction(direction)
+        if motor is None:
+            return
+        # Only the running relay goes to the timer: our own stop then changes every
+        # bit the timer holds, which is what tells the bridge the timer is done.
+        relay = 1 << (self._hardware_up_port if motor == "up" else self._hardware_down_port)
+        remaining = seconds - (time.monotonic() - started)
+        if remaining > 0:
+            await self._api.async_arm_output_timer(self._address, relay, 0, relay, remaining)
 
     async def _async_set_outputs(self, up: bool, down: bool) -> None:
         """Set both relays of the pair in one write."""
