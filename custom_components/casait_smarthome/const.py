@@ -126,6 +126,7 @@ EVENT_DATA_SUBTYPE: Final = "subtype"
 SERVICE_SCAN_DEVICES: Final = "scan_devices"
 SERVICE_SET_LED_PALETTE: Final = "set_led_palette"
 SERVICE_CALIBRATE_CO2: Final = "calibrate_co2"
+SERVICE_REFERENCE_RUN: Final = "reference_run"
 
 # Fresh outdoor air, the usual reference for a forced CO2 recalibration.
 DEFAULT_CO2_CALIBRATION_PPM: Final = 420
@@ -140,6 +141,10 @@ DEFAULT_BLIND_CLOSE_TIME: Final = 25.0
 DEFAULT_BLIND_OVERRUN_TIME: Final = 2.0
 DEFAULT_BLIND_TILT_TIME: Final = 1.5
 DEFAULT_PULSE_DURATION: Final = 0.5
+COVER_REFERENCE_AUTO: Final = "auto"
+COVER_REFERENCE_MANUAL: Final = "manual"
+COVER_REFERENCE_OFF: Final = "off"
+COVER_REFERENCE_MODES: Final = (COVER_REFERENCE_AUTO, COVER_REFERENCE_MANUAL, COVER_REFERENCE_OFF)
 
 # Per-channel roles for the independently configurable DS2413 pins.
 DS2413_CHANNEL_INPUT: Final = "input"

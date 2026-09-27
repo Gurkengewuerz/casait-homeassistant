@@ -6,6 +6,7 @@ import logging
 
 import voluptuous as vol
 
+from homeassistant.components.cover import DOMAIN as COVER_DOMAIN
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
@@ -15,6 +16,7 @@ from homeassistant.helpers import (
     device_registry as dr,
     entity_registry as er,
     issue_registry as ir,
+    service,
 )
 from homeassistant.helpers.typing import ConfigType
 
@@ -25,6 +27,7 @@ from .const import (
     DOMAIN,
     PLATFORMS,
     SERVICE_CALIBRATE_CO2,
+    SERVICE_REFERENCE_RUN,
     SERVICE_SCAN_DEVICES,
     SERVICE_SET_LED_PALETTE,
 )
@@ -165,6 +168,14 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             async_set_led_palette_service,
             schema=SET_LED_PALETTE_SCHEMA,
         )
+    service.async_register_platform_entity_service(
+        hass,
+        DOMAIN,
+        SERVICE_REFERENCE_RUN,
+        entity_domain=COVER_DOMAIN,
+        schema={vol.Optional("return_to_position", default=True): cv.boolean},
+        func="async_reference_run",
+    )
 
     return True
 

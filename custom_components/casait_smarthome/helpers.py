@@ -13,6 +13,8 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.util import slugify
 
 from .const import (
+    COVER_REFERENCE_AUTO,
+    COVER_REFERENCE_MODES,
     DEFAULT_BLIND_CLOSE_TIME,
     DEFAULT_BLIND_OPEN_TIME,
     DEFAULT_BLIND_OVERRUN_TIME,
@@ -349,6 +351,11 @@ def get_om117_pair_configuration(options: Mapping[str, Any]) -> dict[int, dict[i
                 overrun_time=_coerce_time(raw.get("overrun_time"), DEFAULT_BLIND_OVERRUN_TIME),
                 tilt_time=_coerce_time(raw.get("tilt_time"), DEFAULT_BLIND_TILT_TIME),
                 pulse_duration=_coerce_time(raw.get("pulse_duration"), DEFAULT_PULSE_DURATION),
+                reference_mode=(
+                    reference_mode
+                    if (reference_mode := str(raw.get("reference_mode", COVER_REFERENCE_AUTO))) in COVER_REFERENCE_MODES
+                    else COVER_REFERENCE_AUTO
+                ),
             )
 
     return pair_map
@@ -364,6 +371,7 @@ class OM117PairConfig:
     overrun_time: float = DEFAULT_BLIND_OVERRUN_TIME
     tilt_time: float = DEFAULT_BLIND_TILT_TIME
     pulse_duration: float = DEFAULT_PULSE_DURATION
+    reference_mode: str = COVER_REFERENCE_AUTO
 
 
 def get_dm117_port_configuration(
@@ -870,6 +878,7 @@ def set_om117_pairs(
             "overrun_time": config.overrun_time,
             "tilt_time": config.tilt_time,
             "pulse_duration": config.pulse_duration,
+            "reference_mode": config.reference_mode,
         }
         for index, config in sorted(pairs.items())
     }

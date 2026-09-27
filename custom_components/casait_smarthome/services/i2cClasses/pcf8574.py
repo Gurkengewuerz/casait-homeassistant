@@ -167,8 +167,6 @@ class PCF8574:
 
             # Write the new value
             await self.bus.write_byte(self.address, new_value)
-            # The latch no longer holds the all-high pattern the inputs are sampled
-            # against, so the next read has to re-arm it.
             self._needs_set_high = True
 
             # When turning ON (state=0, active low), relay energizes causing
@@ -185,14 +183,28 @@ class PCF8574:
                     )
                     return False
 
-            self.last_value = new_value
-            self.port_states[port] = state
-            # Own writes are not input edges; hand the new level to the tracker so
-            # the next read does not report the change we just made.
-            self._edges.adopt(port, bool(state))
+            self.note_written(new_value)
 
         except OSError:
             self._needs_set_high = True
             _LOGGER.exception("PCF8574 write error at 0x%02X port %s", self.address, port)
             return False
         return True
+
+    def note_written(self, value: int) -> None:
+        """Adopt a port byte that was written and verified, possibly by a batch.
+
+        The latch no longer holds the all-high pattern the inputs are sampled
+        against, so the next read re-arms it. Own writes are not input edges, so
+        the tracker takes the new levels without reporting them.
+        """
+
+        value &= 0xFF
+        changed = value ^ self.last_value if 0 <= self.last_value <= 0xFF else 0xFF
+        self.last_value = value
+        self._needs_set_high = True
+        for port in range(8):
+            state = (value >> port) & 1
+            self.port_states[port] = state
+            if changed & (1 << port):
+                self._edges.adopt(port, bool(state))

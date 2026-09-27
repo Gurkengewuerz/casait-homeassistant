@@ -280,6 +280,16 @@
           "description": "CO2 concentration the sensor is exposed to. Defaults to the value of the device's calibration reference entity."
         }
       }
+    },
+    "reference_run": {
+      "name": "Reference run",
+      "description": "Runs shutters and blinds into the nearer end position to clear the drift of their time-based position, then back to where they were. Covers called together start and stop together.",
+      "fields": {
+        "return_to_position": {
+          "name": "Return to position",
+          "description": "Drive back to the previous position after reaching the end position."
+        }
+      }
     }
   },
   "exceptions": {
@@ -345,6 +355,9 @@
     },
     "co2_command_failed": {
       "message": "The CO2 sensor did not carry out the command."
+    },
+    "reference_needs_overrun": {
+      "message": "A reference run needs an overrun time greater than zero."
     }
   },
   "issues": {
@@ -497,6 +510,13 @@
       "options": {
         "input": "Digital input",
         "output": "Digital output"
+      }
+    },
+    "cover_reference_mode": {
+      "options": {
+        "auto": "Automatic, on the next move near an end position",
+        "manual": "Only with the reference run action",
+        "off": "Off"
       }
     }
   },
@@ -672,6 +692,7 @@
               "open_time": "Opening time (s)",
               "close_time": "Closing time (s)",
               "overrun_time": "Overrun (s)",
+              "reference_mode": "Reference runs",
               "tilt_time": "Full slat travel (s)",
               "pulse_duration": "Pulse duration (s)"
             },
@@ -680,6 +701,7 @@
               "open_time": "Time to fully open.",
               "close_time": "Time to fully close.",
               "overrun_time": "Extra motor time at the end position.",
+              "reference_mode": "The time-based position drifts with every partial move. Automatic runs into the end position first once the estimated error exceeds 5 %.",
               "tilt_time": "Time for the slats to turn from closed to open.",
               "pulse_duration": "How long a pulse output stays on."
             }
@@ -691,6 +713,7 @@
               "open_time": "Opening time (s)",
               "close_time": "Closing time (s)",
               "overrun_time": "Overrun (s)",
+              "reference_mode": "Reference runs",
               "tilt_time": "Full slat travel (s)",
               "pulse_duration": "Pulse duration (s)"
             },
@@ -699,6 +722,7 @@
               "open_time": "Time to fully open.",
               "close_time": "Time to fully close.",
               "overrun_time": "Extra motor time at the end position.",
+              "reference_mode": "The time-based position drifts with every partial move. Automatic runs into the end position first once the estimated error exceeds 5 %.",
               "tilt_time": "Time for the slats to turn from closed to open.",
               "pulse_duration": "How long a pulse output stays on."
             }
@@ -710,6 +734,7 @@
               "open_time": "Opening time (s)",
               "close_time": "Closing time (s)",
               "overrun_time": "Overrun (s)",
+              "reference_mode": "Reference runs",
               "tilt_time": "Full slat travel (s)",
               "pulse_duration": "Pulse duration (s)"
             },
@@ -718,6 +743,7 @@
               "open_time": "Time to fully open.",
               "close_time": "Time to fully close.",
               "overrun_time": "Extra motor time at the end position.",
+              "reference_mode": "The time-based position drifts with every partial move. Automatic runs into the end position first once the estimated error exceeds 5 %.",
               "tilt_time": "Time for the slats to turn from closed to open.",
               "pulse_duration": "How long a pulse output stays on."
             }
@@ -729,6 +755,7 @@
               "open_time": "Opening time (s)",
               "close_time": "Closing time (s)",
               "overrun_time": "Overrun (s)",
+              "reference_mode": "Reference runs",
               "tilt_time": "Full slat travel (s)",
               "pulse_duration": "Pulse duration (s)"
             },
@@ -737,6 +764,7 @@
               "open_time": "Time to fully open.",
               "close_time": "Time to fully close.",
               "overrun_time": "Extra motor time at the end position.",
+              "reference_mode": "The time-based position drifts with every partial move. Automatic runs into the end position first once the estimated error exceeds 5 %.",
               "tilt_time": "Time for the slats to turn from closed to open.",
               "pulse_duration": "How long a pulse output stays on."
             }

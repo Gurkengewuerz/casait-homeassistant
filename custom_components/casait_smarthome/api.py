@@ -36,6 +36,7 @@ from .helpers import (
 )
 from .multisensor import CasaITMultisensorManager
 from .onewire import CasaITOneWireScheduler
+from .outputs import CasaITOutputWriter
 from .services.i2cClasses.dm117 import DM117, DeviceType, DM117PortConfig, PortConfig
 from .services.i2cClasses.ds28e17 import DS28E17Error
 from .services.i2cClasses.edge_tracker import EdgeTracker
@@ -156,6 +157,7 @@ class CasaITApi:
         self._ds28e17_identity: dict[str, tuple[str, MultisensorComponents | None]] = {}
         self.multisensor = CasaITMultisensorManager(self)
         self.onewire = CasaITOneWireScheduler(self)
+        self.outputs = CasaITOutputWriter(self)
 
     def start_initialization(self, dm_config: Mapping[int, Mapping[int, DeviceType]] | None = None) -> None:
         """Kick off asynchronous initialization for initial scans and polling."""
@@ -317,7 +319,7 @@ class CasaITApi:
         return f"{self.state_update_signal}_edge_{address:02x}"
 
     @asynccontextmanager
-    async def _write_access(self) -> AsyncIterator[None]:
+    async def write_access(self) -> AsyncIterator[None]:
         """Claim the bus for a write, holding the poll loop off until it is done."""
 
         self._write_pending += 1
@@ -464,6 +466,7 @@ class CasaITApi:
     async def stop_polling(self) -> None:
         """Stop background polling task."""
 
+        await self.outputs.async_shutdown()
         if not self._poll_task or not self._stop_event:
             return
 
@@ -591,7 +594,7 @@ class CasaITApi:
         # its driver below.
         debounce_ms = min(255, *(self.debounce_time("im117", address) for address in addresses))
         try:
-            async with self._write_access():
+            async with self.write_access():
                 accepted = await self.bus.scan_config(addresses, period_ms, debounce_ms)
         except Exception:
             _LOGGER.exception("Failed to configure the bridge input scanner")
@@ -1239,7 +1242,7 @@ class CasaITApi:
         if bus is None:
             raise DS28E17Error(f"1-Wire device {device_id} is not on any bus")
 
-        access = self._write_access() if write else self._background_access()
+        access = self.write_access() if write else self._background_access()
         async with access:
             return await func(bus)
 
@@ -1312,7 +1315,7 @@ class CasaITApi:
         if not bus:
             return False
 
-        async with self._write_access():
+        async with self.write_access():
             pins = await bus.ds2413.set_state(device_id, channel, value)
         if pins is None:
             return False
@@ -1336,32 +1339,39 @@ class CasaITApi:
         if not bus:
             return False
 
-        async with self._write_access():
+        async with self.write_access():
             written = await bus.write_led_config(device_id, config)
         if written:
             self.onewire.set_value(device_id, config)
         return written
 
     async def async_write_pcf_port(self, address: int, port: int, state: int) -> bool:
-        """Write a PCF8574 port and publish the resulting state."""
+        """Write one PCF8574 port and publish the resulting state."""
 
-        device = self.im117_om117.get(address)
-        if device is None:
+        return await self.async_write_pcf_ports(address, {port: state})
+
+    async def async_write_pcf_ports(self, address: int, changes: Mapping[int, int]) -> bool:
+        """Write several ports of one PCF8574 at once and publish the resulting state.
+
+        Writes from concurrent callers are coalesced into one frame, so outputs
+        switched together, even on different modules, change within milliseconds.
+        """
+
+        if address not in self.im117_om117:
             return False
+        return await self.outputs.async_write(address, changes)
 
-        async with self._write_access():
-            written = await device.write_port(port, state)
+    def publish_pcf_write(self, address: int) -> None:
+        """Publish the port states of a module whose write was just verified."""
 
-        if not written:
-            return False
-
-        # write_port already read the value back to verify it, so the driver's
-        # port_states are authoritative. Polling again would only add latency.
+        if (device := self.im117_om117.get(address)) is None:
+            return
+        # The write was read back, so the driver's port_states are authoritative.
+        # Polling again would only add latency.
         previous = self._pcf_states.get(address)
         self._pcf_states[address] = list(device.port_states)
         if previous != device.port_states:
             async_dispatcher_send(self.hass, self.address_signal(address))
-        return True
 
     async def async_write_dm117_port(self, address: int, config: DM117PortConfig) -> bool:
         """Write a DM117 port and publish the resulting state."""
@@ -1370,7 +1380,7 @@ class CasaITApi:
         if device is None:
             return False
 
-        async with self._write_access():
+        async with self.write_access():
             written = await device.write_port(config)
 
         if not written:

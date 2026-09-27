@@ -280,6 +280,16 @@
           "description": "CO2-Konzentration, der der Sensor ausgesetzt ist. Standard ist der Wert der Entit\u00e4t CO2-Kalibrierreferenz des Ger\u00e4ts."
         }
       }
+    },
+    "reference_run": {
+      "name": "Referenzfahrt",
+      "description": "F\u00e4hrt Rolll\u00e4den und Jalousien in die n\u00e4here Endlage, um die Abweichung ihrer zeitbasierten Position zu beseitigen, und anschlie\u00dfend zur\u00fcck an ihre Position. Gemeinsam aufgerufene Beh\u00e4nge starten und stoppen gleichzeitig.",
+      "fields": {
+        "return_to_position": {
+          "name": "Zur Position zur\u00fcckkehren",
+          "description": "Nach Erreichen der Endlage wieder die vorherige Position anfahren."
+        }
+      }
     }
   },
   "exceptions": {
@@ -345,6 +355,9 @@
     },
     "co2_command_failed": {
       "message": "Der CO2-Sensor hat den Befehl nicht ausgef\u00fchrt."
+    },
+    "reference_needs_overrun": {
+      "message": "Eine Referenzfahrt ben\u00f6tigt eine Nachlaufzeit gr\u00f6\u00dfer als null."
     }
   },
   "issues": {
@@ -497,6 +510,13 @@
       "options": {
         "input": "Digitaleingang",
         "output": "Digitalausgang"
+      }
+    },
+    "cover_reference_mode": {
+      "options": {
+        "auto": "Automatisch, bei der n\u00e4chsten Fahrt nahe einer Endlage",
+        "manual": "Nur \u00fcber die Aktion Referenzfahrt",
+        "off": "Aus"
       }
     }
   },
@@ -672,6 +692,7 @@
               "open_time": "\u00d6ffnungszeit (s)",
               "close_time": "Schlie\u00dfzeit (s)",
               "overrun_time": "Nachlauf (s)",
+              "reference_mode": "Referenzfahrten",
               "tilt_time": "Volle Lamellenlaufzeit (s)",
               "pulse_duration": "Impulsdauer (s)"
             },
@@ -680,6 +701,7 @@
               "open_time": "Zeit bis zum vollst\u00e4ndigen \u00d6ffnen.",
               "close_time": "Zeit bis zum vollst\u00e4ndigen Schlie\u00dfen.",
               "overrun_time": "Zus\u00e4tzliche Motorlaufzeit in der Endlage.",
+              "reference_mode": "Die zeitbasierte Position driftet mit jeder Teilfahrt. Automatisch f\u00e4hrt zuerst in die Endlage, sobald der gesch\u00e4tzte Fehler 5 % \u00fcbersteigt.",
               "tilt_time": "Zeit, bis die Lamellen von geschlossen auf offen gedreht sind.",
               "pulse_duration": "Wie lange ein Impulsausgang eingeschaltet bleibt."
             }
@@ -691,6 +713,7 @@
               "open_time": "\u00d6ffnungszeit (s)",
               "close_time": "Schlie\u00dfzeit (s)",
               "overrun_time": "Nachlauf (s)",
+              "reference_mode": "Referenzfahrten",
               "tilt_time": "Volle Lamellenlaufzeit (s)",
               "pulse_duration": "Impulsdauer (s)"
             },
@@ -699,6 +722,7 @@
               "open_time": "Zeit bis zum vollst\u00e4ndigen \u00d6ffnen.",
               "close_time": "Zeit bis zum vollst\u00e4ndigen Schlie\u00dfen.",
               "overrun_time": "Zus\u00e4tzliche Motorlaufzeit in der Endlage.",
+              "reference_mode": "Die zeitbasierte Position driftet mit jeder Teilfahrt. Automatisch f\u00e4hrt zuerst in die Endlage, sobald der gesch\u00e4tzte Fehler 5 % \u00fcbersteigt.",
               "tilt_time": "Zeit, bis die Lamellen von geschlossen auf offen gedreht sind.",
               "pulse_duration": "Wie lange ein Impulsausgang eingeschaltet bleibt."
             }
@@ -710,6 +734,7 @@
               "open_time": "\u00d6ffnungszeit (s)",
               "close_time": "Schlie\u00dfzeit (s)",
               "overrun_time": "Nachlauf (s)",
+              "reference_mode": "Referenzfahrten",
               "tilt_time": "Volle Lamellenlaufzeit (s)",
               "pulse_duration": "Impulsdauer (s)"
             },
@@ -718,6 +743,7 @@
               "open_time": "Zeit bis zum vollst\u00e4ndigen \u00d6ffnen.",
               "close_time": "Zeit bis zum vollst\u00e4ndigen Schlie\u00dfen.",
               "overrun_time": "Zus\u00e4tzliche Motorlaufzeit in der Endlage.",
+              "reference_mode": "Die zeitbasierte Position driftet mit jeder Teilfahrt. Automatisch f\u00e4hrt zuerst in die Endlage, sobald der gesch\u00e4tzte Fehler 5 % \u00fcbersteigt.",
               "tilt_time": "Zeit, bis die Lamellen von geschlossen auf offen gedreht sind.",
               "pulse_duration": "Wie lange ein Impulsausgang eingeschaltet bleibt."
             }
@@ -729,6 +755,7 @@
               "open_time": "\u00d6ffnungszeit (s)",
               "close_time": "Schlie\u00dfzeit (s)",
               "overrun_time": "Nachlauf (s)",
+              "reference_mode": "Referenzfahrten",
               "tilt_time": "Volle Lamellenlaufzeit (s)",
               "pulse_duration": "Impulsdauer (s)"
             },
@@ -737,6 +764,7 @@
               "open_time": "Zeit bis zum vollst\u00e4ndigen \u00d6ffnen.",
               "close_time": "Zeit bis zum vollst\u00e4ndigen Schlie\u00dfen.",
               "overrun_time": "Zus\u00e4tzliche Motorlaufzeit in der Endlage.",
+              "reference_mode": "Die zeitbasierte Position driftet mit jeder Teilfahrt. Automatisch f\u00e4hrt zuerst in die Endlage, sobald der gesch\u00e4tzte Fehler 5 % \u00fcbersteigt.",
               "tilt_time": "Zeit, bis die Lamellen von geschlossen auf offen gedreht sind.",
               "pulse_duration": "Wie lange ein Impulsausgang eingeschaltet bleibt."
             }

@@ -79,7 +79,7 @@ async def test_pending_write_holds_poll_read(hass) -> None:
     device = FakePCF(PCF8574Reading([1] * 8, 0xFF))
     api.im117_om117[0x38] = device
 
-    async with api._write_access():  # noqa: SLF001
+    async with api.write_access():
         task = hass.async_create_task(api._poll_pcf8574(0x38, is_input=True))  # noqa: SLF001
         await asyncio.sleep(0)
         assert device.read_count == 0

@@ -379,7 +379,7 @@ async def test_background_read_waits_for_a_pending_write(hass) -> None:
         async with api._background_access():  # noqa: SLF001
             entered = True
 
-    async with api._write_access():  # noqa: SLF001
+    async with api.write_access():
         task = hass.async_create_task(background())
         await asyncio.sleep(0)
         assert not entered

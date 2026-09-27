@@ -8,6 +8,9 @@
     },
     "calibrate_co2": {
       "service": "mdi:molecule-co2"
+    },
+    "reference_run": {
+      "service": "mdi:arrow-collapse-vertical"
     }
   },
   "entity": {

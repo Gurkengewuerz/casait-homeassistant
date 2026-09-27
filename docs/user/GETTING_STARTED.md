@@ -60,6 +60,11 @@ blind with slat tilt, or two pulse buttons. The timing fields of the chosen mode
 appear once the mode is selected. Cover timings and pulse duration can also be
 adjusted later through number entities.
 
+Shutters and blinds also choose how they correct the drift of their calculated
+position: automatically, by running into the nearer end position before a move
+that ends close to it, only through the `casait_smarthome.reference_run` action,
+or not at all. Reference runs need an overrun time above zero.
+
 ### DM117
 
 Open each slot and select what is installed: unused, digital input, digital

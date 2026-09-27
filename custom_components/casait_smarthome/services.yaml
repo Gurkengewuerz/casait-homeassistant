@@ -66,3 +66,21 @@ calibrate_co2:
           max: 5000
           unit_of_measurement: ppm
           mode: box
+
+reference_run:
+  name: Reference run
+  description: >-
+    Runs shutters and blinds into the nearer end position to clear the drift of
+    their time-based position, then back to where they were. Covers called
+    together start and stop together.
+  target:
+    entity:
+      integration: casait_smarthome
+      domain: cover
+  fields:
+    return_to_position:
+      name: Return to position
+      description: Drive back to the previous position after reaching the end position.
+      default: true
+      selector:
+        boolean:

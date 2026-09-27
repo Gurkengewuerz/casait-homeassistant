@@ -35,6 +35,7 @@ from homeassistant.helpers.selector import (
 )
 
 from .const import (
+    COVER_REFERENCE_MODES,
     DEFAULT_LED_COUNT,
     DEFAULT_OW_POLL_INTERVAL,
     DS28E17_FAMILY,
@@ -412,6 +413,7 @@ class OptionsFlowHandler(OptionsFlowWithReload):
                     overrun_time=float(data.get("overrun_time", current.overrun_time)),
                     tilt_time=float(data.get("tilt_time", current.tilt_time)),
                     pulse_duration=float(data.get("pulse_duration", current.pulse_duration)),
+                    reference_mode=str(data.get("reference_mode", current.reference_mode)),
                 )
             options = set_om117_pairs(self._options, address, pairs, name=str(user_input.get(NAME_FIELD, "")))
             changed = any(pairs[pair].mode != existing.get(pair, OM117PairConfig()).mode for pair in range(4))
@@ -437,6 +439,9 @@ class OptionsFlowHandler(OptionsFlowWithReload):
                 fields[vol.Required("open_time", default=config.open_time)] = _box(1, 180, 0.1)
                 fields[vol.Required("close_time", default=config.close_time)] = _box(1, 180, 0.1)
                 fields[vol.Required("overrun_time", default=config.overrun_time)] = _box(0, 15, 0.1)
+                fields[vol.Required("reference_mode", default=config.reference_mode)] = _select(
+                    list(COVER_REFERENCE_MODES), "cover_reference_mode"
+                )
                 if config.mode == OM117_MODE_BLIND:
                     fields[vol.Required("tilt_time", default=config.tilt_time)] = _box(0.1, 15, 0.1)
             schema[vol.Required(f"pair_{pair + 1}")] = _collapsed(fields)

@@ -218,7 +218,9 @@ a possible second press only adds latency.
   brightness changes.
 - **Roller shutters and venetian blinds.** Pair two OM117 outputs and give them
   travel times; the integration derives position, and for a blind also slat tilt,
-  without any position feedback from the hardware.
+  without any position feedback from the hardware. Covers moved by one call or one
+  automation switch in the same bus frame, so a whole facade starts and stops
+  together.
 - **Door and window contacts.** Give an input the _contact_ role and a device
   class; a normally closed contact is handled by the inversion flag rather than a
   template.
@@ -297,12 +299,29 @@ automation:
           device_id: <your OM117 device id>
 ```
 
+Re-reference every shutter at night and send each back to where it was:
+
+```yaml
+automation:
+  - triggers:
+      - trigger: time
+        at: "03:00:00"
+    actions:
+      - action: casait_smarthome.reference_run
+        target:
+          device_id: <your OM117 device id>
+```
+
 ## Known limitations
 
 - **Cover position is calculated, not measured.** OM117 shutters and blinds have no
   position feedback. Position is derived from the configured travel times, so it
-  drifts if those times are wrong or the motor is obstructed. A full open or close
-  re-synchronises it.
+  drifts with every partial move, and more so if those times are wrong or the
+  motor is obstructed. A full open or close with overrun re-synchronises it. The
+  `position_uncertainty` attribute shows the estimated error; with reference runs
+  set to automatic, a move close to an end position first runs into that end once
+  the error exceeds 5 %, and after a restart during a move the first move does
+  the same. The `casait_smarthome.reference_run` action references on demand.
 - **Buttons need fast polling.** Gestures are derived from a polled level, so
   inputs sampled slowly cannot produce reliable presses. Inputs on hardware that
   is only read on the slow path fall back to the contact role instead of silently
