@@ -144,6 +144,12 @@ class CasaITBlindCover(CoverEntity, RestoreEntity):
         self._movement_task: asyncio.Task | None = None
         self._handover = False
         self._advance: Callable[[], float] | None = None
+        # Which relay runs, and which one dropped last and when: a reversal waits
+        # for the motor to stand, whether a stop command or a move that ran out
+        # released it.
+        self._running_motor: str | None = None
+        self._released_motor: str | None = None
+        self._released_at = 0.0
 
         is_blind = pair_config.mode == OM117_MODE_BLIND
         self._attr_device_class = CoverDeviceClass.BLIND if is_blind else CoverDeviceClass.SHUTTER
@@ -414,7 +420,21 @@ class CasaITBlindCover(CoverEntity, RestoreEntity):
         if previous is not None and previous != _motor_direction(next_direction):
             await self._async_set_outputs(False, False)
             self._active_direction = None
-            await asyncio.sleep(REVERSAL_PAUSE)
+        await self._await_reversal(next_direction)
+
+    async def _await_reversal(self, next_direction: str | None) -> None:
+        """Wait until the other relay has been off for the reversal pause.
+
+        The bridge refuses to switch a direction on sooner, so starting early
+        would only fail the move.
+        """
+
+        motor = _motor_direction(next_direction)
+        if self._released_motor is None or motor is None or motor == self._released_motor:
+            return
+        remaining = REVERSAL_PAUSE - (time.monotonic() - self._released_at)
+        if remaining > 0:
+            await asyncio.sleep(remaining)
 
     async def _stop_motion(self) -> None:
         """Cancel current motion and stop outputs."""
@@ -444,7 +464,7 @@ class CasaITBlindCover(CoverEntity, RestoreEntity):
                         await self._async_set_outputs(False, False)
                         self._active_direction = None
                         self.async_write_ha_state()
-                        await asyncio.sleep(REVERSAL_PAUSE)
+                        await self._await_reversal(direction)
                     await self._async_set_outputs(direction == "open", direction == "close")
                     self._active_direction = direction
                 await self._run_leg(target, direction)
@@ -556,6 +576,15 @@ class CasaITBlindCover(CoverEntity, RestoreEntity):
             self._address,
             {self._hardware_up_port: 0 if up else 1, self._hardware_down_port: 0 if down else 1},
         )
+
+        if written or not (up or down):
+            # A failed release may still have landed; counting it as a stop only
+            # makes the next reversal wait, never start too early.
+            if up or down:
+                self._running_motor = "up" if up else "down"
+            elif self._running_motor is not None:
+                self._released_motor, self._released_at = self._running_motor, time.monotonic()
+                self._running_motor = None
 
         if not written:
             # Releasing the outputs also runs from teardown and from the motion task's

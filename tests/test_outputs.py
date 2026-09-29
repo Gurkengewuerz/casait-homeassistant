@@ -235,7 +235,25 @@ async def test_reversing_drops_the_relay_and_pauses(hass, quick_reversal) -> Non
 
     down, up = 0xFF & ~_bit(1), 0xFF & ~_bit(0)
     assert [frame[0][1] for frame in bridge.writes()] == [up, 0xFF, down, 0xFF]
-    sleep.assert_any_call(0.01)
+    # The pause counts from the moment the relay dropped, so it is a hair short of it.
+    assert any(0 < call.args[0] <= 0.01 for call in sleep.call_args_list)
+
+
+@pytest.mark.unit
+async def test_a_reversal_right_after_a_move_ran_out_still_pauses(hass, quick_reversal) -> None:
+    bridge = FakeBridge({0x20: 0xFF})
+    api = _api(hass, bridge, 0x20)
+    entity = _cover(hass, api, 0x20, open_time=0.05, close_time=5.0)
+    entity._uncertainty = 0.0  # noqa: SLF001
+    entity._position = 90.0  # noqa: SLF001
+
+    await entity.async_open_cover()
+    await entity._movement_task  # noqa: SLF001
+    with patch.object(cover_module.asyncio, "sleep", wraps=asyncio.sleep) as sleep:
+        await entity.async_close_cover()
+    await entity.async_stop_cover()
+
+    assert any(0 < call.args[0] <= 0.01 for call in sleep.call_args_list)
 
 
 @pytest.mark.unit
