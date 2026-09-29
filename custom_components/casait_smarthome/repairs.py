@@ -135,6 +135,9 @@ class CasaITRepairFlow(RepairsFlow):
 
         if await self._async_device_returned():
             ir.async_delete_issue(self.hass, DOMAIN, self._issue_id)
+            # Entities exist only for what the last setup found; the reload brings
+            # back the ones of the returned device.
+            self.hass.config_entries.async_schedule_reload(str(self._issue_data.get("entry_id")))
             return self.async_create_entry(title="", data={})
 
         return self.async_show_form(
