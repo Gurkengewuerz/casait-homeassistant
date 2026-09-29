@@ -13,7 +13,7 @@ a reader task owns the socket and hands responses and events to their receivers.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 import contextlib
 from dataclasses import dataclass, field
 import logging
@@ -41,6 +41,9 @@ CMD_WATCH_CONFIG = 0x15
 CMD_WATCH_ACK = 0x16
 # Direction pairs the bridge never switches on together, with a pause before reversing.
 CMD_INTERLOCK = 0x17
+# Input-to-output links the bridge keeps in flash and runs itself once no client
+# watches the modules any more: emergency operation without Home Assistant.
+CMD_LINKS = 0x18
 
 # Batch sub-opcodes, numbered like the top-level commands so both sides stay readable
 BOP_WRITE_BYTE = 0x01
@@ -65,6 +68,8 @@ CAP_WATCH = 0x01
 CAP_ONEWIRE = 0x02
 CAP_INTERLOCK = 0x04
 REQUIRED_CAPABILITIES = CAP_WATCH | CAP_ONEWIRE | CAP_INTERLOCK
+# Optional: without it the bridge has no emergency operation, everything else works.
+CAP_LINKS = 0x08
 
 # What a watched module is to the bridge.
 WATCH_KIND_PCF_INPUT = 1
@@ -90,6 +95,21 @@ MAX_DELAY_MS = 10
 # The bridge refuses longer timers.
 MAX_TIMED_OUTPUT_MS = 3_600_000
 
+# Emergency links, see BridgeLink.
+LINK_SOURCE_PCF = 1
+LINK_SOURCE_DM117 = 2
+LINK_FLAG_ACTIVE_HIGH = 0x10
+LINK_FLAG_BOTH_EDGES = 0x20
+LINK_ACTION_TOGGLE = 1
+LINK_ACTION_PULSE = 2
+LINK_ACTION_COVER_UP = 3
+LINK_ACTION_COVER_DOWN = 4
+LINK_ACTION_COVER_TOGGLE = 5
+LINK_ENTRY_SIZE = 8
+MAX_LINKS = 128
+MAX_LINK_TIME_DS = 36_000
+# [cmd][offset][total][debounce] ahead of the entries.
+LINKS_PER_FRAME = (MAX_FRAME_PAYLOAD - 4) // LINK_ENTRY_SIZE
 # [status][command][0xAA][boot id, 4 bytes][uptime in s, 4 bytes][version length][version]
 PING_HEADER_SIZE = 12
 # After the version: [capabilities][fast sweep us, 2][slow sweep us, 2][I2C retries, 4]
@@ -180,6 +200,43 @@ def parse_watch_event(payload: bytes) -> WatchEvent:
         entries.append(WatchEntry(seq, index, bytes(payload[pos : pos + size])))
         pos += size
     return WatchEvent(flags, entries)
+
+
+@dataclass(frozen=True)
+class BridgeLink:
+    """One input the bridge acts on by itself while no client is there.
+
+    ``source_bit`` is the PCF8574 port bit, or ``slot * 2 + channel`` on a DM117.
+    ``bit_a`` is the output, or the up relay of a cover whose down relay is
+    ``bit_b``; both are PCF8574 port bits. ``time_ds`` is the pulse length or the
+    travel time of a cover in tenths of a second.
+    """
+
+    source_kind: int
+    source_address: int
+    source_bit: int
+    action: int
+    target_address: int
+    bit_a: int
+    bit_b: int = 0
+    time_ds: int = 0
+    flags: int = 0
+
+    def encode(self) -> bytes:
+        """Return the 8 bytes the bridge stores for this link."""
+
+        return bytes(
+            [
+                (self.source_kind & 0x03) | (self.flags & 0xF0),
+                self.source_address,
+                self.source_bit,
+                self.action,
+                self.target_address,
+                (self.bit_a & 0x0F) | ((self.bit_b & 0x0F) << 4),
+                self.time_ds >> 8,
+                self.time_ds & 0xFF,
+            ]
+        )
 
 
 class BridgeFirmwareError(SMBusProxyError):
@@ -876,6 +933,34 @@ class SMBus:
         if len(response) < 2 or response[0] != 0x00:
             raise OSError("Bridge refused the watch configuration")
         return response[1] == 0x01
+
+    async def configure_links(self, links: Sequence[BridgeLink], debounce_ms: int) -> bool:
+        """Hand the bridge the links it runs on its own once no client watches the modules.
+
+        The list replaces what the bridge keeps in flash; an empty one clears it.
+        It goes out in parts, the bridge takes it over with the last one.
+
+        Returns:
+            True when the bridge stored a changed list, False when it already had it
+
+        Raises:
+            OSError: If the bridge refused a part
+        """
+
+        if len(links) > MAX_LINKS:
+            raise ValueError(f"At most {MAX_LINKS} links, got {len(links)}")
+        debounce_ms = max(0, min(0xFF, debounce_ms))
+        response = b""
+        for offset in range(0, max(1, len(links)), LINKS_PER_FRAME):
+            chunk = links[offset : offset + LINKS_PER_FRAME]
+            payload = bytes([CMD_LINKS, offset, len(links), debounce_ms]) + b"".join(link.encode() for link in chunk)
+            try:
+                response = await self._send_command(payload)
+            except SMBusProxyError as e:
+                raise OSError(str(e)) from e
+            if len(response) < 2 or response[0] != 0x00:
+                raise OSError("Bridge refused the emergency links")
+        return response[1] == 0x02
 
     def watch_ack(self, seq: int) -> bool:
         """Acknowledge every pushed entry up to and including ``seq``."""

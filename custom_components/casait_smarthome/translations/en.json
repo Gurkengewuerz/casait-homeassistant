@@ -601,13 +601,15 @@
               "role": "Function",
               "device_class": "Device class",
               "invert": "Invert",
-              "repeat": "Repeat while held"
+              "repeat": "Repeat while held",
+              "emergency": "Emergency target"
             },
             "data_description": {
               "role": "Push buttons report events, contacts a lasting state.",
               "device_class": "Only used for a contact.",
               "invert": "Report the input the other way round, for a normally closed contact.",
-              "repeat": "Keep sending repeat events while a button is held, for example to dim."
+              "repeat": "Keep sending repeat events while a button is held, for example to dim.",
+              "emergency": "What the bridge switches with this input on its own while Home Assistant is unreachable: an OM117 output (⇄ toggle, ⊓ pulse) or a cover pair (▲ up, ▼ down, ▲▼ alternating). A moving cover stops at any press. While Home Assistant is connected, only your automations act on the input."
             }
           },
           "port_2": {
@@ -616,13 +618,15 @@
               "role": "Function",
               "device_class": "Device class",
               "invert": "Invert",
-              "repeat": "Repeat while held"
+              "repeat": "Repeat while held",
+              "emergency": "Emergency target"
             },
             "data_description": {
               "role": "Push buttons report events, contacts a lasting state.",
               "device_class": "Only used for a contact.",
               "invert": "Report the input the other way round, for a normally closed contact.",
-              "repeat": "Keep sending repeat events while a button is held, for example to dim."
+              "repeat": "Keep sending repeat events while a button is held, for example to dim.",
+              "emergency": "What the bridge switches with this input on its own while Home Assistant is unreachable: an OM117 output (⇄ toggle, ⊓ pulse) or a cover pair (▲ up, ▼ down, ▲▼ alternating). A moving cover stops at any press. While Home Assistant is connected, only your automations act on the input."
             }
           },
           "port_3": {
@@ -631,13 +635,15 @@
               "role": "Function",
               "device_class": "Device class",
               "invert": "Invert",
-              "repeat": "Repeat while held"
+              "repeat": "Repeat while held",
+              "emergency": "Emergency target"
             },
             "data_description": {
               "role": "Push buttons report events, contacts a lasting state.",
               "device_class": "Only used for a contact.",
               "invert": "Report the input the other way round, for a normally closed contact.",
-              "repeat": "Keep sending repeat events while a button is held, for example to dim."
+              "repeat": "Keep sending repeat events while a button is held, for example to dim.",
+              "emergency": "What the bridge switches with this input on its own while Home Assistant is unreachable: an OM117 output (⇄ toggle, ⊓ pulse) or a cover pair (▲ up, ▼ down, ▲▼ alternating). A moving cover stops at any press. While Home Assistant is connected, only your automations act on the input."
             }
           },
           "port_4": {
@@ -646,13 +652,15 @@
               "role": "Function",
               "device_class": "Device class",
               "invert": "Invert",
-              "repeat": "Repeat while held"
+              "repeat": "Repeat while held",
+              "emergency": "Emergency target"
             },
             "data_description": {
               "role": "Push buttons report events, contacts a lasting state.",
               "device_class": "Only used for a contact.",
               "invert": "Report the input the other way round, for a normally closed contact.",
-              "repeat": "Keep sending repeat events while a button is held, for example to dim."
+              "repeat": "Keep sending repeat events while a button is held, for example to dim.",
+              "emergency": "What the bridge switches with this input on its own while Home Assistant is unreachable: an OM117 output (⇄ toggle, ⊓ pulse) or a cover pair (▲ up, ▼ down, ▲▼ alternating). A moving cover stops at any press. While Home Assistant is connected, only your automations act on the input."
             }
           },
           "port_5": {
@@ -661,13 +669,15 @@
               "role": "Function",
               "device_class": "Device class",
               "invert": "Invert",
-              "repeat": "Repeat while held"
+              "repeat": "Repeat while held",
+              "emergency": "Emergency target"
             },
             "data_description": {
               "role": "Push buttons report events, contacts a lasting state.",
               "device_class": "Only used for a contact.",
               "invert": "Report the input the other way round, for a normally closed contact.",
-              "repeat": "Keep sending repeat events while a button is held, for example to dim."
+              "repeat": "Keep sending repeat events while a button is held, for example to dim.",
+              "emergency": "What the bridge switches with this input on its own while Home Assistant is unreachable: an OM117 output (⇄ toggle, ⊓ pulse) or a cover pair (▲ up, ▼ down, ▲▼ alternating). A moving cover stops at any press. While Home Assistant is connected, only your automations act on the input."
             }
           },
           "port_6": {
@@ -676,13 +686,15 @@
               "role": "Function",
               "device_class": "Device class",
               "invert": "Invert",
-              "repeat": "Repeat while held"
+              "repeat": "Repeat while held",
+              "emergency": "Emergency target"
             },
             "data_description": {
               "role": "Push buttons report events, contacts a lasting state.",
               "device_class": "Only used for a contact.",
               "invert": "Report the input the other way round, for a normally closed contact.",
-              "repeat": "Keep sending repeat events while a button is held, for example to dim."
+              "repeat": "Keep sending repeat events while a button is held, for example to dim.",
+              "emergency": "What the bridge switches with this input on its own while Home Assistant is unreachable: an OM117 output (⇄ toggle, ⊓ pulse) or a cover pair (▲ up, ▼ down, ▲▼ alternating). A moving cover stops at any press. While Home Assistant is connected, only your automations act on the input."
             }
           },
           "port_7": {
@@ -691,13 +703,15 @@
               "role": "Function",
               "device_class": "Device class",
               "invert": "Invert",
-              "repeat": "Repeat while held"
+              "repeat": "Repeat while held",
+              "emergency": "Emergency target"
             },
             "data_description": {
               "role": "Push buttons report events, contacts a lasting state.",
               "device_class": "Only used for a contact.",
               "invert": "Report the input the other way round, for a normally closed contact.",
-              "repeat": "Keep sending repeat events while a button is held, for example to dim."
+              "repeat": "Keep sending repeat events while a button is held, for example to dim.",
+              "emergency": "What the bridge switches with this input on its own while Home Assistant is unreachable: an OM117 output (⇄ toggle, ⊓ pulse) or a cover pair (▲ up, ▼ down, ▲▼ alternating). A moving cover stops at any press. While Home Assistant is connected, only your automations act on the input."
             }
           },
           "port_8": {
@@ -706,13 +720,15 @@
               "role": "Function",
               "device_class": "Device class",
               "invert": "Invert",
-              "repeat": "Repeat while held"
+              "repeat": "Repeat while held",
+              "emergency": "Emergency target"
             },
             "data_description": {
               "role": "Push buttons report events, contacts a lasting state.",
               "device_class": "Only used for a contact.",
               "invert": "Report the input the other way round, for a normally closed contact.",
-              "repeat": "Keep sending repeat events while a button is held, for example to dim."
+              "repeat": "Keep sending repeat events while a button is held, for example to dim.",
+              "emergency": "What the bridge switches with this input on its own while Home Assistant is unreachable: an OM117 output (⇄ toggle, ⊓ pulse) or a cover pair (▲ up, ▼ down, ▲▼ alternating). A moving cover stops at any press. While Home Assistant is connected, only your automations act on the input."
             }
           }
         }
@@ -840,7 +856,9 @@
               "b_role": "Channel B function",
               "b_device_class": "Channel B device class",
               "b_invert": "Invert channel B",
-              "b_repeat": "Channel B: repeat while held"
+              "b_repeat": "Channel B: repeat while held",
+              "a_emergency": "Channel A emergency target",
+              "b_emergency": "Channel B emergency target"
             },
             "data_description": {
               "type": "What is plugged into this slot.",
@@ -851,7 +869,9 @@
               "b_role": "Push buttons report events, contacts a lasting state.",
               "b_device_class": "Only used for a contact.",
               "b_invert": "Report the input the other way round, for a normally closed contact.",
-              "b_repeat": "Keep sending repeat events while a button is held, for example to dim."
+              "b_repeat": "Keep sending repeat events while a button is held, for example to dim.",
+              "a_emergency": "What the bridge switches with this input on its own while Home Assistant is unreachable: an OM117 output (⇄ toggle, ⊓ pulse) or a cover pair (▲ up, ▼ down, ▲▼ alternating). A moving cover stops at any press. While Home Assistant is connected, only your automations act on the input.",
+              "b_emergency": "What the bridge switches with this input on its own while Home Assistant is unreachable: an OM117 output (⇄ toggle, ⊓ pulse) or a cover pair (▲ up, ▼ down, ▲▼ alternating). A moving cover stops at any press. While Home Assistant is connected, only your automations act on the input."
             }
           },
           "slot_2": {
@@ -865,7 +885,9 @@
               "b_role": "Channel B function",
               "b_device_class": "Channel B device class",
               "b_invert": "Invert channel B",
-              "b_repeat": "Channel B: repeat while held"
+              "b_repeat": "Channel B: repeat while held",
+              "a_emergency": "Channel A emergency target",
+              "b_emergency": "Channel B emergency target"
             },
             "data_description": {
               "type": "What is plugged into this slot.",
@@ -876,7 +898,9 @@
               "b_role": "Push buttons report events, contacts a lasting state.",
               "b_device_class": "Only used for a contact.",
               "b_invert": "Report the input the other way round, for a normally closed contact.",
-              "b_repeat": "Keep sending repeat events while a button is held, for example to dim."
+              "b_repeat": "Keep sending repeat events while a button is held, for example to dim.",
+              "a_emergency": "What the bridge switches with this input on its own while Home Assistant is unreachable: an OM117 output (⇄ toggle, ⊓ pulse) or a cover pair (▲ up, ▼ down, ▲▼ alternating). A moving cover stops at any press. While Home Assistant is connected, only your automations act on the input.",
+              "b_emergency": "What the bridge switches with this input on its own while Home Assistant is unreachable: an OM117 output (⇄ toggle, ⊓ pulse) or a cover pair (▲ up, ▼ down, ▲▼ alternating). A moving cover stops at any press. While Home Assistant is connected, only your automations act on the input."
             }
           },
           "slot_3": {
@@ -890,7 +914,9 @@
               "b_role": "Channel B function",
               "b_device_class": "Channel B device class",
               "b_invert": "Invert channel B",
-              "b_repeat": "Channel B: repeat while held"
+              "b_repeat": "Channel B: repeat while held",
+              "a_emergency": "Channel A emergency target",
+              "b_emergency": "Channel B emergency target"
             },
             "data_description": {
               "type": "What is plugged into this slot.",
@@ -901,7 +927,9 @@
               "b_role": "Push buttons report events, contacts a lasting state.",
               "b_device_class": "Only used for a contact.",
               "b_invert": "Report the input the other way round, for a normally closed contact.",
-              "b_repeat": "Keep sending repeat events while a button is held, for example to dim."
+              "b_repeat": "Keep sending repeat events while a button is held, for example to dim.",
+              "a_emergency": "What the bridge switches with this input on its own while Home Assistant is unreachable: an OM117 output (⇄ toggle, ⊓ pulse) or a cover pair (▲ up, ▼ down, ▲▼ alternating). A moving cover stops at any press. While Home Assistant is connected, only your automations act on the input.",
+              "b_emergency": "What the bridge switches with this input on its own while Home Assistant is unreachable: an OM117 output (⇄ toggle, ⊓ pulse) or a cover pair (▲ up, ▼ down, ▲▼ alternating). A moving cover stops at any press. While Home Assistant is connected, only your automations act on the input."
             }
           },
           "slot_4": {
@@ -915,7 +943,9 @@
               "b_role": "Channel B function",
               "b_device_class": "Channel B device class",
               "b_invert": "Invert channel B",
-              "b_repeat": "Channel B: repeat while held"
+              "b_repeat": "Channel B: repeat while held",
+              "a_emergency": "Channel A emergency target",
+              "b_emergency": "Channel B emergency target"
             },
             "data_description": {
               "type": "What is plugged into this slot.",
@@ -926,7 +956,9 @@
               "b_role": "Push buttons report events, contacts a lasting state.",
               "b_device_class": "Only used for a contact.",
               "b_invert": "Report the input the other way round, for a normally closed contact.",
-              "b_repeat": "Keep sending repeat events while a button is held, for example to dim."
+              "b_repeat": "Keep sending repeat events while a button is held, for example to dim.",
+              "a_emergency": "What the bridge switches with this input on its own while Home Assistant is unreachable: an OM117 output (⇄ toggle, ⊓ pulse) or a cover pair (▲ up, ▼ down, ▲▼ alternating). A moving cover stops at any press. While Home Assistant is connected, only your automations act on the input.",
+              "b_emergency": "What the bridge switches with this input on its own while Home Assistant is unreachable: an OM117 output (⇄ toggle, ⊓ pulse) or a cover pair (▲ up, ▼ down, ▲▼ alternating). A moving cover stops at any press. While Home Assistant is connected, only your automations act on the input."
             }
           },
           "slot_5": {
@@ -940,7 +972,9 @@
               "b_role": "Channel B function",
               "b_device_class": "Channel B device class",
               "b_invert": "Invert channel B",
-              "b_repeat": "Channel B: repeat while held"
+              "b_repeat": "Channel B: repeat while held",
+              "a_emergency": "Channel A emergency target",
+              "b_emergency": "Channel B emergency target"
             },
             "data_description": {
               "type": "What is plugged into this slot.",
@@ -951,7 +985,9 @@
               "b_role": "Push buttons report events, contacts a lasting state.",
               "b_device_class": "Only used for a contact.",
               "b_invert": "Report the input the other way round, for a normally closed contact.",
-              "b_repeat": "Keep sending repeat events while a button is held, for example to dim."
+              "b_repeat": "Keep sending repeat events while a button is held, for example to dim.",
+              "a_emergency": "What the bridge switches with this input on its own while Home Assistant is unreachable: an OM117 output (⇄ toggle, ⊓ pulse) or a cover pair (▲ up, ▼ down, ▲▼ alternating). A moving cover stops at any press. While Home Assistant is connected, only your automations act on the input.",
+              "b_emergency": "What the bridge switches with this input on its own while Home Assistant is unreachable: an OM117 output (⇄ toggle, ⊓ pulse) or a cover pair (▲ up, ▼ down, ▲▼ alternating). A moving cover stops at any press. While Home Assistant is connected, only your automations act on the input."
             }
           },
           "slot_6": {
@@ -965,7 +1001,9 @@
               "b_role": "Channel B function",
               "b_device_class": "Channel B device class",
               "b_invert": "Invert channel B",
-              "b_repeat": "Channel B: repeat while held"
+              "b_repeat": "Channel B: repeat while held",
+              "a_emergency": "Channel A emergency target",
+              "b_emergency": "Channel B emergency target"
             },
             "data_description": {
               "type": "What is plugged into this slot.",
@@ -976,7 +1014,9 @@
               "b_role": "Push buttons report events, contacts a lasting state.",
               "b_device_class": "Only used for a contact.",
               "b_invert": "Report the input the other way round, for a normally closed contact.",
-              "b_repeat": "Keep sending repeat events while a button is held, for example to dim."
+              "b_repeat": "Keep sending repeat events while a button is held, for example to dim.",
+              "a_emergency": "What the bridge switches with this input on its own while Home Assistant is unreachable: an OM117 output (⇄ toggle, ⊓ pulse) or a cover pair (▲ up, ▼ down, ▲▼ alternating). A moving cover stops at any press. While Home Assistant is connected, only your automations act on the input.",
+              "b_emergency": "What the bridge switches with this input on its own while Home Assistant is unreachable: an OM117 output (⇄ toggle, ⊓ pulse) or a cover pair (▲ up, ▼ down, ▲▼ alternating). A moving cover stops at any press. While Home Assistant is connected, only your automations act on the input."
             }
           },
           "slot_7": {
@@ -990,7 +1030,9 @@
               "b_role": "Channel B function",
               "b_device_class": "Channel B device class",
               "b_invert": "Invert channel B",
-              "b_repeat": "Channel B: repeat while held"
+              "b_repeat": "Channel B: repeat while held",
+              "a_emergency": "Channel A emergency target",
+              "b_emergency": "Channel B emergency target"
             },
             "data_description": {
               "type": "What is plugged into this slot.",
@@ -1001,7 +1043,9 @@
               "b_role": "Push buttons report events, contacts a lasting state.",
               "b_device_class": "Only used for a contact.",
               "b_invert": "Report the input the other way round, for a normally closed contact.",
-              "b_repeat": "Keep sending repeat events while a button is held, for example to dim."
+              "b_repeat": "Keep sending repeat events while a button is held, for example to dim.",
+              "a_emergency": "What the bridge switches with this input on its own while Home Assistant is unreachable: an OM117 output (⇄ toggle, ⊓ pulse) or a cover pair (▲ up, ▼ down, ▲▼ alternating). A moving cover stops at any press. While Home Assistant is connected, only your automations act on the input.",
+              "b_emergency": "What the bridge switches with this input on its own while Home Assistant is unreachable: an OM117 output (⇄ toggle, ⊓ pulse) or a cover pair (▲ up, ▼ down, ▲▼ alternating). A moving cover stops at any press. While Home Assistant is connected, only your automations act on the input."
             }
           },
           "slot_8": {
@@ -1015,7 +1059,9 @@
               "b_role": "Channel B function",
               "b_device_class": "Channel B device class",
               "b_invert": "Invert channel B",
-              "b_repeat": "Channel B: repeat while held"
+              "b_repeat": "Channel B: repeat while held",
+              "a_emergency": "Channel A emergency target",
+              "b_emergency": "Channel B emergency target"
             },
             "data_description": {
               "type": "What is plugged into this slot.",
@@ -1026,7 +1072,9 @@
               "b_role": "Push buttons report events, contacts a lasting state.",
               "b_device_class": "Only used for a contact.",
               "b_invert": "Report the input the other way round, for a normally closed contact.",
-              "b_repeat": "Keep sending repeat events while a button is held, for example to dim."
+              "b_repeat": "Keep sending repeat events while a button is held, for example to dim.",
+              "a_emergency": "What the bridge switches with this input on its own while Home Assistant is unreachable: an OM117 output (⇄ toggle, ⊓ pulse) or a cover pair (▲ up, ▼ down, ▲▼ alternating). A moving cover stops at any press. While Home Assistant is connected, only your automations act on the input.",
+              "b_emergency": "What the bridge switches with this input on its own while Home Assistant is unreachable: an OM117 output (⇄ toggle, ⊓ pulse) or a cover pair (▲ up, ▼ down, ▲▼ alternating). A moving cover stops at any press. While Home Assistant is connected, only your automations act on the input."
             }
           }
         }

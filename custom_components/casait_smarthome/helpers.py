@@ -406,6 +406,9 @@ class DigitalInputConfig:
     device_class: str | None = None
     invert: bool = False
     repeat: bool = False
+    # What the bridge switches with this input while Home Assistant is away; see
+    # emergency.py for the format.
+    emergency: str | None = None
 
 
 @dataclass
@@ -471,11 +474,14 @@ def _parse_input_config(raw: Any, *, allow_button: bool = True) -> DigitalInputC
         role = DEFAULT_INPUT_ROLE
 
     device_class = raw.get("device_class")
+    emergency = raw.get("emergency")
     return DigitalInputConfig(
         role=role,
         device_class=str(device_class) if role == INPUT_ROLE_CONTACT and device_class else None,
         invert=bool(raw.get("invert", False)),
         repeat=role == INPUT_ROLE_BUTTON and bool(raw.get("repeat", False)),
+        # Only the inputs the bridge samples itself can act without Home Assistant.
+        emergency=str(emergency) if emergency and allow_button and role != INPUT_ROLE_UNUSED else None,
     )
 
 
@@ -489,6 +495,8 @@ def _input_config_entry(config: DigitalInputConfig) -> dict[str, Any]:
         entry["invert"] = True
     if config.role == INPUT_ROLE_BUTTON and config.repeat:
         entry["repeat"] = True
+    if config.emergency and config.role != INPUT_ROLE_UNUSED:
+        entry["emergency"] = config.emergency
     return entry
 
 

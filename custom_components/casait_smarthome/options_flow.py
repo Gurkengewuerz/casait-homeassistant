@@ -63,6 +63,7 @@ from .const import (
     OW_PROFILE_MULTISENSOR,
     POWER_ON_POLICIES,
 )
+from .emergency import EMERGENCY_NONE, emergency_target_choices
 from .helpers import (
     ONEWIRE_BOARD_MODELS,
     DigitalInputConfig,
@@ -75,6 +76,7 @@ from .helpers import (
     get_address_range,
     get_configured_ds2413_channels,
     get_configured_led_counts,
+    get_configured_module_addresses,
     get_configured_onewire_poll_intervals,
     get_configured_onewire_profiles,
     get_dm117_input_configuration,
@@ -151,8 +153,18 @@ def _collapsed(fields: dict[Any, Any]) -> section:
     return section(vol.Schema(fields), {"collapsed": True})
 
 
-def _input_fields(config: DigitalInputConfig, prefix: str = "", *, with_role: bool = True) -> dict[Any, Any]:
-    """Return the fields describing one digital input, whatever module it sits on."""
+def _input_fields(
+    config: DigitalInputConfig,
+    prefix: str = "",
+    *,
+    with_role: bool = True,
+    targets: list[SelectOptionDict] | None = None,
+) -> dict[Any, Any]:
+    """Return the fields describing one digital input, whatever module it sits on.
+
+    ``targets`` offers the emergency targets; inputs the bridge does not sample
+    itself get none.
+    """
 
     fields: dict[Any, Any] = {}
     if with_role:
@@ -163,6 +175,12 @@ def _input_fields(config: DigitalInputConfig, prefix: str = "", *, with_role: bo
     fields[vol.Required(f"{prefix}invert", default=config.invert)] = BooleanSelector()
     if with_role:
         fields[vol.Required(f"{prefix}repeat", default=config.repeat)] = BooleanSelector()
+    if targets:
+        # A target whose pair changed mode is no longer offered; the form starts at none.
+        current = config.emergency if any(choice["value"] == config.emergency for choice in targets) else None
+        fields[vol.Required(f"{prefix}emergency", default=current or EMERGENCY_NONE)] = SelectSelector(
+            SelectSelectorConfig(options=targets)
+        )
     return fields
 
 
@@ -179,11 +197,13 @@ def _input_from_form(
     device_class = data.get(f"{prefix}device_class", current.device_class)
     if role != INPUT_ROLE_CONTACT or device_class == NO_DEVICE_CLASS:
         device_class = None
+    emergency = str(data.get(f"{prefix}emergency", current.emergency or EMERGENCY_NONE))
     return DigitalInputConfig(
         role=role,
         device_class=str(device_class) if device_class else None,
         invert=bool(data.get(f"{prefix}invert", current.invert)),
         repeat=bool(data.get(f"{prefix}repeat", current.repeat)),
+        emergency=None if emergency == EMERGENCY_NONE else emergency,
     )
 
 
@@ -329,6 +349,14 @@ class OptionsFlowHandler(OptionsFlowWithReload):
             data_schema=vol.Schema({vol.Required(DEVICE_FIELD): SelectSelector(SelectSelectorConfig(options=choices))}),
         )
 
+    def _emergency_targets(self) -> list[SelectOptionDict]:
+        """Return the OM117 outputs and covers an input can act on without Home Assistant."""
+
+        addresses = set(get_configured_module_addresses(self._options).get("om117", set()))
+        if (api := self._api) is not None:
+            addresses.update(self._module_addresses(api, "om117"))
+        return emergency_target_choices(self._options, addresses)
+
     def _selected(self, kind: str) -> str | None:
         """Return the identifier part of the picked device when it is of this kind."""
 
@@ -388,9 +416,10 @@ class OptionsFlowHandler(OptionsFlowWithReload):
             vol.Required(OPT_DEBOUNCE_MS, default=settings.debounce_ms): _box(0, 255),
             vol.Required(OPT_POWER_ON, default=get_power_on_policy(self._options, "dm117", address)): _power_on(),
         }
+        targets = self._emergency_targets()
         for port in range(8):
             schema[vol.Required(f"port_{port + 1}")] = _collapsed(
-                _input_fields(configured.get(port, DigitalInputConfig()))
+                _input_fields(configured.get(port, DigitalInputConfig()), targets=targets)
             )
         return self.async_show_form(
             step_id="im117",
@@ -513,6 +542,7 @@ class OptionsFlowHandler(OptionsFlowWithReload):
             vol.Optional(NAME_FIELD, description={"suggested_value": name}): TextSelector(),
             vol.Required(OPT_DEBOUNCE_MS, default=settings.debounce_ms): _box(0, 255),
         }
+        targets = self._emergency_targets()
         for slot in range(8):
             slot_type = slot_types.get(slot, "none")
             fields: dict[Any, Any] = {
@@ -520,7 +550,9 @@ class OptionsFlowHandler(OptionsFlowWithReload):
             }
             if slot_type == "binary_input":
                 for channel, prefix in ((0, "a_"), (1, "b_")):
-                    fields.update(_input_fields(inputs.get((slot, channel), DigitalInputConfig()), prefix))
+                    fields.update(
+                        _input_fields(inputs.get((slot, channel), DigitalInputConfig()), prefix, targets=targets)
+                    )
             schema[vol.Required(f"slot_{slot + 1}")] = _collapsed(fields)
         return self.async_show_form(
             step_id="dm117",

@@ -51,12 +51,14 @@ from .services.i2cClasses.multisensor import MultisensorComponents
 from .services.i2cClasses.oneWireBus import OneWireBus
 from .services.i2cClasses.pcf8574 import PCF8574, PCF8574Reading
 from .services.smbus_proxy import (
+    CAP_LINKS,
     WATCH_FLAG_OVERFLOW,
     WATCH_KIND_DM117,
     WATCH_KIND_PCF_INPUT,
     WATCH_KIND_PCF_OUTPUT,
     BridgeFirmwareError,
     BridgeInfo,
+    BridgeLink,
     SMBus,
     SMBusProxyError,
     WatchEntry,
@@ -108,9 +110,11 @@ class CasaITApi:
         topology_settings: TopologySettings | None = None,
         onewire_names: Mapping[str, str] | None = None,
         power_on_policies: Mapping[str, str] | None = None,
+        emergency_links: tuple[list[BridgeLink], int] | None = None,
     ) -> None:
         """Initialize the API."""
         self.hass = hass
+        self._emergency_links, self._emergency_debounce_ms = emergency_links or ([], 0)
         self.bus = bus
         self.entry_id = entry_id
         self.state_update_signal = f"{SIGNAL_STATE_UPDATED}_{entry_id}"
@@ -696,6 +700,29 @@ class CasaITApi:
         backlog, self._event_backlog = self._event_backlog, None
         for payload in backlog:
             self._handle_bridge_event(payload)
+
+        await self._async_configure_emergency_links()
+
+    async def _async_configure_emergency_links(self) -> None:
+        """Hand the bridge the links it runs while Home Assistant is away.
+
+        Sent with every session: the bridge only writes its flash when the list
+        changed. A bridge without the feature, or one that refuses the list, costs
+        the emergency operation and nothing else.
+        """
+
+        if self.bridge_info is None or not self.bridge_info.capabilities & CAP_LINKS:
+            if self._emergency_links:
+                _LOGGER.warning("The bridge firmware has no emergency operation; update it to use the links")
+            return
+        try:
+            async with self.write_access():
+                stored = await self.bus.configure_links(self._emergency_links, self._emergency_debounce_ms)
+        except OSError as exc:
+            _LOGGER.warning("Could not hand the emergency links to the bridge: %s", exc)
+            return
+        if stored:
+            _LOGGER.info("Bridge stored %s emergency links", len(self._emergency_links))
 
     async def _async_configure_watch(self) -> bool:
         """Hand the bridge every PCF8574 and DM117 to read; return whether it resumed."""

@@ -31,6 +31,7 @@ from .const import (
     SERVICE_SCAN_DEVICES,
     SERVICE_SET_LED_PALETTE,
 )
+from .emergency import build_emergency_links
 from .firmware import RECOVERY_KEY, CasaITFirmwareRecovery, get_firmware_recovery
 from .helpers import (
     build_device_identifier,
@@ -391,6 +392,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> bo
         topology_settings=get_topology_settings(entry.options),
         onewire_names=get_onewire_names(entry.options),
         power_on_policies=get_power_on_policies(entry.options),
+        emergency_links=build_emergency_links(entry.options),
     )
     entry.runtime_data = api
 
