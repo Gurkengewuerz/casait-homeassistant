@@ -52,6 +52,9 @@ filterwarnings = [
     "error",
     # Ignore specific warnings from third-party libraries as needed
     # "ignore:.*custom_components.* is using deprecated.*:DeprecationWarning",
+    # Home Assistant's own async_get_clientsession replaces ClientSession.close, which
+    # the installed aiohttp warns about. Nothing in this integration does that.
+    "ignore:Setting custom ClientSession.close attribute is discouraged:DeprecationWarning",
 ]
 
 [tool.coverage.run]
