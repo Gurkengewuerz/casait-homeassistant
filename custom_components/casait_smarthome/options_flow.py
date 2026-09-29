@@ -34,6 +34,7 @@ from homeassistant.helpers.selector import (
     TextSelector,
 )
 
+from .backup import async_list_backups, backup_choices
 from .const import (
     COVER_REFERENCE_MODES,
     DEFAULT_LED_COUNT,
@@ -73,6 +74,7 @@ from .helpers import (
     PollingSettings,
     TopologySettings,
     default_onewire_profile,
+    entry_bridge_slug,
     get_address_range,
     get_configured_ds2413_channels,
     get_configured_led_counts,
@@ -212,6 +214,9 @@ def _section_data(user_input: Mapping[str, Any], key: str) -> Mapping[str, Any]:
     return value if isinstance(value, Mapping) else {}
 
 
+CONF_BACKUP = "backup"
+
+
 class OptionsFlowHandler(OptionsFlowWithReload):
     """Handle the options of one casaIT bridge."""
 
@@ -263,8 +268,38 @@ class OptionsFlowHandler(OptionsFlowWithReload):
 
         return self.async_show_menu(
             step_id="init",
-            menu_options=["device", "input_settings", "advanced_settings", "save"],
+            menu_options=["device", "input_settings", "advanced_settings", "restore", "save"],
             description_placeholders={"pending": str(len(self._edited))},
+        )
+
+    async def async_step_restore(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Replace every setting with those of a backup, of this bridge or of another one.
+
+        Taking over another bridge's backup moves its configuration to this one,
+        for example after the hardware was swapped. The entity IDs stay this
+        entry's; the relay counters are not touched.
+        """
+
+        backups = await async_list_backups(self.hass)
+        if user_input is not None:
+            backup = next((backup for backup in backups if backup.name == user_input[CONF_BACKUP]), None)
+            if backup is not None:
+                return self.async_create_entry(title="", data=dict(backup.options))
+
+        if not backups:
+            return self.async_abort(reason="no_backups")
+        own = entry_bridge_slug(self.config_entry)
+        default = next((backup.name for backup in backups if backup.bridge_slug == own), backups[0].name)
+        return self.async_show_form(
+            step_id="restore",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_BACKUP, default=default): SelectSelector(
+                        SelectSelectorConfig(options=backup_choices(backups, include_none=False))
+                    )
+                }
+            ),
+            description_placeholders={"bridge": own},
         )
 
     async def async_step_save(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:

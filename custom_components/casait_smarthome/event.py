@@ -32,9 +32,9 @@ from .const import (
 )
 from .helpers import (
     InputSettings,
-    build_bridge_slug,
     build_device_identifier,
     build_i2c_entity_id,
+    entry_bridge_slug,
     get_address_range,
     get_dm117_input_configuration,
     get_im117_port_configuration,
@@ -325,7 +325,7 @@ class CasaITButtonEvent(CasaITInputEvent):
             repeat=repeat,
         )
 
-        bridge_slug = build_bridge_slug(config_entry.entry_id, config_entry.unique_id)
+        bridge_slug = entry_bridge_slug(config_entry)
         self._attr_unique_id = f"{config_entry.entry_id}_im117_{address}_{port}_button"
         self.entity_id = build_i2c_entity_id("event", bridge_slug, "im117", address, "button", port + 1)
         self._attr_translation_placeholders = {"port": str(port + 1)}
@@ -371,7 +371,7 @@ class CasaITDM117ButtonEvent(CasaITInputEvent):
             repeat=repeat,
         )
 
-        bridge_slug = build_bridge_slug(config_entry.entry_id, config_entry.unique_id)
+        bridge_slug = entry_bridge_slug(config_entry)
         self._attr_unique_id = f"{config_entry.entry_id}_dm117_{address}_{slot}_{channel}_button"
         self.entity_id = build_i2c_entity_id(
             "event", bridge_slug, "dm117", address, "slot", slot + 1, "button", channel_name

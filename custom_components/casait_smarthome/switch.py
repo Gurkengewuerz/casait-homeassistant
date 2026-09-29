@@ -17,12 +17,12 @@ from .api import CasaITApi
 from .const import DOMAIN, DS2413_CHANNEL_OUTPUT, OM117_MODE_SWITCH, PCF8574_MAPPED_PORTS
 from .entity import CasaITOneWireEntity
 from .helpers import (
-    build_bridge_slug,
     build_device_identifier,
     build_i2c_entity_id,
     build_onewire_device_info,
     build_onewire_entity_id,
     default_onewire_profile,
+    entry_bridge_slug,
     get_address_range,
     get_configured_ds2413_channels,
     get_configured_onewire_profiles,
@@ -109,7 +109,7 @@ class CasaITSwitch(SwitchEntity):
         self._address = address
         self._port = port
         self._hardware_port = PCF8574_MAPPED_PORTS[port]
-        bridge_slug = build_bridge_slug(config_entry.entry_id, config_entry.unique_id)
+        bridge_slug = entry_bridge_slug(config_entry)
         self._attr_unique_id = f"{config_entry.entry_id}_om117_{address}_{port}"
         self.entity_id = build_i2c_entity_id("switch", bridge_slug, "om117", address, "output", port + 1)
         self._attr_translation_placeholders = {"port": str(port + 1)}
@@ -190,7 +190,7 @@ class CasaITDM117Switch(SwitchEntity):
         self._port = port
         self._slot = port + 1
         self._channel = channel
-        bridge_slug = build_bridge_slug(config_entry.entry_id, config_entry.unique_id)
+        bridge_slug = entry_bridge_slug(config_entry)
         self._attr_unique_id = f"{config_entry.entry_id}_dm117_{address}_{port}_output_{channel}"
         channel_name = "A" if channel == 0 else "B"
         self.entity_id = build_i2c_entity_id(
@@ -278,7 +278,7 @@ class CasaITDS2413Switch(CasaITOneWireEntity, SwitchEntity):
         self._channel = channel
         self._meta = meta
         channel_name = "A" if channel == 0 else "B"
-        bridge_slug = build_bridge_slug(config_entry.entry_id, config_entry.unique_id)
+        bridge_slug = entry_bridge_slug(config_entry)
         self._attr_unique_id = f"{config_entry.entry_id}_{device_id}_channel_{channel}_output"
         self.entity_id = build_onewire_entity_id("switch", bridge_slug, device_id, meta, "output", channel_name)
         self._attr_translation_placeholders = {"channel": channel_name}

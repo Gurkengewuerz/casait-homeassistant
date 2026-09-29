@@ -11,6 +11,9 @@
     },
     "reference_run": {
       "service": "mdi:arrow-collapse-vertical"
+    },
+    "backup_settings": {
+      "service": "mdi:content-save-cog"
     }
   },
   "entity": {

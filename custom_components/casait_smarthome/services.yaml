@@ -1,3 +1,9 @@
+backup_settings:
+  name: Back up settings
+  description: >-
+    Writes a settings backup of every casaIT bridge to the folder
+    casait_smarthome_backups in the configuration directory and returns the file names.
+
 scan_devices:
   name: Scan devices
   description: Scans the I2C and 1-Wire buses for supported casaIT devices.

@@ -41,11 +41,23 @@
           "port": "TCP port advertised by the bridge.",
           "timeout": "Maximum time in seconds to wait for one bridge response."
         }
+      },
+      "restore": {
+        "title": "Start from a settings backup?",
+        "description": "Settings backups of casaIT bridges were found. Pick one to take over all module and device settings, the relay counters and the bridge's old entity IDs, so automations and dashboards keep working. The backup of this bridge is preselected when there is one; with several bridges, pick the one this bridge replaces. Backups of bridges that are still set up are not offered.",
+        "data": {
+          "backup": "Settings backup"
+        },
+        "data_description": {
+          "backup": "Bridge address, the bridge part of its entity IDs, and when the backup was written. — sets the bridge up without one."
+        }
       }
     },
     "error": {
       "cannot_connect": "Failed to connect to a compatible casaIT bridge",
-      "unknown": "Unexpected error"
+      "unknown": "Unexpected error",
+      "backup_unreadable": "The backup could not be read.",
+      "backup_in_use": "The bridge of this backup is still set up. Remove that entry first, or restore its settings through the options of an existing entry."
     },
     "abort": {
       "already_configured": "This bridge is already configured",
@@ -334,6 +346,10 @@
           "description": "Drive back to the previous position after reaching the end position."
         }
       }
+    },
+    "backup_settings": {
+      "name": "Back up settings",
+      "description": "Writes a settings backup of every casaIT bridge to the folder casait_smarthome_backups in the configuration directory and returns the file names."
     }
   },
   "exceptions": {
@@ -435,6 +451,9 @@
     },
     "initialization_failed": {
       "message": "The modules on the bus could not be set up: {error}"
+    },
+    "backup_failed": {
+      "message": "Could not write the settings backup: {error}"
     }
   },
   "issues": {
@@ -659,7 +678,8 @@
           "device": "Configure a device",
           "input_settings": "Button timing",
           "advanced_settings": "Advanced: polling and bus",
-          "save": "Save and close"
+          "save": "Save and close",
+          "restore": "Restore settings from a backup"
         }
       },
       "device": {
@@ -1253,6 +1273,13 @@
           "topology_scan_interval": "How often the bus is searched for modules that disappeared. 0 scans only at startup and on request.",
           "topology_missing_scans": "How many scans in a row a module has to be missing before it is reported."
         }
+      },
+      "restore": {
+        "title": "Restore settings from a backup",
+        "description": "Replaces every setting of this bridge ({bridge}) with those of the chosen backup: an earlier state of this bridge, or another bridge's settings, for example after swapping the hardware. Entity IDs and relay counters stay as they are. Backups are written to the folder casait_smarthome_backups in the configuration directory whenever the settings change.",
+        "data": {
+          "backup": "Settings backup"
+        }
       }
     },
     "error": {
@@ -1260,7 +1287,8 @@
     },
     "abort": {
       "integration_not_ready": "The integration is not loaded yet",
-      "no_devices_found": "No devices were found on the bus"
+      "no_devices_found": "No devices were found on the bus",
+      "no_backups": "There is no settings backup yet."
     }
   },
   "device": {

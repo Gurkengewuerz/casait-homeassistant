@@ -7,12 +7,13 @@ from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass, replace
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.util import slugify
 
 from .const import (
+    CONF_BRIDGE_SLUG,
     COVER_REFERENCE_AUTO,
     COVER_REFERENCE_MODES,
     DEFAULT_BLIND_CLOSE_TIME,
@@ -68,6 +69,9 @@ from .const import (
 )
 from .services.i2cClasses.dm117 import DeviceType
 
+if TYPE_CHECKING:
+    from homeassistant.config_entries import ConfigEntry
+
 DM117_SLOT_PREFIX = "dm117_"
 DM117_SLOT_SEPARATOR = "_slot_"
 
@@ -104,6 +108,17 @@ def build_bridge_slug(config_entry_id: str, config_entry_unique_id: str | None) 
     if not identifier:
         identifier = "".join(character for character in config_entry_id.casefold() if character.isalnum())[:12]
     return f"bridge_{identifier}"
+
+
+def entry_bridge_slug(entry: ConfigEntry) -> str:
+    """Return the bridge part of an entry's entity IDs.
+
+    An entry restored from a settings backup keeps the one of the entry it replaces.
+    """
+
+    if slug := getattr(entry, "data", {}).get(CONF_BRIDGE_SLUG):
+        return str(slug)
+    return build_bridge_slug(entry.entry_id, entry.unique_id)
 
 
 def build_device_identifier(config_entry_id: str, device_kind: str, device_id: str | int) -> str:

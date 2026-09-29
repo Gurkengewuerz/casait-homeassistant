@@ -24,13 +24,13 @@ from .entity import CasaITMultisensorEntity, CasaITOneWireEntity
 from .helpers import (
     DigitalInputConfig,
     build_bridge_device_info,
-    build_bridge_slug,
     build_device_identifier,
     build_entity_id,
     build_i2c_entity_id,
     build_onewire_device_info,
     build_onewire_entity_id,
     default_onewire_profile,
+    entry_bridge_slug,
     get_address_range,
     get_configured_ds2413_channels,
     get_configured_onewire_profiles,
@@ -153,7 +153,7 @@ class CasaITBridgeConnectionSensor(BinarySensorEntity):
         """Initialize the bridge connection sensor."""
 
         self._api = api
-        bridge_slug = build_bridge_slug(entry.entry_id, entry.unique_id)
+        bridge_slug = entry_bridge_slug(entry)
         self._attr_unique_id = f"{entry.entry_id}_bridge_connection"
         self.entity_id = build_entity_id("binary_sensor", bridge_slug, "connection")
         self._attr_device_info = build_bridge_device_info(entry.entry_id)
@@ -188,7 +188,7 @@ class CasaITBinarySensor(BinarySensorEntity):
         self._invert = config.invert if config is not None else False
         if config is not None and config.device_class:
             self._attr_device_class = BinarySensorDeviceClass(config.device_class)
-        bridge_slug = build_bridge_slug(config_entry.entry_id, config_entry.unique_id)
+        bridge_slug = entry_bridge_slug(config_entry)
         self._attr_unique_id = f"{config_entry.entry_id}_im117_{address}_{port}"
         self.entity_id = build_i2c_entity_id("binary_sensor", bridge_slug, "im117", address, "input", port + 1)
         self._attr_translation_placeholders = {"port": str(port + 1)}
@@ -259,7 +259,7 @@ class CasaITDM117BinarySensor(BinarySensorEntity):
         self._invert = config.invert if config is not None else False
         if config is not None and config.device_class:
             self._attr_device_class = BinarySensorDeviceClass(config.device_class)
-        bridge_slug = build_bridge_slug(config_entry.entry_id, config_entry.unique_id)
+        bridge_slug = entry_bridge_slug(config_entry)
         self._attr_unique_id = f"{config_entry.entry_id}_dm117_{address}_{port}_input_{channel}"
         channel_name = "A" if channel == 0 else "B"
         self.entity_id = build_i2c_entity_id(
@@ -332,7 +332,7 @@ class CasaITDS2413BinarySensor(CasaITOneWireEntity, BinarySensorEntity):
         if config is not None and config.device_class:
             self._attr_device_class = BinarySensorDeviceClass(config.device_class)
         channel_name = "A" if channel == 0 else "B"
-        bridge_slug = build_bridge_slug(config_entry.entry_id, config_entry.unique_id)
+        bridge_slug = entry_bridge_slug(config_entry)
         self._attr_unique_id = f"{config_entry.entry_id}_{device_id}_channel_{channel}_input"
         self.entity_id = build_onewire_entity_id("binary_sensor", bridge_slug, device_id, meta, "input", channel_name)
         self._attr_translation_placeholders = {"channel": channel_name}

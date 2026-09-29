@@ -19,12 +19,12 @@ from .api import CasaITApi
 from .const import DEFAULT_LED_COUNT, DOMAIN
 from .entity import CasaITOneWireEntity
 from .helpers import (
-    build_bridge_slug,
     build_device_identifier,
     build_i2c_entity_id,
     build_onewire_device_info,
     build_onewire_entity_id,
     default_onewire_profile,
+    entry_bridge_slug,
     get_configured_led_counts,
     get_configured_onewire_profiles,
     get_dm117_port_configuration,
@@ -113,7 +113,7 @@ class CasaITDM117Light(LightEntity):
         self._address = address
         self._port = port
         self._slot = port + 1
-        bridge_slug = build_bridge_slug(config_entry.entry_id, config_entry.unique_id)
+        bridge_slug = entry_bridge_slug(config_entry)
         self._attr_unique_id = f"{config_entry.entry_id}_dm117_{address}_{port}_dimmer"
         self.entity_id = build_i2c_entity_id("light", bridge_slug, "dm117", address, "slot", self._slot, "dimmer")
         self._attr_translation_placeholders = {"slot": str(self._slot)}
@@ -223,7 +223,7 @@ class CasaITLEDControllerLight(CasaITOneWireEntity, LightEntity, RestoreEntity):
         self._config: LEDConfig | None = None
         self._led_count = led_count or DEFAULT_LED_COUNT
         self._attr_effect_list = list(ANIMATION_EFFECTS.values())
-        bridge_slug = build_bridge_slug(config_entry.entry_id, config_entry.unique_id)
+        bridge_slug = entry_bridge_slug(config_entry)
         self._attr_unique_id = f"{config_entry.entry_id}_{device_id}_led_controller"
         self.entity_id = build_onewire_entity_id("light", bridge_slug, device_id, meta, "led", "controller")
         self._attr_device_info = build_onewire_device_info(config_entry.entry_id, device_id, meta)

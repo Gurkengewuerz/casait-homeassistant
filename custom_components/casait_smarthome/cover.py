@@ -29,9 +29,9 @@ from .api import CasaITApi
 from .const import COVER_REFERENCE_AUTO, DOMAIN, OM117_MODE_BLIND, OM117_MODE_SHUTTER, PCF8574_MAPPED_PORTS
 from .helpers import (
     OM117PairConfig,
-    build_bridge_slug,
     build_device_identifier,
     build_i2c_entity_id,
+    entry_bridge_slug,
     get_address_range,
     get_module_name,
 )
@@ -163,7 +163,7 @@ class CasaITBlindCover(CoverEntity, RestoreEntity):
         if is_blind:
             self._attr_supported_features |= CoverEntityFeature.SET_TILT_POSITION
 
-        bridge_slug = build_bridge_slug(config_entry.entry_id, config_entry.unique_id)
+        bridge_slug = entry_bridge_slug(config_entry)
         cover_kind = "blind" if is_blind else "shutter"
         self._attr_unique_id = f"{config_entry.entry_id}_om117_{address}_pair_{pair_index + 1}_{cover_kind}"
         self.entity_id = build_i2c_entity_id("cover", bridge_slug, "om117", address, cover_kind, pair_index + 1)

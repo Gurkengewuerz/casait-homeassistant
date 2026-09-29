@@ -37,13 +37,13 @@ from .const import DOMAIN, OW_PROFILE_MULTISENSOR
 from .entity import CasaITMultisensorEntity, CasaITOneWireEntity
 from .helpers import (
     build_bridge_device_info,
-    build_bridge_slug,
     build_device_identifier,
     build_entity_id,
     build_i2c_entity_id,
     build_onewire_device_info,
     build_onewire_entity_id,
     default_onewire_profile,
+    entry_bridge_slug,
     get_configured_onewire_profiles,
     get_module_name,
 )
@@ -88,7 +88,7 @@ class OneWireEntity(CasaITOneWireEntity, SensorEntity):
         self._meta = meta
         self._bus_address: int | None = meta.get("bus_address")
         self.entity_description = description
-        bridge_slug = build_bridge_slug(entry.entry_id, entry.unique_id)
+        bridge_slug = entry_bridge_slug(entry)
         self._attr_unique_id = f"{entry.entry_id}_{device_id}_{description.key}"
         self.entity_id = build_onewire_entity_id("sensor", bridge_slug, device_id, meta, description.key)
         self._attr_device_class = description.device_class
@@ -201,7 +201,7 @@ class CasaITRelayWearSensor(SensorEntity):
         self._address = address
         self._port = port
         self.entity_description = description
-        bridge_slug = build_bridge_slug(entry.entry_id, entry.unique_id)
+        bridge_slug = entry_bridge_slug(entry)
         self._attr_unique_id = f"{entry.entry_id}_om117_{address}_{port}_{description.key}"
         self.entity_id = build_i2c_entity_id(
             "sensor", bridge_slug, "om117", address, "output", port + 1, description.key
@@ -233,7 +233,7 @@ class CasaITDebugSensor(SensorEntity):
 
         self._api = api
         self._attr_unique_id = f"{entry.entry_id}_debug"
-        bridge_slug = build_bridge_slug(entry.entry_id, entry.unique_id)
+        bridge_slug = entry_bridge_slug(entry)
         self.entity_id = build_entity_id("sensor", bridge_slug, "diagnostics")
         self._attr_device_info = build_bridge_device_info(entry.entry_id)
 
@@ -397,7 +397,7 @@ class CasaITBridgeDiagnosticSensor(SensorEntity):
 
         self._api = api
         self.entity_description = description
-        bridge_slug = build_bridge_slug(entry.entry_id, entry.unique_id)
+        bridge_slug = entry_bridge_slug(entry)
         self._attr_unique_id = f"{entry.entry_id}_bridge_{description.key}"
         self.entity_id = build_entity_id("sensor", bridge_slug, description.key)
         self._attr_device_info = build_bridge_device_info(entry.entry_id)

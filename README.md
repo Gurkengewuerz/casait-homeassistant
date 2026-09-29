@@ -496,6 +496,29 @@ data:
   color_2: [0, 0, 255]
 ```
 
+## Settings backups
+
+The integration saves its settings whenever a bridge is set up, which includes every
+reload after you changed the options, and once a day. Each bridge gets its own files
+in `casait_smarthome_backups` in the configuration directory, named after the bridge
+part of its entity IDs; the last ten changes are kept. A backup holds the bridge
+address, every module and device setting, the bridge part of the entity IDs and the
+relay counters. The **Back up settings** action writes one on demand. Home
+Assistant's own backups include the folder.
+
+**Setting a bridge up again.** Remove the broken entry, then add the bridge again.
+When backups exist, the setup offers them after the connection test. The backup of
+the bridge being added is preselected; with several bridges, the others are only
+offered on request, and bridges that are still set up are left out. Restoring takes
+over all settings and the relay counters and keeps the old entity IDs, so
+automations and dashboards keep working. Device IDs, and with them device triggers,
+are new.
+
+**Moving settings between bridges.** **Restore settings from a backup** in the
+options of a bridge replaces its settings with those of any backup - an earlier state
+of the same bridge, or another bridge's, for example after swapping the hardware.
+Its entity IDs and relay counters stay.
+
 ## Diagnostics and repairs
 
 Every OM117 output has two diagnostic sensors for relay wear: how often it switched

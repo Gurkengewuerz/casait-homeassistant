@@ -13,7 +13,7 @@ from homeassistant.helpers.entity import Entity, EntityDescription
 from . import CasaITConfigEntry
 from .api import CasaITApi
 from .const import DOMAIN
-from .helpers import build_bridge_slug, build_onewire_device_info, build_onewire_entity_id
+from .helpers import build_onewire_device_info, build_onewire_entity_id, entry_bridge_slug
 from .multisensor import MultisensorCommandError
 
 
@@ -37,7 +37,7 @@ class CasaITMultisensorEntity(Entity):
         self._api = api
         self._device_id = device_id
         self.entity_description = description
-        bridge_slug = build_bridge_slug(entry.entry_id, entry.unique_id)
+        bridge_slug = entry_bridge_slug(entry)
         self._attr_unique_id = f"{entry.entry_id}_{device_id}_{description.key}"
         self.entity_id = build_onewire_entity_id(platform_domain, bridge_slug, device_id, meta, description.key)
         self._attr_device_info = build_onewire_device_info(entry.entry_id, device_id, meta)

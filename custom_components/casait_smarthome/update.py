@@ -24,7 +24,7 @@ from .firmware import (
     get_firmware_recovery,
     normalize_version,
 )
-from .helpers import build_bridge_device_info, build_bridge_slug, build_entity_id
+from .helpers import build_bridge_device_info, build_entity_id, entry_bridge_slug
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -75,7 +75,7 @@ class CasaITBridgeFirmwareUpdate(UpdateEntity):
         self._target = target
         self._entry = entry
         self._releases: list[FirmwareRelease] = []
-        bridge_slug = build_bridge_slug(entry.entry_id, entry.unique_id)
+        bridge_slug = entry_bridge_slug(entry)
         self._attr_unique_id = f"{entry.entry_id}_bridge_firmware"
         self.entity_id = build_entity_id("update", bridge_slug, "firmware")
         self._attr_device_info = build_bridge_device_info(entry.entry_id)

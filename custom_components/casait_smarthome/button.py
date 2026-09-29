@@ -20,10 +20,10 @@ from .const import DOMAIN, OM117_MODE_PULSE, OW_PROFILE_MULTISENSOR, PCF8574_MAP
 from .entity import CasaITMultisensorEntity, raise_command_error
 from .helpers import (
     build_bridge_device_info,
-    build_bridge_slug,
     build_device_identifier,
     build_entity_id,
     build_i2c_entity_id,
+    entry_bridge_slug,
     get_module_name,
 )
 from .multisensor import MultisensorCommandError
@@ -143,7 +143,7 @@ class CasaITRescanButton(ButtonEntity):
         """Initialize the rescan button."""
 
         self._api = api
-        bridge_slug = build_bridge_slug(entry.entry_id, entry.unique_id)
+        bridge_slug = entry_bridge_slug(entry)
         self._attr_unique_id = f"{entry.entry_id}_rescan_bus"
         self.entity_id = build_entity_id("button", bridge_slug, "rescan_bus")
         self._attr_device_info = build_bridge_device_info(entry.entry_id)
@@ -176,7 +176,7 @@ class CasaITPulseButton(ButtonEntity):
         self._port = port
         self._hardware_port = PCF8574_MAPPED_PORTS[port]
         self._pulse_lock = asyncio.Lock()
-        bridge_slug = build_bridge_slug(entry.entry_id, entry.unique_id)
+        bridge_slug = entry_bridge_slug(entry)
         self._attr_unique_id = f"{entry.entry_id}_om117_{address}_{port}_pulse"
         self.entity_id = build_i2c_entity_id("button", bridge_slug, "om117", address, "pulse", port + 1)
         self._attr_translation_placeholders = {"port": str(port + 1)}

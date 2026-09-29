@@ -33,12 +33,12 @@ from .const import (
 from .entity import CasaITMultisensorEntity, CasaITOneWireEntity
 from .helpers import (
     OM117PairConfig,
-    build_bridge_slug,
     build_device_identifier,
     build_i2c_entity_id,
     build_onewire_device_info,
     build_onewire_entity_id,
     default_onewire_profile,
+    entry_bridge_slug,
     get_configured_onewire_profiles,
     get_module_name,
 )
@@ -161,7 +161,7 @@ class CasaITOM117RuntimeNumber(NumberEntity, RestoreEntity):
         self._attr_native_max_value = definition.maximum
         self._attr_native_step = definition.step
         self._attr_native_value = float(getattr(pair_config, definition.key))
-        bridge_slug = build_bridge_slug(entry.entry_id, entry.unique_id)
+        bridge_slug = entry_bridge_slug(entry)
         self._attr_unique_id = f"{entry.entry_id}_om117_{address}_pair_{pair_index + 1}_{definition.key}"
         self.entity_id = build_i2c_entity_id(
             "number", bridge_slug, "om117", address, "pair", pair_index + 1, definition.key
@@ -234,7 +234,7 @@ class CasaITLEDControllerNumber(CasaITOneWireEntity, NumberEntity):
         self._attr_translation_key = "led_animation_speed" if field == "animation_speed" else "led_count"
         if field == "led_count":
             self._attr_native_min_value = 1
-        bridge_slug = build_bridge_slug(entry.entry_id, entry.unique_id)
+        bridge_slug = entry_bridge_slug(entry)
         self._attr_unique_id = f"{entry.entry_id}_{device_id}_{field}"
         self.entity_id = build_onewire_entity_id("number", bridge_slug, device_id, meta, "led", field)
         self._attr_device_info = build_onewire_device_info(entry.entry_id, device_id, meta)

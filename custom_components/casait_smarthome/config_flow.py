@@ -18,16 +18,23 @@ from homeassistant.helpers.selector import (
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
     TextSelector,
     TextSelectorConfig,
 )
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 
-from .const import CONF_TIMEOUT, CONFIG_ENTRY_VERSION, DOMAIN
+from .backup import NO_BACKUP, SettingsBackup, async_list_backups, backup_choices
+from .const import CONF_BRIDGE_SLUG, CONF_RESTORE_FROM, CONF_TIMEOUT, CONFIG_ENTRY_VERSION, DOMAIN
+from .helpers import entry_bridge_slug
 from .options_flow import OptionsFlowHandler
 from .services.smbus_proxy import DEFAULT_PORT, DEFAULT_TIMEOUT, BridgeFirmwareError, SMBus, SMBusProxyError
 
 _LOGGER = logging.getLogger(__name__)
+
+CONF_BACKUP = "backup"
 
 
 def _bridge_data_schema(defaults: Mapping[str, Any] | None = None) -> vol.Schema:
@@ -94,6 +101,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._discovered_port: int = DEFAULT_PORT
         self._discovered_timeout: float = DEFAULT_TIMEOUT
         self._discovered_name: str | None = None
+        # A validated bridge waiting for the choice of a settings backup.
+        self._pending: tuple[str, dict[str, Any]] | None = None
+        self._backups: list[SettingsBackup] = []
 
     @staticmethod
     @callback
@@ -120,7 +130,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 _LOGGER.exception("Unexpected exception")
                 errors["base"] = "unknown"
             else:
-                return self.async_create_entry(title=info["title"], data=data)
+                return await self._async_offer_restore(info["title"], data)
 
         return self.async_show_form(step_id="user", data_schema=_bridge_data_schema(), errors=errors)
 
@@ -226,13 +236,68 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 _LOGGER.exception("Unexpected exception")
                 errors["base"] = "unknown"
             else:
-                return self.async_create_entry(title=info["title"], data=data)
+                return await self._async_offer_restore(info["title"], data)
 
         return self.async_show_form(
             step_id="zeroconf_confirm",
             data_schema=data_schema,
             errors=errors,
             description_placeholders={"host": self._discovered_host},
+        )
+
+    async def _async_offer_restore(self, title: str, data: dict[str, Any]) -> ConfigFlowResult:
+        """Offer the settings backups there are, or create the entry right away."""
+
+        in_use = {entry_bridge_slug(entry) for entry in self._async_current_entries(include_ignore=False)}
+        self._backups = await async_list_backups(self.hass, exclude_slugs=in_use)
+        if not self._backups:
+            return self.async_create_entry(title=title, data=data)
+        self._pending = (title, data)
+        return await self.async_step_restore()
+
+    def _suggested_backup(self, data: Mapping[str, Any]) -> str:
+        """Preselect the newest backup of this very bridge; with several bridges, never another one's."""
+
+        own = (backup for backup in self._backups if backup.matches(data.get(CONF_HOST), self.unique_id))
+        return next((backup.name for backup in own), NO_BACKUP)
+
+    async def async_step_restore(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Let the user start from a settings backup, keeping the old entity IDs."""
+
+        if self._pending is None:
+            return self.async_abort(reason="unknown")
+        title, data = self._pending
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            choice = user_input[CONF_BACKUP]
+            if choice == NO_BACKUP:
+                return self.async_create_entry(title=title, data=data)
+            backup = next((backup for backup in self._backups if backup.name == choice), None)
+            in_use = {entry_bridge_slug(entry) for entry in self._async_current_entries(include_ignore=False)}
+            if backup is None:
+                errors["base"] = "backup_unreadable"
+            elif backup.bridge_slug in in_use:
+                errors["base"] = "backup_in_use"
+            else:
+                return self.async_create_entry(
+                    title=title,
+                    data={**data, CONF_BRIDGE_SLUG: backup.bridge_slug, CONF_RESTORE_FROM: backup.name},
+                    options=backup.options,
+                )
+
+        return self.async_show_form(
+            step_id="restore",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_BACKUP, default=self._suggested_backup(data)): SelectSelector(
+                        SelectSelectorConfig(
+                            options=backup_choices(self._backups, include_none=True),
+                            mode=SelectSelectorMode.DROPDOWN,
+                        )
+                    )
+                }
+            ),
+            errors=errors,
         )
 
 

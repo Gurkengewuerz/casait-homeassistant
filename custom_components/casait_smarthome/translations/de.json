@@ -41,11 +41,23 @@
           "port": "Von der Bridge angek\u00fcndigter TCP-Port.",
           "timeout": "Maximale Wartezeit in Sekunden auf eine Antwort der Bridge."
         }
+      },
+      "restore": {
+        "title": "Mit einem Einstellungs-Backup starten?",
+        "description": "Es gibt Einstellungs-Backups von casaIT-Bridges. W\u00e4hle eines, um alle Modul- und Ger\u00e4teeinstellungen, die Relais-Z\u00e4hler und die bisherigen Entity-IDs der Bridge zu \u00fcbernehmen, damit Automationen und Dashboards weiter funktionieren. Das Backup dieser Bridge ist vorausgew\u00e4hlt, falls es eines gibt; bei mehreren Bridges w\u00e4hle das der Bridge, die diese ersetzt. Backups von Bridges, die noch eingerichtet sind, werden nicht angeboten.",
+        "data": {
+          "backup": "Einstellungs-Backup"
+        },
+        "data_description": {
+          "backup": "Adresse der Bridge, ihr Teil der Entity-IDs und wann das Backup entstand. \u2014 richtet die Bridge ohne Backup ein."
+        }
       }
     },
     "error": {
       "cannot_connect": "Verbindung zu einer kompatiblen casaIT-Bridge fehlgeschlagen",
-      "unknown": "Unerwarteter Fehler"
+      "unknown": "Unerwarteter Fehler",
+      "backup_unreadable": "Das Backup konnte nicht gelesen werden.",
+      "backup_in_use": "Die Bridge dieses Backups ist noch eingerichtet. Entferne zuerst diesen Eintrag oder \u00fcbernimm ihre Einstellungen \u00fcber die Optionen eines bestehenden Eintrags."
     },
     "abort": {
       "already_configured": "Diese Bridge ist bereits konfiguriert",
@@ -334,6 +346,10 @@
           "description": "Nach Erreichen der Endlage wieder die vorherige Position anfahren."
         }
       }
+    },
+    "backup_settings": {
+      "name": "Einstellungen sichern",
+      "description": "Schreibt ein Einstellungs-Backup jeder casaIT-Bridge in den Ordner casait_smarthome_backups des Konfigurationsverzeichnisses und gibt die Dateinamen zur\u00fcck."
     }
   },
   "exceptions": {
@@ -435,6 +451,9 @@
     },
     "initialization_failed": {
       "message": "Die Module am Bus konnten nicht eingerichtet werden: {error}"
+    },
+    "backup_failed": {
+      "message": "Das Einstellungs-Backup konnte nicht geschrieben werden: {error}"
     }
   },
   "issues": {
@@ -659,7 +678,8 @@
           "device": "Ger\u00e4t konfigurieren",
           "input_settings": "Taster-Timing",
           "advanced_settings": "Erweitert: Abfrage und Bus",
-          "save": "Speichern und schlie\u00dfen"
+          "save": "Speichern und schlie\u00dfen",
+          "restore": "Einstellungen aus einem Backup \u00fcbernehmen"
         }
       },
       "device": {
@@ -1253,6 +1273,13 @@
           "topology_scan_interval": "Wie oft der Bus nach verschwundenen Modulen abgesucht wird. Mit 0 nur beim Start und auf Anforderung.",
           "topology_missing_scans": "Wie oft ein Modul hintereinander fehlen muss, bevor es gemeldet wird."
         }
+      },
+      "restore": {
+        "title": "Einstellungen aus einem Backup \u00fcbernehmen",
+        "description": "Ersetzt alle Einstellungen dieser Bridge ({bridge}) durch die des gew\u00e4hlten Backups: einen fr\u00fcheren Stand dieser Bridge oder die Einstellungen einer anderen Bridge, etwa nach einem Hardwaretausch. Entity-IDs und Relais-Z\u00e4hler bleiben, wie sie sind. Backups entstehen bei jeder \u00c4nderung der Einstellungen im Ordner casait_smarthome_backups des Konfigurationsverzeichnisses.",
+        "data": {
+          "backup": "Einstellungs-Backup"
+        }
       }
     },
     "error": {
@@ -1260,7 +1287,8 @@
     },
     "abort": {
       "integration_not_ready": "Die Integration ist noch nicht geladen",
-      "no_devices_found": "Auf dem Bus wurden keine Ger\u00e4te gefunden"
+      "no_devices_found": "Auf dem Bus wurden keine Ger\u00e4te gefunden",
+      "no_backups": "Es gibt noch kein Einstellungs-Backup."
     }
   },
   "device": {

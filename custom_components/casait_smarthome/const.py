@@ -3,6 +3,10 @@
 from typing import Final
 
 CONFIG_ENTRY_VERSION: Final = 3
+# Entry data of an entry restored from a settings backup: the bridge part of the
+# entity IDs it keeps, and the backup whose relay counters its first setup takes over.
+CONF_BRIDGE_SLUG: Final = "bridge_slug"
+CONF_RESTORE_FROM: Final = "restore_from"
 DOMAIN: Final = "casait_smarthome"
 
 CONF_TIMEOUT: Final = "timeout"
@@ -138,6 +142,7 @@ SERVICE_SCAN_DEVICES: Final = "scan_devices"
 SERVICE_SET_LED_PALETTE: Final = "set_led_palette"
 SERVICE_CALIBRATE_CO2: Final = "calibrate_co2"
 SERVICE_REFERENCE_RUN: Final = "reference_run"
+SERVICE_BACKUP_SETTINGS: Final = "backup_settings"
 
 # Fresh outdoor air, the usual reference for a forced CO2 recalibration.
 DEFAULT_CO2_CALIBRATION_PPM: Final = 420

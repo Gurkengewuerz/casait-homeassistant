@@ -21,11 +21,13 @@ from homeassistant.helpers import (
 from homeassistant.helpers.typing import ConfigType
 
 from .api import CasaITApi
+from .backup import async_prepare_restore, async_setup_backups, async_write_backup
 from .const import (
     CONF_TIMEOUT,
     CONFIG_ENTRY_VERSION,
     DOMAIN,
     PLATFORMS,
+    SERVICE_BACKUP_SETTINGS,
     SERVICE_CALIBRATE_CO2,
     SERVICE_REFERENCE_RUN,
     SERVICE_SCAN_DEVICES,
@@ -171,6 +173,32 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             SERVICE_CALIBRATE_CO2,
             async_calibrate_co2_service,
             schema=CALIBRATE_CO2_SCHEMA,
+            supports_response=SupportsResponse.OPTIONAL,
+        )
+
+    async def async_backup_settings_service(call: ServiceCall) -> ServiceResponse:
+        """Write a settings backup of every loaded bridge."""
+
+        files = []
+        for api in _loaded_apis(hass):
+            if (entry := hass.config_entries.async_get_entry(api.entry_id)) is None:
+                continue
+            try:
+                files.append(await async_write_backup(hass, entry, api))
+            except OSError as err:
+                raise HomeAssistantError(
+                    translation_domain=DOMAIN,
+                    translation_key="backup_failed",
+                    translation_placeholders={"error": str(err)},
+                ) from err
+        return {"files": files}
+
+    if not hass.services.has_service(DOMAIN, SERVICE_BACKUP_SETTINGS):
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_BACKUP_SETTINGS,
+            async_backup_settings_service,
+            schema=vol.Schema({}),
             supports_response=SupportsResponse.OPTIONAL,
         )
     if not hass.services.has_service(DOMAIN, SERVICE_SCAN_DEVICES):
@@ -380,6 +408,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> bo
     ir.async_delete_issue(hass, DOMAIN, f"bridge_firmware_outdated_{entry.entry_id}")
 
     _LOGGER.debug("Successfully connected to SMBus proxy, initializing API")
+    # Before the API loads its stores, so a restored entry starts with the counters.
+    await async_prepare_restore(hass, entry)
 
     api = CasaITApi(
         hass,
@@ -436,6 +466,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> bo
         )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    await async_setup_backups(hass, entry, api)
 
     _LOGGER.info("CasaIT : Smart Home integration setup complete")
 
