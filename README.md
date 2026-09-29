@@ -511,6 +511,11 @@ say that something is.
 
 Home Assistant raises repair issues when a configured module is missing, a DM117 slot reports a different type than configured, or the bridge repeatedly fails to connect.
 
+A 1-Wire device that fails every read for an hour raises a repair issue naming the
+chip and the last error. From then on it is only tried every five minutes and its
+failures stay out of the log. The repair can try it again right away or remove the
+device; once it answers again, the issue closes on its own.
+
 The bridge counts emergency actions that did not get through - an output module
 that did not answer while Home Assistant was away. Once Home Assistant is back and
 sees such a count, it raises a repair issue naming the last failed link, from the

@@ -15,6 +15,7 @@ from homeassistant.helpers import device_registry as dr, issue_registry as ir
 
 from .config_flow import validate_input
 from .const import DOMAIN
+from .helpers import build_device_identifier
 from .multisensor import CHIP_NAMES
 
 
@@ -39,7 +40,64 @@ class CasaITRepairFlow(RepairsFlow):
             return await self.async_step_chip_missing()
         if self._issue_id.startswith("emergency_link_failed_"):
             return await self.async_step_emergency_failed()
+        if self._issue_id.startswith("onewire_faulty_"):
+            return await self.async_step_onewire_faulty()
         return await self.async_step_confirm(user_input)
+
+    # ------------------------------------------------------------------
+    # A 1-Wire device that keeps failing
+    # ------------------------------------------------------------------
+
+    async def async_step_onewire_faulty(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> data_entry_flow.FlowResult:
+        """Ask whether to keep trying the device or to remove it."""
+
+        return self.async_show_menu(
+            step_id="onewire_faulty",
+            menu_options=["retry_onewire", "forget_onewire"],
+            description_placeholders=self._onewire_placeholders,
+        )
+
+    async def async_step_retry_onewire(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> data_entry_flow.FlowResult:
+        """Read the device again at its normal rate; the issue returns if it keeps failing."""
+
+        if (api := self._loaded_api()) is not None:
+            api.onewire.retry(str(self._issue_data.get("device_id")))
+        ir.async_delete_issue(self.hass, DOMAIN, self._issue_id)
+        return self.async_create_entry(title="", data={})
+
+    async def async_step_forget_onewire(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> data_entry_flow.FlowResult:
+        """Remove the device once the user confirms it is gone or broken for good."""
+
+        if user_input is None:
+            return self.async_show_form(
+                step_id="forget_onewire",
+                data_schema=vol.Schema({}),
+                description_placeholders=self._onewire_placeholders,
+            )
+
+        entry_id = str(self._issue_data.get("entry_id") or "")
+        identifier = build_device_identifier(entry_id, "onewire", str(self._issue_data.get("device_id")))
+        device_registry = dr.async_get(self.hass)
+        if (device := device_registry.async_get_device_by_identifier((DOMAIN, identifier), entry_id)) is not None:
+            device_registry.async_remove_device(device.id)
+        ir.async_delete_issue(self.hass, DOMAIN, self._issue_id)
+        return self.async_create_entry(title="", data={})
+
+    @property
+    def _onewire_placeholders(self) -> dict[str, str]:
+        issue = ir.async_get(self.hass).async_get_issue(DOMAIN, self._issue_id)
+        placeholders = dict(issue.translation_placeholders or {}) if issue else {}
+        placeholders.setdefault("name", str(self._issue_data.get("name") or ""))
+        return placeholders
 
     # ------------------------------------------------------------------
     # Emergency operation that could not switch

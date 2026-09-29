@@ -549,6 +549,25 @@
           "bridge_unreachable": "Die Bridge war nicht erreichbar; der Z\u00e4hler bleibt stehen."
         }
       }
+    },
+    "onewire_faulty": {
+      "title": "{name} scheitert dauerhaft",
+      "fix_flow": {
+        "step": {
+          "onewire_faulty": {
+            "title": "{name} scheitert dauerhaft",
+            "description": "Jedes Lesen dieses 1-Wire-Ger\u00e4ts ({device_id}) schl\u00e4gt seit {hours} h fehl, zuletzt mit \"{reason}\". Es wird jetzt nur noch alle paar Minuten versucht, und seine Fehler landen nicht mehr im Log. Entit\u00e4ten und Verlauf bleiben, bis du anders entscheidest.",
+            "menu_options": {
+              "retry_onewire": "Jetzt erneut versuchen",
+              "forget_onewire": "Ger\u00e4t entfernen"
+            }
+          },
+          "forget_onewire": {
+            "title": "{name} entfernen",
+            "description": "Das entfernt das Ger\u00e4t samt Entit\u00e4ten und deren Verlauf. Ist der Chip noch am Bus, findet ihn der n\u00e4chste Scan wieder. Best\u00e4tige zum Entfernen."
+          }
+        }
+      }
     }
   },
   "selector": {

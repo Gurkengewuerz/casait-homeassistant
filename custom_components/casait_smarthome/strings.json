@@ -549,6 +549,25 @@
           "bridge_unreachable": "The bridge could not be reached; the count stays."
         }
       }
+    },
+    "onewire_faulty": {
+      "title": "{name} keeps failing",
+      "fix_flow": {
+        "step": {
+          "onewire_faulty": {
+            "title": "{name} keeps failing",
+            "description": "Every read of this 1-Wire device ({device_id}) has failed for {hours} h, most recently with \"{reason}\". It is now only tried every few minutes, and its failures no longer go to the log. Its entities and history stay until you choose otherwise.",
+            "menu_options": {
+              "retry_onewire": "Try it again now",
+              "forget_onewire": "Remove this device"
+            }
+          },
+          "forget_onewire": {
+            "title": "Remove {name}",
+            "description": "This removes the device along with its entities and their recorded history. If the chip is still on the bus, the next scan finds it again. Submit to confirm."
+          }
+        }
+      }
     }
   },
   "selector": {

@@ -15,6 +15,9 @@ Here one scheduler owns the timing instead:
 - Results land in one cache and are pushed to the entities over the dispatcher.
 - A device is only reported unavailable after several failed reads in a row,
   so a single disturbed transaction does not make entities flicker.
+- A device that keeps failing for an hour raises a repair issue. From then on it
+  is only tried every few minutes and its failures stay out of the log, until it
+  answers again or the repair gives up on it.
 """
 
 from __future__ import annotations
@@ -28,9 +31,10 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any
 
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
-from .const import DEFAULT_OW_POLL_INTERVAL, OW_PROFILE_LED, OW_PROFILE_MULTISENSOR
+from .const import DEFAULT_OW_POLL_INTERVAL, DOMAIN, OPT_NAME, OW_PROFILE_LED, OW_PROFILE_MULTISENSOR
 from .health import LinkHealth
 from .multisensor import SAMPLE_INTERVAL
 from .services.i2cClasses.ds18b20 import CONVERSION_TIME as DS18B20_CONVERSION_TIME
@@ -44,6 +48,11 @@ _LOGGER = logging.getLogger(__name__)
 # Failed reads in a row before a device's value is dropped and its entities
 # become unavailable.
 MAX_FAILURES = 3
+# How long a device has to fail without a single good read before it counts as
+# faulty and raises a repair issue.
+FAULTY_AFTER = 3600.0
+# A faulty device is still tried, but no more often than this.
+FAULTY_RETRY_INTERVAL = 300.0
 # Longest the scheduler sleeps between checks, so a job added by a rescan does
 # not wait for a long-interval job to come due first.
 MAX_IDLE = 1.0
@@ -74,6 +83,10 @@ class CasaITOneWireScheduler:
         self._api = api
         self._values: dict[str, Any] = {}
         self._failures: dict[str, int] = {}
+        # Wall-clock time of the first failure in the current streak.
+        self._failing_since: dict[str, float] = {}
+        # Devices with a raised repair issue.
+        self._faulty: set[str] = set()
         self._jobs: dict[str, _Job] = {}
         self._task: asyncio.Task | None = None
         self._health: dict[str, LinkHealth] = defaultdict(LinkHealth)
@@ -103,7 +116,7 @@ class CasaITOneWireScheduler:
     def set_value(self, device_id: str, value: Any) -> None:
         """Publish a value learned outside a scheduled read, typically from a write."""
 
-        self._failures.pop(device_id, None)
+        self._recovered(device_id)
         self._values[device_id] = value
         async_dispatcher_send(self._api.hass, self.signal(device_id))
 
@@ -126,6 +139,7 @@ class CasaITOneWireScheduler:
             "interval_s": job.interval if job is not None else None,
             "job": job.key if job is not None else None,
             "available": device_id in self._values,
+            "faulty": device_id in self._faulty,
         }
         if job is not None and job.key.startswith("multisensor/"):
             data["chips"] = self._api.multisensor.chip_diagnostics(device_id)
@@ -216,6 +230,9 @@ class CasaITOneWireScheduler:
         for device_id in [device_id for device_id in self._values if device_id not in present]:
             self._values.pop(device_id)
             self._failures.pop(device_id, None)
+        for device_id in [device_id for device_id in self._failing_since if device_id not in present]:
+            self._failing_since.pop(device_id)
+            self._faulty.discard(device_id)
         self._wake.set()
 
     def start(self) -> None:
@@ -247,7 +264,10 @@ class CasaITOneWireScheduler:
                     continue
                 # Measured from the planned slot, not from now, so the rate holds;
                 # but never catch up in a burst after a stall.
-                job.next_due = max(job.next_due + job.interval, now + job.interval / 2)
+                interval = job.interval
+                if (devices := self._job_devices(job)) and self._faulty.issuperset(devices):
+                    interval = max(interval, FAULTY_RETRY_INTERVAL)
+                job.next_due = max(job.next_due + interval, now + interval / 2)
                 job.task = self._api.hass.async_create_background_task(self._run_job(job), f"casait_onewire_{job.key}")
 
             pending = [job.next_due for job in self._jobs.values() if job.task is None]
@@ -271,10 +291,71 @@ class CasaITOneWireScheduler:
     # Results
     # ------------------------------------------------------------------
 
-    def _succeeded(self, device_id: str, value: Any) -> None:
-        self._health[device_id].success(time.time(), self._busy.pop(device_id, None))
+    @staticmethod
+    def _job_devices(job: _Job) -> tuple[str, ...]:
+        """Return the devices a job reads."""
+
+        if job.devices:
+            return job.devices
+        _, _, device_id = job.key.partition("/")
+        return (device_id,) if device_id else ()
+
+    def issue_id(self, device_id: str) -> str:
+        """Return the repair issue raised for a device that keeps failing."""
+
+        return f"onewire_faulty_{self._api.entry_id}_{device_id}"
+
+    def _recovered(self, device_id: str) -> None:
+        """End a failure streak: the device answered."""
+
         if self._failures.pop(device_id, 0) >= MAX_FAILURES:
             _LOGGER.info("1-Wire device %s answers again", device_id)
+        self._failing_since.pop(device_id, None)
+        if device_id in self._faulty:
+            self._faulty.discard(device_id)
+            ir.async_delete_issue(self._api.hass, DOMAIN, self.issue_id(device_id))
+
+    def retry(self, device_id: str) -> None:
+        """Give a faulty device a fresh start: read it now and wait another hour before judging."""
+
+        self._failing_since.pop(device_id, None)
+        self._faulty.discard(device_id)
+        ir.async_delete_issue(self._api.hass, DOMAIN, self.issue_id(device_id))
+        self.request_refresh(device_id)
+
+    def _raise_faulty(self, device_id: str, reason: str, failures: int) -> None:
+        self._faulty.add(device_id)
+        meta = self._api.ow_devices.get(device_id, {})
+        name = str(meta.get(OPT_NAME) or "").strip() or f"{meta.get('device_type') or '1-Wire'} {device_id}"
+        hours = round((time.time() - self._failing_since[device_id]) / 3600, 1)
+        _LOGGER.warning(
+            "1-Wire device %s has failed every read for %s h (%s); raised a repair issue and retrying every %s s",
+            device_id,
+            hours,
+            reason,
+            round(FAULTY_RETRY_INTERVAL),
+        )
+        ir.async_create_issue(
+            self._api.hass,
+            DOMAIN,
+            self.issue_id(device_id),
+            data={"entry_id": self._api.entry_id, "device_id": device_id, "name": name},
+            is_fixable=True,
+            is_persistent=False,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key="onewire_faulty",
+            translation_placeholders={
+                "name": name,
+                "device_id": device_id,
+                "reason": reason,
+                "hours": str(hours),
+                "failures": str(failures),
+            },
+        )
+
+    def _succeeded(self, device_id: str, value: Any) -> None:
+        self._health[device_id].success(time.time(), self._busy.pop(device_id, None))
+        self._recovered(device_id)
         previous = self._values.get(device_id)
         self._values[device_id] = value
         if previous != value:
@@ -284,7 +365,12 @@ class CasaITOneWireScheduler:
         self._busy.pop(device_id, None)
         self._health[device_id].failure(time.time(), reason)
         failures = self._failures[device_id] = self._failures.get(device_id, 0) + 1
+        since = self._failing_since.setdefault(device_id, time.time())
+        if device_id in self._faulty:
+            return
         _LOGGER.debug("Reading 1-Wire device %s failed (%s), %s in a row", device_id, reason, failures)
+        if failures >= MAX_FAILURES and time.time() - since >= FAULTY_AFTER:
+            self._raise_faulty(device_id, reason, failures)
         if failures == MAX_FAILURES:
             _LOGGER.warning("1-Wire device %s failed %s reads in a row; marking it unavailable", device_id, failures)
             if self._values.pop(device_id, None) is not None:
@@ -297,7 +383,8 @@ class CasaITOneWireScheduler:
         try:
             return await self._api.async_onewire_job(device_id, func)
         except Exception as err:  # noqa: BLE001
-            _LOGGER.debug("1-Wire transaction on %s failed: %s", device_id, err)
+            if device_id not in self._faulty:
+                _LOGGER.debug("1-Wire transaction on %s failed: %s", device_id, err)
             return None
         finally:
             self._busy[device_id] += time.monotonic() - started
