@@ -638,6 +638,16 @@
         "restore": "Letzten Zustand wiederherstellen",
         "off": "Aus bleiben"
       }
+    },
+    "button_press": {
+      "options": {
+        "single_press": "Gedr\u00fcckt",
+        "single_release": "Losgelassen",
+        "double_press": "Doppelt gedr\u00fcckt",
+        "long_press": "Lang gedr\u00fcckt",
+        "long_release": "Nach langem Dr\u00fccken losgelassen",
+        "repeat": "Wiederholt, solange gehalten"
+      }
     }
   },
   "options": {
@@ -1256,6 +1266,18 @@
   "device": {
     "bridge": {
       "name": "casaIT-Bridge"
+    }
+  },
+  "triggers": {
+    "button": {
+      "name": "Taster bet\u00e4tigt",
+      "description": "L\u00f6st aus, wenn ein casaIT-Taster auf die gew\u00e4hlte Weise bet\u00e4tigt wird.",
+      "fields": {
+        "press": {
+          "name": "Bet\u00e4tigung",
+          "description": "Wie der Taster bet\u00e4tigt werden muss."
+        }
+      }
     }
   }
 }

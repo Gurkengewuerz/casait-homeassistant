@@ -118,5 +118,10 @@
         "default": "mdi:delta"
       }
     }
+  },
+  "triggers": {
+    "button": {
+      "trigger": "mdi:gesture-tap-button"
+    }
   }
 }

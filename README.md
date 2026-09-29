@@ -82,7 +82,8 @@ described the same way: a role (_contact_, _button_, or _unused_), an optional
 device class, an inversion flag for normally closed contacts, and for buttons an
 opt-in repeat while held. The role decides which entity, if any, the input
 becomes. Button inputs are event entities, so automations react to them with
-Home Assistant's own **Event received** trigger.
+the integration's **Button pressed** trigger or Home Assistant's own **Event
+received** trigger.
 
 ## Home Assistant features
 
@@ -323,6 +324,27 @@ automation:
           entity_id: light.kitchen
         data:
           brightness_step_pct: 10
+```
+
+The integration's own **Button pressed** trigger says the same in the terms of a
+button: pick the button, or the IM117 or DM117 device, or a whole area, and choose
+how it has to be pressed - pressed, held down, double pressed, released, or
+repeating while held. Event entities of other integrations in a device or area are
+left out.
+
+```yaml
+automation:
+  - triggers:
+      - trigger: casait_smarthome.button
+        target:
+          entity_id: event.bridge_<id>_im117_0x38_button_3
+        options:
+          press:
+            - long_press
+    actions:
+      - action: light.turn_off
+        target:
+          entity_id: light.hallway
 ```
 
 Listen to the raw event instead, when you want one automation for several buttons:

@@ -638,6 +638,16 @@
         "restore": "Restore the last state",
         "off": "Stay off"
       }
+    },
+    "button_press": {
+      "options": {
+        "single_press": "Pressed",
+        "single_release": "Released",
+        "double_press": "Double pressed",
+        "long_press": "Held down",
+        "long_release": "Released after holding",
+        "repeat": "Repeating while held"
+      }
     }
   },
   "options": {
@@ -1256,6 +1266,18 @@
   "device": {
     "bridge": {
       "name": "casaIT bridge"
+    }
+  },
+  "triggers": {
+    "button": {
+      "name": "Button pressed",
+      "description": "Triggers when a casaIT button is pressed the chosen way.",
+      "fields": {
+        "press": {
+          "name": "Press",
+          "description": "How the button has to be pressed."
+        }
+      }
     }
   }
 }

@@ -1,0 +1,21 @@
+button:
+  target:
+    entity:
+      integration: casait_smarthome
+      domain: event
+  fields:
+    press:
+      required: true
+      default:
+        - single_press
+      selector:
+        select:
+          translation_key: button_press
+          multiple: true
+          options:
+            - single_press
+            - single_release
+            - double_press
+            - long_press
+            - long_release
+            - repeat
