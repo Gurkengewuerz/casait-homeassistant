@@ -89,6 +89,7 @@ MAX_DELAY_MS = 10
 
 # The bridge refuses longer timers.
 MAX_TIMED_OUTPUT_MS = 3_600_000
+
 # [status][command][0xAA][boot id, 4 bytes][uptime in s, 4 bytes][version length][version]
 PING_HEADER_SIZE = 12
 # After the version: [capabilities][fast sweep us, 2][slow sweep us, 2][I2C retries, 4]
@@ -182,7 +183,18 @@ def parse_watch_event(payload: bytes) -> WatchEvent:
 
 
 class BridgeFirmwareError(SMBusProxyError):
-    """The bridge answers, but runs firmware this integration cannot work with."""
+    """The bridge answers, but runs firmware this integration cannot work with.
+
+    ``version`` and ``boot_id`` are what the ping still told, None for firmware
+    older than the fields.
+    """
+
+    def __init__(self, message: str, version: str | None = None, boot_id: int | None = None) -> None:
+        """Keep what the ping reported alongside the message."""
+
+        super().__init__(message)
+        self.version = version
+        self.boot_id = boot_id
 
 
 class I2CBatchError(OSError):
@@ -913,7 +925,11 @@ class SMBus:
         tail_start = PING_HEADER_SIZE + response[11]
         tail = response[tail_start : tail_start + PING_TAIL_SIZE]
         if len(tail) < PING_TAIL_SIZE or tail[0] & REQUIRED_CAPABILITIES != REQUIRED_CAPABILITIES:
-            raise BridgeFirmwareError("The bridge firmware is too old for this integration")
+            raise BridgeFirmwareError(
+                "The bridge firmware is too old for this integration",
+                version=response[PING_HEADER_SIZE:tail_start].decode("ascii", "replace") or None,
+                boot_id=int.from_bytes(response[3:7], "big"),
+            )
         return BridgeInfo(
             boot_id=int.from_bytes(response[3:7], "big"),
             uptime_s=int.from_bytes(response[7:11], "big"),

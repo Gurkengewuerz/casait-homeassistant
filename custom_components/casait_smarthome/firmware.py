@@ -4,17 +4,29 @@ Releases come from the public Forgejo repository of the casaIT modules. Only
 published, stable releases that carry the bridge image count. An image is
 checked against the release's SHA256SUMS.txt before it is sent to the bridge,
 which takes it over HTTP on its ArduinoOTA port and restarts into it.
+
+A bridge whose firmware is too old for the integration still gets this far: the
+entry then loads in recovery mode with nothing but the update entity, so the fix
+does not need PlatformIO.
 """
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass
 import hashlib
 import logging
-from typing import Any
+import time
+from typing import Any, Protocol
 
 from aiohttp import ClientError, ClientSession, ClientTimeout, encode_basic_auth
+
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+from .const import DOMAIN
+from .services.smbus_proxy import BridgeFirmwareError, BridgeInfo, SMBus, SMBusProxyError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -35,6 +47,13 @@ ESP_IMAGE_MAGIC = 0xE9
 
 DOWNLOAD_TIMEOUT = ClientTimeout(total=60)
 UPLOAD_TIMEOUT = ClientTimeout(total=300, sock_connect=10)
+
+FIRMWARE_RESTART_TIMEOUT = 120.0
+FIRMWARE_RESTART_POLL = 2.0
+
+# What the update entity shows for a bridge too old to report its version.
+UNKNOWN_FIRMWARE = "unknown"
+RECOVERY_KEY = "firmware_recovery"
 
 
 class FirmwareError(Exception):
@@ -183,3 +202,88 @@ async def async_upload_image(
         if sent < len(image):
             raise FirmwareError("firmware_upload_failed") from err
         _LOGGER.debug("Bridge closed the connection after the image: %s", err)
+
+
+async def async_flash_bridge(
+    session: ClientSession,
+    bus: SMBus,
+    image: bytes,
+    version: str,
+    previous_boot_id: int | None,
+    progress: Callable[[float], None],
+) -> BridgeInfo | None:
+    """Send an image to the bridge and wait until it restarted into ``version``.
+
+    Returns None when the bridge runs ``version`` but that release is too old for
+    this integration; the reload that follows sets the entry up in recovery mode.
+    """
+
+    await async_upload_image(session, bus.host, image, progress)
+
+    deadline = time.monotonic() + FIRMWARE_RESTART_TIMEOUT
+    while time.monotonic() < deadline:
+        await asyncio.sleep(FIRMWARE_RESTART_POLL)
+        try:
+            info = await bus.ping_info()
+        except BridgeFirmwareError as err:
+            if err.boot_id == previous_boot_id:
+                continue
+            if normalize_version(err.version or "") != normalize_version(version):
+                raise FirmwareError("firmware_not_confirmed") from err
+            _LOGGER.info("Bridge runs firmware %s, which is too old for this integration", err.version)
+            return None
+        except SMBusProxyError as err:
+            raise FirmwareError("firmware_not_confirmed") from err
+        if info is None or info.boot_id == previous_boot_id:
+            continue
+        if normalize_version(info.version) != normalize_version(version):
+            _LOGGER.error("Bridge restarted with firmware %s instead of %s", info.version, version)
+            raise FirmwareError("firmware_not_confirmed")
+        _LOGGER.info("Bridge runs firmware %s", info.version)
+        return info
+    raise FirmwareError("firmware_not_confirmed")
+
+
+class FirmwareTarget(Protocol):
+    """What the update entity needs from a bridge: its firmware, and a way to replace it."""
+
+    @property
+    def firmware_version(self) -> str | None:
+        """Return the firmware the bridge reported, None before it answered."""
+
+    async def async_install_firmware(self, image: bytes, version: str, progress: Callable[[float], None]) -> None:
+        """Flash the bridge and wait until it runs ``version``."""
+
+
+class CasaITFirmwareRecovery:
+    """A bridge whose firmware is too old for anything but being updated."""
+
+    def __init__(self, hass: HomeAssistant, bus: SMBus, version: str | None, boot_id: int | None) -> None:
+        """Keep the connection the setup opened; the firmware check needs it afterwards."""
+
+        self.hass = hass
+        self.bus = bus
+        self._version = version
+        self._boot_id = boot_id
+
+    @property
+    def firmware_version(self) -> str | None:
+        """Return what the old ping reported, or a placeholder when it carried no version."""
+
+        return self._version or UNKNOWN_FIRMWARE
+
+    async def async_install_firmware(self, image: bytes, version: str, progress: Callable[[float], None]) -> None:
+        """Flash the bridge; the caller reloads the entry, which then sets up normally."""
+
+        info = await async_flash_bridge(
+            async_get_clientsession(self.hass), self.bus, image, version, self._boot_id, progress
+        )
+        if info is not None:
+            self._version = info.version
+            self._boot_id = info.boot_id
+
+
+def get_firmware_recovery(hass: HomeAssistant, entry_id: str) -> CasaITFirmwareRecovery | None:
+    """Return the recovery session of an entry that loaded in recovery mode."""
+
+    return hass.data.get(DOMAIN, {}).get(RECOVERY_KEY, {}).get(entry_id)

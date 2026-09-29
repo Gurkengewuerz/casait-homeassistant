@@ -15,9 +15,16 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import CasaITConfigEntry
-from .api import CasaITApi
 from .const import DOMAIN
-from .firmware import FirmwareError, FirmwareRelease, async_download_image, async_fetch_releases, normalize_version
+from .firmware import (
+    FirmwareError,
+    FirmwareRelease,
+    FirmwareTarget,
+    async_download_image,
+    async_fetch_releases,
+    get_firmware_recovery,
+    normalize_version,
+)
 from .helpers import build_bridge_slug, build_device_identifier, build_entity_id
 
 _LOGGER = logging.getLogger(__name__)
@@ -34,11 +41,14 @@ async def async_setup_entry(
     entry: CasaITConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up the bridge firmware update."""
+    """Set up the bridge firmware update, also for a bridge in firmware recovery."""
 
-    api = entry.runtime_data
-    await api.async_wait_initialized()
-    async_add_entities([CasaITBridgeFirmwareUpdate(api, entry)], update_before_add=True)
+    target: FirmwareTarget | None = get_firmware_recovery(hass, entry.entry_id)
+    if target is None:
+        api = entry.runtime_data
+        await api.async_wait_initialized()
+        target = api
+    async_add_entities([CasaITBridgeFirmwareUpdate(target, entry)], update_before_add=True)
 
 
 class CasaITBridgeFirmwareUpdate(UpdateEntity):
@@ -60,10 +70,10 @@ class CasaITBridgeFirmwareUpdate(UpdateEntity):
         | UpdateEntityFeature.RELEASE_NOTES
     )
 
-    def __init__(self, api: CasaITApi, entry: CasaITConfigEntry) -> None:
+    def __init__(self, target: FirmwareTarget, entry: CasaITConfigEntry) -> None:
         """Initialize the update entity for one bridge."""
 
-        self._api = api
+        self._target = target
         self._entry = entry
         self._releases: list[FirmwareRelease] = []
         bridge_slug = build_bridge_slug(entry.entry_id, entry.unique_id)
@@ -80,8 +90,8 @@ class CasaITBridgeFirmwareUpdate(UpdateEntity):
     def installed_version(self) -> str | None:
         """Return the firmware the bridge reported in its last ping."""
 
-        info = self._api.bridge_info
-        return normalize_version(info.version) if info else None
+        version = self._target.firmware_version
+        return normalize_version(version) if version else None
 
     @property
     def latest_version(self) -> str | None:
@@ -135,7 +145,7 @@ class CasaITBridgeFirmwareUpdate(UpdateEntity):
             raise HomeAssistantError(translation_domain=DOMAIN, translation_key=err.reason) from err
 
         try:
-            await self._api.async_install_firmware(
+            await self._target.async_install_firmware(
                 image, release.version, lambda share: self._report_progress(share * UPLOAD_SHARE)
             )
         except FirmwareError as err:

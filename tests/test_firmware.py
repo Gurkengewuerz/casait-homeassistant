@@ -12,7 +12,7 @@ from aiohttp.test_utils import TestServer
 from bridge_fakes import FakeBridge
 import pytest
 
-from custom_components.casait_smarthome import api as api_module
+from custom_components.casait_smarthome import firmware as firmware_module
 from custom_components.casait_smarthome.api import CasaITApi
 from custom_components.casait_smarthome.firmware import (
     FIRMWARE_RELEASES_URL,
@@ -241,8 +241,8 @@ async def test_an_installation_waits_for_the_bridge_to_run_the_new_version(hass)
     upload = AsyncMock(side_effect=lambda *args: bridge.restart())
 
     with (
-        patch.object(api_module, "async_upload_image", upload),
-        patch.object(api_module, "FIRMWARE_RESTART_POLL", 0.01),
+        patch.object(firmware_module, "async_upload_image", upload),
+        patch.object(firmware_module, "FIRMWARE_RESTART_POLL", 0.01),
     ):
         await api.async_install_firmware(IMAGE, "0.0.1", lambda _share: None)
 
@@ -256,8 +256,8 @@ async def test_a_bridge_back_on_another_version_fails_the_installation(hass) -> 
     api = await _installing_api(hass, bridge)
 
     with (
-        patch.object(api_module, "async_upload_image", AsyncMock(side_effect=lambda *args: bridge.restart())),
-        patch.object(api_module, "FIRMWARE_RESTART_POLL", 0.01),
+        patch.object(firmware_module, "async_upload_image", AsyncMock(side_effect=lambda *args: bridge.restart())),
+        patch.object(firmware_module, "FIRMWARE_RESTART_POLL", 0.01),
         pytest.raises(FirmwareError, match="firmware_not_confirmed"),
     ):
         await api.async_install_firmware(IMAGE, "0.0.1", lambda _share: None)
@@ -269,9 +269,9 @@ async def test_a_bridge_that_never_restarts_fails_the_installation(hass) -> None
     api = await _installing_api(hass, bridge)
 
     with (
-        patch.object(api_module, "async_upload_image", AsyncMock()),
-        patch.object(api_module, "FIRMWARE_RESTART_POLL", 0.01),
-        patch.object(api_module, "FIRMWARE_RESTART_TIMEOUT", 0.05),
+        patch.object(firmware_module, "async_upload_image", AsyncMock()),
+        patch.object(firmware_module, "FIRMWARE_RESTART_POLL", 0.01),
+        patch.object(firmware_module, "FIRMWARE_RESTART_TIMEOUT", 0.05),
         pytest.raises(FirmwareError, match="firmware_not_confirmed"),
     ):
         await api.async_install_firmware(IMAGE, "0.0.1", lambda _share: None)
@@ -285,10 +285,7 @@ ENTRY = SimpleNamespace(entry_id="entry-test", unique_id="AA:BB:CC:DD:EE:FF", op
 
 
 def _entity(hass, version: str, releases: list[FirmwareRelease]) -> tuple[CasaITBridgeFirmwareUpdate, Any]:
-    api = SimpleNamespace(
-        bridge_info=BridgeInfo(boot_id=1, uptime_s=0, version=version),
-        async_install_firmware=AsyncMock(),
-    )
+    api = SimpleNamespace(firmware_version=version, async_install_firmware=AsyncMock())
     entity = CasaITBridgeFirmwareUpdate(api, ENTRY)  # type: ignore[arg-type] - Test double for CasaITApi.
     entity.hass = hass
     entity.async_write_ha_state = lambda: None  # type: ignore[method-assign] - Not added to a platform.

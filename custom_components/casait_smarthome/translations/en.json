@@ -45,8 +45,7 @@
     },
     "error": {
       "cannot_connect": "Failed to connect to a compatible casaIT bridge",
-      "unknown": "Unexpected error",
-      "firmware_outdated": "The bridge runs firmware that is too old; update the bridge"
+      "unknown": "Unexpected error"
     },
     "abort": {
       "already_configured": "This bridge is already configured",
@@ -371,9 +370,6 @@
     "reference_needs_overrun": {
       "message": "A reference run needs an overrun time greater than zero."
     },
-    "bridge_firmware_outdated": {
-      "message": "The bridge runs firmware that is too old for this integration. Update the bridge firmware."
-    },
     "firmware_release_unknown": {
       "message": "There is no stable bridge firmware release {version}."
     },
@@ -490,6 +486,10 @@
           "still_missing": "The sensor did not answer."
         }
       }
+    },
+    "bridge_firmware_outdated": {
+      "title": "Bridge firmware too old",
+      "description": "The bridge runs firmware {version}, which is too old for this integration. Until it is updated, only the firmware update of the bridge is available. Install the offered release from the bridge's update entity; the integration then sets everything up again. If the update entity reports no newer release, the firmware this integration needs has not been released yet."
     }
   },
   "selector": {

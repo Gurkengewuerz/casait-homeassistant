@@ -10,7 +10,7 @@ from homeassistant.components.cover import DOMAIN as COVER_DOMAIN
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
-from homeassistant.exceptions import ConfigEntryError, ConfigEntryNotReady, HomeAssistantError, ServiceValidationError
+from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import (
     config_validation as cv,
     device_registry as dr,
@@ -31,6 +31,7 @@ from .const import (
     SERVICE_SCAN_DEVICES,
     SERVICE_SET_LED_PALETTE,
 )
+from .firmware import RECOVERY_KEY, CasaITFirmwareRecovery, get_firmware_recovery
 from .helpers import (
     build_device_identifier,
     get_configured_module_addresses,
@@ -57,6 +58,8 @@ _LOGGER = logging.getLogger(__name__)
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 SETUP_FAILURES_KEY = "setup_failures"
 BRIDGE_REPAIR_THRESHOLD = 3
+# The only platform of an entry whose bridge firmware is too old.
+RECOVERY_PLATFORMS = ["update"]
 
 
 type CasaITConfigEntry = ConfigEntry[CasaITApi]
@@ -84,6 +87,16 @@ CALIBRATE_CO2_SCHEMA = vol.Schema(
 )
 
 
+def _loaded_apis(hass: HomeAssistant) -> list[CasaITApi]:
+    """Return the API of every loaded entry; one in firmware recovery has none."""
+
+    return [
+        api
+        for entry in hass.config_entries.async_entries(DOMAIN)
+        if entry.state is ConfigEntryState.LOADED and isinstance(api := getattr(entry, "runtime_data", None), CasaITApi)
+    ]
+
+
 def _resolve_onewire_target(hass: HomeAssistant, target: str) -> tuple[CasaITApi, str] | None:
     """Find the bridge and ROM ID behind a service target.
 
@@ -91,16 +104,16 @@ def _resolve_onewire_target(hass: HomeAssistant, target: str) -> tuple[CasaITApi
     a bare 1-Wire ROM ID for scripts written before the picker existed.
     """
 
-    loaded = [entry for entry in hass.config_entries.async_entries(DOMAIN) if entry.state is ConfigEntryState.LOADED]
+    loaded = _loaded_apis(hass)
     if (device := dr.async_get(hass).async_get(target)) is not None:
-        for entry in loaded:
-            prefix = build_device_identifier(entry.entry_id, "onewire", "")
+        for api in loaded:
+            prefix = build_device_identifier(api.entry_id, "onewire", "")
             for domain, identifier in device.identifiers:
                 if domain == DOMAIN and identifier.startswith(prefix):
-                    return entry.runtime_data, identifier.removeprefix(prefix)
+                    return api, identifier.removeprefix(prefix)
         return None
     rom_id = target.strip().lower()
-    return next(((entry.runtime_data, rom_id) for entry in loaded if rom_id in entry.runtime_data.ow_devices), None)
+    return next(((api, rom_id) for api in loaded if rom_id in api.ow_devices), None)
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -110,12 +123,10 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     async def async_scan_devices_service(call: ServiceCall) -> None:
         """Scan for devices."""
-        for entry in hass.config_entries.async_entries(DOMAIN):
-            if entry.state is not ConfigEntryState.LOADED:
-                continue
+        for api in _loaded_apis(hass):
             # Reload after enumeration so newly discovered or removed hardware
             # is reflected by every entity platform immediately.
-            await entry.runtime_data.async_rescan_devices()
+            await api.async_rescan_devices()
 
     async def async_set_led_palette_service(call: ServiceCall) -> None:
         """Write up to five colors to one DS28E17 LED controller."""
@@ -345,8 +356,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> bo
     try:
         responded = await bus.ping_info()
     except BridgeFirmwareError as err:
-        await bus.close()
-        raise ConfigEntryError(translation_domain=DOMAIN, translation_key="bridge_firmware_outdated") from err
+        return await _async_setup_firmware_recovery(hass, entry, bus, err)
     except (SMBusProxyError, OSError) as err:
         await bus.close()
         _record_bridge_setup_failure(hass, entry)
@@ -357,6 +367,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> bo
         raise ConfigEntryNotReady("SMBus proxy did not respond to ping")
 
     _clear_bridge_setup_failure(hass, entry)
+    ir.async_delete_issue(hass, DOMAIN, f"bridge_firmware_outdated_{entry.entry_id}")
 
     _LOGGER.debug("Successfully connected to SMBus proxy, initializing API")
 
@@ -421,8 +432,54 @@ async def async_setup_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> bo
     return True
 
 
+async def _async_setup_firmware_recovery(
+    hass: HomeAssistant, entry: CasaITConfigEntry, bus: SMBus, err: BridgeFirmwareError
+) -> bool:
+    """Load only the firmware update of a bridge that is too old for everything else.
+
+    Refusing the entry would take the update entity with it and leave PlatformIO as
+    the only way out. The reload after a successful update sets the entry up
+    normally.
+    """
+
+    _clear_bridge_setup_failure(hass, entry)
+    recovery = CasaITFirmwareRecovery(hass, bus, err.version, err.boot_id)
+    hass.data.setdefault(DOMAIN, {}).setdefault(RECOVERY_KEY, {})[entry.entry_id] = recovery
+    _LOGGER.warning(
+        "Bridge firmware %s is too old for this integration; only the firmware update is available",
+        recovery.firmware_version,
+    )
+
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        f"bridge_firmware_outdated_{entry.entry_id}",
+        is_fixable=False,
+        severity=ir.IssueSeverity.ERROR,
+        translation_key="bridge_firmware_outdated",
+        translation_placeholders={"version": recovery.firmware_version or ""},
+    )
+    dr.async_get(hass).async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, build_device_identifier(entry.entry_id, "bridge", "controller"))},
+        name="casaIT bridge",
+        manufacturer="casaIT",
+        model="SMBus proxy",
+        sw_version=err.version,
+    )
+    await hass.config_entries.async_forward_entry_setups(entry, RECOVERY_PLATFORMS)
+    return True
+
+
 async def async_unload_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> bool:
     """Unload a config entry."""
+    if (recovery := get_firmware_recovery(hass, entry.entry_id)) is not None:
+        unload_ok = await hass.config_entries.async_unload_platforms(entry, RECOVERY_PLATFORMS)
+        if unload_ok:
+            hass.data[DOMAIN][RECOVERY_KEY].pop(entry.entry_id, None)
+            await recovery.bus.close()
+        return unload_ok
+
     api = entry.runtime_data
 
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
@@ -444,6 +501,6 @@ async def async_remove_config_entry_device(
 ) -> bool:
     """Allow removing a device only when it is absent from the latest scan."""
 
-    return not any(
-        identifier in config_entry.runtime_data.current_device_identifiers for identifier in device_entry.identifiers
-    )
+    if not isinstance(api := getattr(config_entry, "runtime_data", None), CasaITApi):
+        return False
+    return not any(identifier in api.current_device_identifiers for identifier in device_entry.identifiers)

@@ -29,7 +29,7 @@ from .const import (
     PCF8574_MAPPED_PORTS,
     SIGNAL_STATE_UPDATED,
 )
-from .firmware import FirmwareError, async_upload_image, normalize_version
+from .firmware import async_flash_bridge
 from .health import LinkHealth
 from .helpers import (
     OM117PairConfig,
@@ -55,6 +55,7 @@ from .services.smbus_proxy import (
     WATCH_KIND_DM117,
     WATCH_KIND_PCF_INPUT,
     WATCH_KIND_PCF_OUTPUT,
+    BridgeFirmwareError,
     BridgeInfo,
     SMBus,
     SMBusProxyError,
@@ -76,9 +77,6 @@ HEARTBEAT_INTERVAL = 5.0
 # the cover waits itself, so network jitter between its stop and its restart does
 # not make the bridge refuse a legitimate reversal.
 INTERLOCK_DEAD_MS = 300
-
-FIRMWARE_RESTART_TIMEOUT = 120.0
-FIRMWARE_RESTART_POLL = 2.0
 
 
 @dataclass(frozen=True)
@@ -643,8 +641,13 @@ class CasaITApi:
         self._watch_ready = False
         try:
             info = await self.bus.ping_info()
+        except BridgeFirmwareError as err:
+            # Someone flashed an older release; the reload lands in firmware recovery.
+            _LOGGER.warning("Bridge came back with firmware %s, which is too old; reloading", err.version)
+            self.hass.config_entries.async_schedule_reload(self.entry_id)
+            return
         except SMBusProxyError:
-            _LOGGER.exception("Bridge answers with firmware this integration cannot work with")
+            _LOGGER.exception("Bridge could not be pinged after reconnecting")
             return
         if info is None:
             return
@@ -1396,24 +1399,16 @@ class CasaITApi:
 
         previous = self.bridge_info.boot_id if self.bridge_info else None
         await self.stop_polling()
-        await async_upload_image(async_get_clientsession(self.hass), self.bus.host, image, progress)
+        self.bridge_info = (
+            await async_flash_bridge(async_get_clientsession(self.hass), self.bus, image, version, previous, progress)
+            or self.bridge_info
+        )
 
-        deadline = time.monotonic() + FIRMWARE_RESTART_TIMEOUT
-        while time.monotonic() < deadline:
-            await asyncio.sleep(FIRMWARE_RESTART_POLL)
-            try:
-                info = await self.bus.ping_info()
-            except SMBusProxyError as err:
-                raise FirmwareError("firmware_not_confirmed") from err
-            if info is None or info.boot_id == previous:
-                continue
-            self.bridge_info = info
-            if normalize_version(info.version) != normalize_version(version):
-                _LOGGER.error("Bridge restarted with firmware %s instead of %s", info.version, version)
-                raise FirmwareError("firmware_not_confirmed")
-            _LOGGER.info("Bridge runs firmware %s", info.version)
-            return
-        raise FirmwareError("firmware_not_confirmed")
+    @property
+    def firmware_version(self) -> str | None:
+        """Return the firmware the bridge reported in its last ping."""
+
+        return self.bridge_info.version if self.bridge_info else None
 
     def publish_pcf_write(self, address: int) -> None:
         """Publish the port states of a module whose write was just verified."""

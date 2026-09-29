@@ -113,7 +113,7 @@ class CasaITRepairFlow(RepairsFlow):
         entry = self.hass.config_entries.async_get_entry(str(self._issue_data.get("entry_id") or ""))
         if entry is None or entry.state is not ConfigEntryState.LOADED:
             return None
-        return entry.runtime_data
+        return getattr(entry, "runtime_data", None)
 
     async def async_step_device_gone(
         self,

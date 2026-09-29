@@ -68,8 +68,9 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
         bus = await SMBus.connect(data[CONF_HOST], data[CONF_PORT], data[CONF_TIMEOUT])
         if await bus.ping_info() is None:
             raise CannotConnect
-    except BridgeFirmwareError as exc:
-        raise FirmwareOutdated from exc
+    except BridgeFirmwareError:
+        # The entry loads in firmware recovery mode and offers the update.
+        _LOGGER.warning("Bridge at %s runs outdated firmware; it can be updated once added", data[CONF_HOST])
     except (SMBusProxyError, OSError) as exc:
         raise CannotConnect from exc
     finally:
@@ -113,8 +114,6 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
             try:
                 info = await validate_input(self.hass, data)
-            except FirmwareOutdated:
-                errors["base"] = "firmware_outdated"
             except CannotConnect:
                 errors["base"] = "cannot_connect"
             except Exception:
@@ -135,8 +134,6 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._async_abort_entries_match({CONF_HOST: data[CONF_HOST], CONF_PORT: data[CONF_PORT]})
             try:
                 info = await validate_input(self.hass, data)
-            except FirmwareOutdated:
-                errors["base"] = "firmware_outdated"
             except CannotConnect:
                 errors["base"] = "cannot_connect"
             except Exception:
@@ -223,8 +220,6 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data = _normalize_bridge_data(user_input)
             try:
                 info = await validate_input(self.hass, data)
-            except FirmwareOutdated:
-                errors["base"] = "firmware_outdated"
             except CannotConnect:
                 errors["base"] = "cannot_connect"
             except Exception:
@@ -243,7 +238,3 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 class CannotConnect(HomeAssistantError):
     """Error to indicate we cannot connect."""
-
-
-class FirmwareOutdated(HomeAssistantError):
-    """Error to indicate the bridge runs firmware this integration cannot work with."""

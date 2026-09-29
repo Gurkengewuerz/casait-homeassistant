@@ -48,7 +48,9 @@ async def test_user_flow_creates_entry(hass) -> None:
 
 
 @pytest.mark.unit
-async def test_user_flow_names_outdated_bridge_firmware(hass) -> None:
+async def test_user_flow_accepts_outdated_bridge_firmware(hass) -> None:
+    """The entry loads in firmware recovery mode and offers the update."""
+
     bus = SimpleNamespace(
         ping_info=AsyncMock(side_effect=BridgeFirmwareError("old")),
         close=AsyncMock(),
@@ -63,8 +65,7 @@ async def test_user_flow_names_outdated_bridge_firmware(hass) -> None:
             {CONF_HOST: "bridge.local", CONF_PORT: 8555, CONF_TIMEOUT: 2.0},
         )
 
-    assert result["type"] is FlowResultType.FORM
-    assert result["errors"] == {"base": "firmware_outdated"}
+    assert result["type"] is FlowResultType.CREATE_ENTRY
     bus.close.assert_awaited_once()
 
 
