@@ -88,9 +88,7 @@ class DS2438:
 
         if not await self._command(device_id, [self.CMD_RECALL_MEMORY, 0x00]):
             return None
-        if not await self._command(device_id, [self.CMD_READ_SCRATCHPAD, 0x00]):
-            return None
-        scratchpad = await self.bus.bridge.wire_read_bytes(9)
+        scratchpad = await self.bus.transaction(device_id, [self.CMD_READ_SCRATCHPAD, 0x00], 9)
         if scratchpad is None:
             return None
         if self.bus.calc_crc8(bytes(scratchpad[:-1])) != scratchpad[-1]:
@@ -106,7 +104,7 @@ class DS2438:
         )
 
     async def _command(self, device_id: str, data: list[int]) -> bool:
-        return await self.bus.select_device(device_id) and bool(await self.bus.bridge.wire_write_bytes(data))
+        return await self.bus.transaction(device_id, data) is not None
 
 
 def _int16(word: int) -> int:

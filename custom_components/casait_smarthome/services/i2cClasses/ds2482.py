@@ -214,6 +214,25 @@ class DS2482:
         self._last_status = statuses[-1]
         return statuses
 
+    async def transaction(self, select: list[int], write: list[int], read: int = 0) -> list[int] | None:
+        """Run reset, ROM command, function command and answer in one round trip.
+
+        ``select`` is the ROM part - MATCH ROM with the eight ROM bytes, or SKIP
+        ROM - and ``write`` the function command with its parameters. The bridge
+        runs every 1-Wire primitive itself, so the whole transaction is one frame
+        instead of one per step. Returns the ``read`` bytes, None on any failure,
+        including a bus without presence pulse.
+        """
+
+        batch = self.bus.new_batch().ow_reset(self.address).ow_write(self.address, [*select, *write])
+        if read:
+            batch.ow_read(self.address, read)
+        try:
+            return await self.bus.execute_batch(batch)
+        except OSError as err:
+            _LOGGER.debug("1-Wire transaction on 0x%02X failed: %s", self.address, err)
+            return None
+
     def _chunk(self, items, request_bytes: int, results_per_item: int) -> list[list]:
         """Split items into groups that each fit inside one bridge frame."""
 

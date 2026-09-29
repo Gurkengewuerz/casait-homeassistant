@@ -51,13 +51,10 @@ class DS2413:
         the same for PIOB. A latch bit of 1 means the output transistor is off.
         """
 
-        if not await self.bus.select_device(device_id):
+        answer = await self.bus.transaction(device_id, [self.CMD_PIO_ACCESS_READ], 1)
+        if not answer:
             return None
-        if not await self.bus.bridge.wire_write_byte(self.CMD_PIO_ACCESS_READ):
-            return None
-        state = await self.bus.bridge.wire_read_byte()
-        if state is None:
-            return None
+        state = answer[0]
         if (state >> 4) != (~state & 0x0F):
             _LOGGER.debug("Invalid DS2413 status %02X from %s", state, device_id)
             return None
@@ -88,12 +85,8 @@ class DS2413:
         data = 0xFC | (0 if on[0] else 0x01) | (0 if on[1] else 0x02)
 
         for _ in range(2):
-            if not await self.bus.select_device(device_id):
-                return None
-            if not await self.bus.bridge.wire_write_bytes([self.CMD_PIO_ACCESS_WRITE, data, ~data & 0xFF]):
-                continue
-            confirm = await self.bus.bridge.wire_read_byte()
-            if confirm == 0xAA:
+            confirm = await self.bus.transaction(device_id, [self.CMD_PIO_ACCESS_WRITE, data, ~data & 0xFF], 1)
+            if confirm == [0xAA]:
                 break
             _LOGGER.debug("DS2413 %s did not confirm the write: %s", device_id, confirm)
         return await self.read_ports(device_id)

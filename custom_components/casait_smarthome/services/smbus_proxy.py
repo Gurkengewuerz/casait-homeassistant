@@ -50,6 +50,11 @@ BOP_READ_BYTE_DATA = 0x04
 BOP_READ_BLOCK = 0x06
 BOP_WAIT_STATUS = 0x07
 BOP_DELAY = 0x08
+# Whole 1-Wire primitives run on a DS2482 by the bridge, so a reset, a ROM select, a
+# command and its answer fit into one round trip.
+BOP_OW_RESET = 0x09
+BOP_OW_WRITE = 0x0A
+BOP_OW_READ = 0x0B
 
 # Frames the bridge sends unasked start with this byte instead of a status.
 EVENT_MARKER = 0xFE
@@ -305,6 +310,26 @@ class I2CBatch:
         if not 0 <= ms <= MAX_DELAY_MS:
             raise ValueError(f"Delay must be between 0 and {MAX_DELAY_MS} ms, got {ms}")
         return self._add(bytes([BOP_DELAY, ms]))
+
+    def ow_reset(self, addr: int) -> I2CBatch:
+        """Queue a 1-Wire reset on a DS2482. Fails the batch without a presence pulse."""
+
+        return self._add(bytes([BOP_OW_RESET, addr]))
+
+    def ow_write(self, addr: int, data: bytes | list[int]) -> I2CBatch:
+        """Queue 1-Wire byte writes on a DS2482. Produces no result."""
+
+        data = bytes(data)
+        if not 1 <= len(data) <= 0xFF:
+            raise ValueError(f"1-Wire write must carry 1 to 255 bytes, got {len(data)}")
+        return self._add(bytes([BOP_OW_WRITE, addr, len(data)]) + data)
+
+    def ow_read(self, addr: int, count: int) -> I2CBatch:
+        """Queue 1-Wire byte reads on a DS2482. Produces count results."""
+
+        if not 1 <= count <= MAX_BATCH_RESULTS:
+            raise ValueError(f"1-Wire read count must be between 1 and {MAX_BATCH_RESULTS}, got {count}")
+        return self._add(bytes([BOP_OW_READ, addr, count]), results=count)
 
 
 class SMBus:

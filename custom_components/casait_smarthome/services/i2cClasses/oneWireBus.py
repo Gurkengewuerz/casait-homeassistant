@@ -40,6 +40,7 @@ class OneWireBus:
     # ROM commands
     CMD_SEARCH_ROM = 0xF0
     CMD_MATCH_ROM = 0x55
+    CMD_SKIP_ROM = 0xCC
 
     # DS28E17 Commands
     CMD_WRITE_DATA_STOP = 0x4B  # Write data with stop
@@ -216,12 +217,13 @@ class OneWireBus:
                     crc >>= 1
         return crc
 
-    async def select_device(self, device_id: str, use_lock: bool = True) -> bool:
-        """Select a device on the bus."""
-        # output as error which device could not be selected
-        # if the device couldn't be selected multiple times create a timeout cache for the device
-        # and return false if the device is in the cache
-        # this should prevent _scan_bus from being called multiple times and block the bus for a long noticeable time
+    async def _selectable(self, device_id: str) -> bool:
+        """Return whether a device is known and not in the timeout cache.
+
+        A device that could not be selected several times in a row sits in the
+        cache for a while, so it cannot make the bus rescan over and over and
+        block it for a long noticeable time.
+        """
         if device_id not in self.devices:
             _LOGGER.warning("Device %s not found in cache, rescanning bus", device_id)
             await self._scan_bus()
@@ -229,7 +231,6 @@ class OneWireBus:
                 _LOGGER.error("Device %s not found after bus scan", device_id)
                 return False
 
-        # Check if device is in timeout cache
         current_time = time.time()
         if device_id in self._timeout_cache:
             timestamp, failures = self._timeout_cache[device_id]
@@ -238,6 +239,31 @@ class OneWireBus:
                 return False
             if current_time - timestamp >= TIMEOUT_DURATION:
                 del self._timeout_cache[device_id]
+        return True
+
+    async def transaction(self, device_id: str | None, write: list[int], read: int = 0) -> list[int] | None:
+        """Address one device, or every device with None, send a command and read the answer.
+
+        The whole transaction is one round trip to the bridge. Returns the bytes
+        read, an empty list when nothing was to be read, None on failure.
+        """
+
+        if device_id is None:
+            return await self.bridge.transaction([self.CMD_SKIP_ROM], write, read)
+        if not await self._selectable(device_id):
+            return None
+        result = await self.bridge.transaction([self.CMD_MATCH_ROM, *self.devices[device_id]["rom"]], write, read)
+        if result is None:
+            self._increment_failures(device_id)
+        else:
+            self._timeout_cache.pop(device_id, None)
+        return result
+
+    async def select_device(self, device_id: str, use_lock: bool = True) -> bool:
+        """Reset the bus and address one device for the primitives that follow."""
+
+        if not await self._selectable(device_id):
+            return False
 
         if not await self.bridge.wire_reset():
             _LOGGER.error("Wire reset failed for device %s", device_id)

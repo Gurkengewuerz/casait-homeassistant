@@ -58,6 +58,12 @@ class Bus:
     async def select_device(self, device_id: str) -> bool:
         return True
 
+    async def transaction(self, device_id: str | None, write: list[int], read: int = 0) -> list[int] | None:
+        await self.bridge.wire_write_bytes(write)
+        if not read:
+            return []
+        return await self.bridge.wire_read_bytes(read)
+
     @staticmethod
     def calc_crc8(data: bytes) -> int:
         return crc8(data)

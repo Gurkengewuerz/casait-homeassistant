@@ -14,6 +14,9 @@ from custom_components.casait_smarthome.helpers import OM117PairConfig
 from custom_components.casait_smarthome.services.i2cClasses.dm117 import DM117, DeviceType
 from custom_components.casait_smarthome.services.i2cClasses.pcf8574 import PCF8574
 from custom_components.casait_smarthome.services.smbus_proxy import (
+    BOP_OW_READ,
+    BOP_OW_RESET,
+    BOP_OW_WRITE,
     CMD_INTERLOCK,
     CMD_WATCH_CONFIG,
     EVENT_MARKER,
@@ -216,6 +219,14 @@ def test_watch_events_decode_and_reject_truncation() -> None:
     assert [(entry.seq, entry.index, entry.data) for entry in event.entries] == [(5, 0, b"\xfe"), (6, 1, b"")]
     with pytest.raises(ValueError, match="Truncated"):
         parse_watch_event(_event((5, 0, [0xFE, 0x01]))[:-1])
+
+
+@pytest.mark.unit
+def test_onewire_ops_encode_the_transaction() -> None:
+    batch = I2CBatch().ow_reset(0x1A).ow_write(0x1A, [0xCC, 0x44]).ow_read(0x1A, 9)
+
+    assert bytes(batch)[1:] == bytes([BOP_OW_RESET, 0x1A, BOP_OW_WRITE, 0x1A, 2, 0xCC, 0x44, BOP_OW_READ, 0x1A, 9])
+    assert batch.result_count == 9
 
 
 # ---------------------------------------------------------------------------

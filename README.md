@@ -155,7 +155,8 @@ unavailable when the bridge reports that it failed several reads in a row.
 
 **1-Wire chips are scheduled** by one scheduler per bridge rather than by their
 entities. Each chip is read on its own interval and the result is pushed to its
-entities. A reading is a short sequence of bus transactions, and conversion
+entities. A reading is one round trip: the bridge runs the reset, the ROM
+select, the command and the answer on the 1-Wire bridge chip itself. Conversion
 times are waited out with the bus released, so a temperature conversion never
 delays a write. All DS18B20s on one bus share a single broadcast
 conversion. A chip is only shown as unavailable after three failed reads in a

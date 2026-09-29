@@ -58,18 +58,14 @@ class DS18B20:
         once per sensor for nothing.
         """
 
-        if not await self.bus.bridge.wire_reset():
-            _LOGGER.debug("1-Wire reset failed before a DS18B20 conversion")
+        if await self.bus.transaction(None, [self.CMD_CONVERT_T]) is None:
+            _LOGGER.debug("Could not start a DS18B20 conversion")
             return False
-        return bool(await self.bus.bridge.wire_write_bytes([self.CMD_SKIP_ROM, self.CMD_CONVERT_T]))
+        return True
 
     async def read_temperature(self, device_id: str) -> float | None:
         """Read temperature from scratchpad. Returns temperature in °C or None on error."""
-        if not await self.bus.select_device(device_id):
-            return None
-
-        await self.bus.bridge.wire_write_byte(self.CMD_READ_SCRATCHPAD)
-        scratchpad = await self.bus.bridge.wire_read_bytes(9)
+        scratchpad = await self.bus.transaction(device_id, [self.CMD_READ_SCRATCHPAD], 9)
         if scratchpad is None:
             return None
 
