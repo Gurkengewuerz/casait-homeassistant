@@ -476,6 +476,13 @@ data:
 
 ## Diagnostics and repairs
 
+Every OM117 output has two diagnostic sensors for relay wear: how often it switched
+on and how long it has been on, in hours. Compare the count with the relay's rated
+switching cycles to see which one is due first. They count what Home Assistant
+reads, including switching by the bridge's timers and its emergency operation, and
+survive restarts. A relay that switched several times while Home Assistant was away
+counts once.
+
 The bridge device includes diagnostic entities for:
 
 - TCP connection state

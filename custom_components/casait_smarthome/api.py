@@ -68,6 +68,7 @@ from .services.smbus_proxy import (
     WatchEntry,
     parse_watch_event,
 )
+from .wear import CasaITRelayWear
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -200,6 +201,7 @@ class CasaITApi:
         self.onewire = CasaITOneWireScheduler(self)
         self.outputs = CasaITOutputWriter(self)
         self.restorer = CasaITOutputRestorer(self, power_on_policies)
+        self.wear = CasaITRelayWear(self)
 
     def start_initialization(self, dm_config: Mapping[int, Mapping[int, DeviceType]] | None = None) -> None:
         """Kick off asynchronous initialization for initial scans and polling."""
@@ -232,6 +234,7 @@ class CasaITApi:
         try:
             self._dm_config = {address: dict(slots) for address, slots in (dm_config or {}).items()}
             await self.restorer.async_load()
+            await self.wear.async_load()
 
             await self.scan_devices()
 
@@ -306,6 +309,7 @@ class CasaITApi:
             },
             "multisensors": self.multisensor.diagnostic_data,
             "power_on": self.restorer.diagnostics(),
+            "relay_wear": self.wear.diagnostics(),
             "onewire_schedule": self.onewire.diagnostic_data,
             "transport": self.bus.stats,
         }
@@ -979,6 +983,7 @@ class CasaITApi:
         self._pcf_states[address] = reading.port_states
         if self.is_output_module(address):
             self.restorer.check_pcf(address, reading.value)
+            self.wear.observe(address, reading.port_states)
 
         if reading.edges:
             async_dispatcher_send(self.hass, self.edge_signal(address), reading.edges)
@@ -1554,6 +1559,7 @@ class CasaITApi:
         # Polling again would only add latency.
         if self.is_output_module(address):
             self.restorer.note_pcf_written(address, device.last_value)
+            self.wear.observe(address, device.port_states)
         previous = self._pcf_states.get(address)
         self._pcf_states[address] = list(device.port_states)
         if previous != device.port_states:

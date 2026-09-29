@@ -262,6 +262,12 @@
           "brownout": "Unterspannung",
           "other": "Sonstiges"
         }
+      },
+      "om117_relay_cycles": {
+        "name": "Ausgang {port} Schaltspiele"
+      },
+      "om117_relay_on_time": {
+        "name": "Ausgang {port} Einschaltdauer"
       }
     },
     "update": {

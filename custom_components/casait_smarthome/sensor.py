@@ -28,20 +28,24 @@ from homeassistant.const import (
     UnitOfTime,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import CasaITConfigEntry
 from .api import CasaITApi
-from .const import OW_PROFILE_MULTISENSOR
+from .const import DOMAIN, OW_PROFILE_MULTISENSOR
 from .entity import CasaITMultisensorEntity, CasaITOneWireEntity
 from .helpers import (
     build_bridge_device_info,
     build_bridge_slug,
+    build_device_identifier,
     build_entity_id,
+    build_i2c_entity_id,
     build_onewire_device_info,
     build_onewire_entity_id,
     default_onewire_profile,
     get_configured_onewire_profiles,
+    get_module_name,
 )
 from .services.i2cClasses.ds2438 import DS2438Reading
 from .services.i2cClasses.multisensor import MultisensorComponents, MultisensorReading
@@ -145,6 +149,76 @@ class DS2438Sensor(OneWireEntity):
         # A reading can be complete and still yield no value for one quantity,
         # such as a humidity outside the sensor's range.
         self._attr_available = self._attr_native_value is not None
+
+
+@dataclass(kw_only=True, frozen=True)
+class RelayWearDescription(SensorEntityDescription):
+    """Describe one wear counter of an OM117 relay."""
+
+    value_fn: Callable[[CasaITApi, int, int], float | int]
+
+
+RELAY_WEAR_DESCRIPTIONS = (
+    RelayWearDescription(
+        key="cycles",
+        translation_key="om117_relay_cycles",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda api, address, port: api.wear.cycles(address, port),
+    ),
+    RelayWearDescription(
+        key="on_time",
+        translation_key="om117_relay_on_time",
+        device_class=SensorDeviceClass.DURATION,
+        native_unit_of_measurement=UnitOfTime.HOURS,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        suggested_display_precision=1,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda api, address, port: api.wear.on_hours(address, port),
+    ),
+)
+
+
+class CasaITRelayWearSensor(SensorEntity):
+    """How often an OM117 relay switched, or how long it has been on."""
+
+    _attr_has_entity_name = True
+    _attr_should_poll = True
+
+    entity_description: RelayWearDescription
+
+    def __init__(
+        self,
+        api: CasaITApi,
+        entry: CasaITConfigEntry,
+        address: int,
+        port: int,
+        description: RelayWearDescription,
+    ) -> None:
+        """Initialize the counter of one relay."""
+
+        self._api = api
+        self._address = address
+        self._port = port
+        self.entity_description = description
+        bridge_slug = build_bridge_slug(entry.entry_id, entry.unique_id)
+        self._attr_unique_id = f"{entry.entry_id}_om117_{address}_{port}_{description.key}"
+        self.entity_id = build_i2c_entity_id(
+            "sensor", bridge_slug, "om117", address, "output", port + 1, description.key
+        )
+        self._attr_translation_placeholders = {"port": str(port + 1)}
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, build_device_identifier(entry.entry_id, "om117", address))},
+            name=get_module_name(entry.options, "om117", address, f"OM117 0x{address:02X}"),
+            manufacturer="casaIT",
+            model="PCF8574 Output",
+            via_device=(DOMAIN, build_device_identifier(entry.entry_id, "bridge", "controller")),
+        )
+
+    async def async_update(self) -> None:
+        """Read the counter; it lives in memory, nothing goes to the bus."""
+
+        self._attr_native_value = self.entity_description.value_fn(self._api, self._address, self._port)
 
 
 class CasaITDebugSensor(SensorEntity):
@@ -554,6 +628,13 @@ async def async_setup_entry(
     entities.append(CasaITDebugSensor(api, entry))
     entities.extend(
         CasaITBridgeDiagnosticSensor(api, entry, description) for description in BRIDGE_DIAGNOSTIC_DESCRIPTIONS
+    )
+    entities.extend(
+        CasaITRelayWearSensor(api, entry, address, port, description)
+        for address in sorted(api.im117_om117)
+        if api.is_output_module(address)
+        for port in range(8)
+        for description in RELAY_WEAR_DESCRIPTIONS
     )
 
     configured_profiles = get_configured_onewire_profiles(entry.options)

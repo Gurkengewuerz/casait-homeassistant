@@ -262,6 +262,12 @@
           "brownout": "Supply voltage drop",
           "other": "Other"
         }
+      },
+      "om117_relay_cycles": {
+        "name": "Output {port} switching cycles"
+      },
+      "om117_relay_on_time": {
+        "name": "Output {port} on-time"
       }
     },
     "update": {
