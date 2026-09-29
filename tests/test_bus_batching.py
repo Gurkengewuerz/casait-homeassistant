@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from custom_components.casait_smarthome.api import CasaITApi
+from custom_components.casait_smarthome.api import MAX_READ_FAILURES, CasaITApi
 from custom_components.casait_smarthome.services.i2cClasses.dm117 import DM117, DeviceType
 from custom_components.casait_smarthome.services.i2cClasses.pcf8574 import PCF8574
 from custom_components.casait_smarthome.services.smbus_proxy import (
@@ -319,10 +319,17 @@ async def test_batch_failure_blames_one_module_and_rereads_the_others(hass) -> N
     with patch("custom_components.casait_smarthome.api.async_dispatcher_send"):
         await api._run_poll_batch(batch, modules)  # noqa: SLF001
 
-    # The named module lost its state, the other one was read on its own.
+        # One failed read is tolerated; the other module was read on its own.
+        assert api.pcf_states[0x39] == [1] * 8
+        assert bus.reads == [0x38]
+
+        for _ in range(MAX_READ_FAILURES - 1):
+            await api._run_poll_batch(batch, modules)  # noqa: SLF001
+
+    # The named module kept failing and lost its state; the other one never did.
     assert 0x39 not in api.pcf_states
     assert api.pcf_states[0x38] == [1] * 8
-    assert bus.reads == [0x38]
+    assert bus.reads == [0x38] * MAX_READ_FAILURES
 
 
 @pytest.mark.unit
@@ -338,7 +345,8 @@ async def test_transport_failure_drops_every_module_in_the_frame(hass) -> None:
     batch, modules = api._plan_poll_batches(addresses, [], set(addresses))[0]  # noqa: SLF001
 
     with patch("custom_components.casait_smarthome.api.async_dispatcher_send"):
-        await api._run_poll_batch(batch, modules)  # noqa: SLF001
+        for _ in range(MAX_READ_FAILURES):
+            await api._run_poll_batch(batch, modules)  # noqa: SLF001
 
     assert api.pcf_states == {}
     assert bus.reads == []

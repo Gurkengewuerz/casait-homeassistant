@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from custom_components.casait_smarthome.api import CasaITApi
+from custom_components.casait_smarthome.api import MAX_READ_FAILURES, CasaITApi
 from custom_components.casait_smarthome.health import LinkHealth
 from custom_components.casait_smarthome.services.i2cClasses.dm117 import DeviceType
 from custom_components.casait_smarthome.services.i2cClasses.pcf8574 import PCF8574Reading
@@ -66,11 +66,31 @@ async def test_read_failure_is_latched_and_not_redispatched(hass) -> None:
     api.im117_om117[0x38] = FakePCF(PCF8574Reading([], -1))
 
     with patch("custom_components.casait_smarthome.api.async_dispatcher_send") as dispatch:
-        await api._poll_pcf8574(0x38, is_input=True)  # noqa: SLF001
-        await api._poll_pcf8574(0x38, is_input=True)  # noqa: SLF001
+        for _ in range(MAX_READ_FAILURES + 1):
+            await api._poll_pcf8574(0x38, is_input=True)  # noqa: SLF001
 
     assert dispatch.call_count == 1
     assert 0x38 not in api.pcf_states
+
+
+@pytest.mark.unit
+async def test_isolated_read_failures_keep_the_module_available(hass) -> None:
+    api = CasaITApi(hass, FakeBus(), "entry-test")
+    good = PCF8574Reading([1] * 8, 0xFF)
+    device = FakePCF(good)
+    api.im117_om117[0x38] = device
+    api._pcf_states[0x38] = [1] * 8  # noqa: SLF001
+
+    with patch("custom_components.casait_smarthome.api.async_dispatcher_send") as dispatch:
+        for _ in range(3):
+            device.reading = PCF8574Reading([], -1)
+            for _ in range(MAX_READ_FAILURES - 1):
+                await api._poll_pcf8574(0x38, is_input=True)  # noqa: SLF001
+            device.reading = good
+            await api._poll_pcf8574(0x38, is_input=True)  # noqa: SLF001
+
+    dispatch.assert_not_called()
+    assert api.pcf_states[0x38] == [1] * 8
 
 
 @pytest.mark.unit

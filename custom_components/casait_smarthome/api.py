@@ -66,6 +66,10 @@ PCF_REARM_SETTLE_MS = 5
 # Capping them per cycle bounds that cost; a deferred re-arm keeps its flag and is
 # picked up by one of the next cycles, which is harmless for a periodic safety net.
 MAX_REARMS_PER_CYCLE = 2
+# Failed reads in a row before a module is reported unavailable. A module polled
+# every fast cycle sees the odd NACK as a matter of course; dropping its state on
+# the first one made every entity on it flicker to unavailable for a single cycle.
+MAX_READ_FAILURES = 3
 
 
 FIRMWARE_RESTART_TIMEOUT = 120.0
@@ -726,8 +730,7 @@ class CasaITApi:
                 self._frame_latency = time.monotonic() - started
         except Exception as exc:  # noqa: BLE001
             for address in self._scan_addresses:
-                self._record_read_error("PCF8574", address, exc)
-                self._drop_state(self._pcf_states, address)
+                self._fail_read("PCF8574", address, self._pcf_states, exc)
             return
 
         self._frames_last_cycle += 1
@@ -885,18 +888,16 @@ class CasaITApi:
         return culprit
 
     def _fail_module(self, module: _PolledModule, exc: Exception | None = None) -> None:
-        """Record a failed read and drop the module's cached state."""
+        """Record a failed read; the module's state goes once it keeps failing."""
 
         if module.kind == "pcf":
             device = self.im117_om117.get(module.address)
             if device is not None:
                 device.note_read_error()
-            self._record_read_error("PCF8574", module.address, exc)
-            self._drop_state(self._pcf_states, module.address)
+            self._fail_read("PCF8574", module.address, self._pcf_states, exc)
             return
 
-        self._record_read_error("DM117", module.address, exc)
-        self._drop_state(self._dm117_states, module.address)
+        self._fail_read("DM117", module.address, self._dm117_states, exc)
 
     def _publish_module(self, module: _PolledModule, values: list[int], sampled_at: float) -> None:
         """Decode one module's batch results and dispatch what changed."""
@@ -953,8 +954,7 @@ class CasaITApi:
                 reading = await device.read_ports(is_input)
                 self._frame_latency = time.monotonic() - started
         except Exception as exc:  # noqa: BLE001
-            self._record_read_error("PCF8574", address, exc)
-            self._drop_state(self._pcf_states, address)
+            self._fail_read("PCF8574", address, self._pcf_states, exc)
             return
 
         self._publish_pcf_reading(address, reading)
@@ -964,8 +964,7 @@ class CasaITApi:
         """Cache one PCF8574 reading and dispatch state changes plus input edges."""
 
         if not reading.ok:
-            self._record_read_error("PCF8574", address)
-            self._drop_state(self._pcf_states, address)
+            self._fail_read("PCF8574", address, self._pcf_states)
             return
 
         self._clear_read_error("PCF8574", address)
@@ -994,8 +993,7 @@ class CasaITApi:
                 port_states = await device.read_ports()
                 self._frame_latency = time.monotonic() - started
         except Exception as exc:  # noqa: BLE001
-            self._record_read_error("DM117", address, exc)
-            self._drop_state(self._dm117_states, address)
+            self._fail_read("DM117", address, self._dm117_states, exc)
             return
 
         self._publish_dm117_reading(address, port_states, device)
@@ -1005,9 +1003,8 @@ class CasaITApi:
         """Cache one DM117 reading and dispatch its state changes plus input edges."""
 
         if port_states is None:
-            self._record_read_error("DM117", address)
-            self._drop_state(self._dm117_states, address)
-            self._dm117_edges.pop(address, None)
+            if self._fail_read("DM117", address, self._dm117_states):
+                self._dm117_edges.pop(address, None)
             return
 
         self._clear_read_error("DM117", address)
@@ -1164,19 +1161,47 @@ class CasaITApi:
         if states.pop(address, None) is not None:
             async_dispatcher_send(self.hass, self.address_signal(address))
 
-    def _record_read_error(self, device_type: str, address: int, exc: Exception | None = None) -> None:
-        """Log a device read failure only when it first becomes unavailable."""
+    def _fail_read(self, device_type: str, address: int, states: dict[int, Any], exc: Exception | None = None) -> bool:
+        """Record a failed read and drop the module's state once it keeps failing.
+
+        Returns True when the module is (now) unavailable. Until then its last state
+        stays in place, so a single lost read does not reach the entities.
+        """
 
         key = (device_type, address)
-        self._health[key].failure(time.time(), str(exc) if exc is not None else "no data")
+        health = self._health[key]
+        health.failure(time.time(), str(exc) if exc is not None else "no data")
+        if health.consecutive_errors < MAX_READ_FAILURES:
+            _LOGGER.debug(
+                "Reading %s device at 0x%02X failed (%s), %s in a row",
+                device_type,
+                address,
+                exc if exc is not None else "no data",
+                health.consecutive_errors,
+            )
+            return False
+
+        self._drop_state(states, address)
         if key in self._read_errors:
-            return
+            return True
 
         self._read_errors.add(key)
         if exc is None:
-            _LOGGER.warning("%s device at 0x%02X returned no data and is unavailable", device_type, address)
+            _LOGGER.warning(
+                "%s device at 0x%02X returned no data %s times in a row and is unavailable",
+                device_type,
+                address,
+                health.consecutive_errors,
+            )
         else:
-            _LOGGER.warning("Error reading %s device at 0x%02X; marking unavailable: %s", device_type, address, exc)
+            _LOGGER.warning(
+                "Error reading %s device at 0x%02X %s times in a row; marking unavailable: %s",
+                device_type,
+                address,
+                health.consecutive_errors,
+                exc,
+            )
+        return True
 
     def _clear_read_error(self, device_type: str, address: int) -> None:
         """Log once when a previously unavailable device recovers."""
