@@ -45,8 +45,7 @@
     },
     "error": {
       "cannot_connect": "Verbindung zu einer kompatiblen casaIT-Bridge fehlgeschlagen",
-      "unknown": "Unerwarteter Fehler",
-      "firmware_outdated": "Die Bridge hat eine zu alte Firmware; bitte die Bridge aktualisieren"
+      "unknown": "Unerwarteter Fehler"
     },
     "abort": {
       "already_configured": "Diese Bridge ist bereits konfiguriert",
@@ -371,9 +370,6 @@
     "reference_needs_overrun": {
       "message": "Eine Referenzfahrt ben\u00f6tigt eine Nachlaufzeit gr\u00f6\u00dfer als null."
     },
-    "bridge_firmware_outdated": {
-      "message": "Die Firmware der Bridge ist zu alt f\u00fcr diese Integration. Bitte die Bridge-Firmware aktualisieren."
-    },
     "firmware_release_unknown": {
       "message": "Es gibt kein stabiles Bridge-Firmware-Release {version}."
     },
@@ -394,6 +390,18 @@
     },
     "firmware_not_confirmed": {
       "message": "Die Bridge ist nicht mit der neuen Firmware zur\u00fcckgekommen."
+    },
+    "bridge_connect_failed": {
+      "message": "Verbindung zur Bridge fehlgeschlagen: {error}"
+    },
+    "bridge_ping_failed": {
+      "message": "Die Bridge hat nicht auf den Ping geantwortet: {error}"
+    },
+    "bridge_no_answer": {
+      "message": "Die Bridge hat nicht auf den Ping geantwortet."
+    },
+    "initialization_failed": {
+      "message": "Die Module am Bus konnten nicht eingerichtet werden: {error}"
     }
   },
   "issues": {
@@ -490,6 +498,10 @@
           "still_missing": "Der Sensor hat nicht geantwortet."
         }
       }
+    },
+    "bridge_firmware_outdated": {
+      "title": "Bridge-Firmware zu alt",
+      "description": "Die Bridge l\u00e4uft mit Firmware {version}, die f\u00fcr diese Integration zu alt ist. Bis zum Update ist nur das Firmware-Update der Bridge verf\u00fcgbar. Installiere das angebotene Release \u00fcber die Update-Entit\u00e4t der Bridge; danach richtet die Integration alles neu ein. Meldet die Update-Entit\u00e4t kein neueres Release, ist die ben\u00f6tigte Firmware noch nicht ver\u00f6ffentlicht."
     }
   },
   "selector": {
@@ -601,13 +613,15 @@
               "role": "Funktion",
               "device_class": "Ger\u00e4teklasse",
               "invert": "Invertieren",
-              "repeat": "Wiederholen beim Halten"
+              "repeat": "Wiederholen beim Halten",
+              "emergency": "Notbetrieb-Ziel"
             },
             "data_description": {
               "role": "Taster melden Ereignisse, Kontakte einen dauerhaften Zustand.",
               "device_class": "Nur f\u00fcr Kontakte.",
               "invert": "Eingang umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
-              "repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen."
+              "repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen.",
+              "emergency": "Was die Bridge mit diesem Eingang selbst schaltet, solange Home Assistant nicht erreichbar ist: einen OM117-Ausgang (\u21c4 umschalten, \u2293 Impuls) oder ein Rollladen-Paar (\u25b2 auf, \u25bc ab, \u25b2\u25bc abwechselnd). Ein fahrender Rollladen h\u00e4lt bei jedem Tastendruck an. Solange Home Assistant verbunden ist, wirken nur deine Automationen auf den Eingang."
             }
           },
           "port_2": {
@@ -616,13 +630,15 @@
               "role": "Funktion",
               "device_class": "Ger\u00e4teklasse",
               "invert": "Invertieren",
-              "repeat": "Wiederholen beim Halten"
+              "repeat": "Wiederholen beim Halten",
+              "emergency": "Notbetrieb-Ziel"
             },
             "data_description": {
               "role": "Taster melden Ereignisse, Kontakte einen dauerhaften Zustand.",
               "device_class": "Nur f\u00fcr Kontakte.",
               "invert": "Eingang umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
-              "repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen."
+              "repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen.",
+              "emergency": "Was die Bridge mit diesem Eingang selbst schaltet, solange Home Assistant nicht erreichbar ist: einen OM117-Ausgang (\u21c4 umschalten, \u2293 Impuls) oder ein Rollladen-Paar (\u25b2 auf, \u25bc ab, \u25b2\u25bc abwechselnd). Ein fahrender Rollladen h\u00e4lt bei jedem Tastendruck an. Solange Home Assistant verbunden ist, wirken nur deine Automationen auf den Eingang."
             }
           },
           "port_3": {
@@ -631,13 +647,15 @@
               "role": "Funktion",
               "device_class": "Ger\u00e4teklasse",
               "invert": "Invertieren",
-              "repeat": "Wiederholen beim Halten"
+              "repeat": "Wiederholen beim Halten",
+              "emergency": "Notbetrieb-Ziel"
             },
             "data_description": {
               "role": "Taster melden Ereignisse, Kontakte einen dauerhaften Zustand.",
               "device_class": "Nur f\u00fcr Kontakte.",
               "invert": "Eingang umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
-              "repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen."
+              "repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen.",
+              "emergency": "Was die Bridge mit diesem Eingang selbst schaltet, solange Home Assistant nicht erreichbar ist: einen OM117-Ausgang (\u21c4 umschalten, \u2293 Impuls) oder ein Rollladen-Paar (\u25b2 auf, \u25bc ab, \u25b2\u25bc abwechselnd). Ein fahrender Rollladen h\u00e4lt bei jedem Tastendruck an. Solange Home Assistant verbunden ist, wirken nur deine Automationen auf den Eingang."
             }
           },
           "port_4": {
@@ -646,13 +664,15 @@
               "role": "Funktion",
               "device_class": "Ger\u00e4teklasse",
               "invert": "Invertieren",
-              "repeat": "Wiederholen beim Halten"
+              "repeat": "Wiederholen beim Halten",
+              "emergency": "Notbetrieb-Ziel"
             },
             "data_description": {
               "role": "Taster melden Ereignisse, Kontakte einen dauerhaften Zustand.",
               "device_class": "Nur f\u00fcr Kontakte.",
               "invert": "Eingang umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
-              "repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen."
+              "repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen.",
+              "emergency": "Was die Bridge mit diesem Eingang selbst schaltet, solange Home Assistant nicht erreichbar ist: einen OM117-Ausgang (\u21c4 umschalten, \u2293 Impuls) oder ein Rollladen-Paar (\u25b2 auf, \u25bc ab, \u25b2\u25bc abwechselnd). Ein fahrender Rollladen h\u00e4lt bei jedem Tastendruck an. Solange Home Assistant verbunden ist, wirken nur deine Automationen auf den Eingang."
             }
           },
           "port_5": {
@@ -661,13 +681,15 @@
               "role": "Funktion",
               "device_class": "Ger\u00e4teklasse",
               "invert": "Invertieren",
-              "repeat": "Wiederholen beim Halten"
+              "repeat": "Wiederholen beim Halten",
+              "emergency": "Notbetrieb-Ziel"
             },
             "data_description": {
               "role": "Taster melden Ereignisse, Kontakte einen dauerhaften Zustand.",
               "device_class": "Nur f\u00fcr Kontakte.",
               "invert": "Eingang umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
-              "repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen."
+              "repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen.",
+              "emergency": "Was die Bridge mit diesem Eingang selbst schaltet, solange Home Assistant nicht erreichbar ist: einen OM117-Ausgang (\u21c4 umschalten, \u2293 Impuls) oder ein Rollladen-Paar (\u25b2 auf, \u25bc ab, \u25b2\u25bc abwechselnd). Ein fahrender Rollladen h\u00e4lt bei jedem Tastendruck an. Solange Home Assistant verbunden ist, wirken nur deine Automationen auf den Eingang."
             }
           },
           "port_6": {
@@ -676,13 +698,15 @@
               "role": "Funktion",
               "device_class": "Ger\u00e4teklasse",
               "invert": "Invertieren",
-              "repeat": "Wiederholen beim Halten"
+              "repeat": "Wiederholen beim Halten",
+              "emergency": "Notbetrieb-Ziel"
             },
             "data_description": {
               "role": "Taster melden Ereignisse, Kontakte einen dauerhaften Zustand.",
               "device_class": "Nur f\u00fcr Kontakte.",
               "invert": "Eingang umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
-              "repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen."
+              "repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen.",
+              "emergency": "Was die Bridge mit diesem Eingang selbst schaltet, solange Home Assistant nicht erreichbar ist: einen OM117-Ausgang (\u21c4 umschalten, \u2293 Impuls) oder ein Rollladen-Paar (\u25b2 auf, \u25bc ab, \u25b2\u25bc abwechselnd). Ein fahrender Rollladen h\u00e4lt bei jedem Tastendruck an. Solange Home Assistant verbunden ist, wirken nur deine Automationen auf den Eingang."
             }
           },
           "port_7": {
@@ -691,13 +715,15 @@
               "role": "Funktion",
               "device_class": "Ger\u00e4teklasse",
               "invert": "Invertieren",
-              "repeat": "Wiederholen beim Halten"
+              "repeat": "Wiederholen beim Halten",
+              "emergency": "Notbetrieb-Ziel"
             },
             "data_description": {
               "role": "Taster melden Ereignisse, Kontakte einen dauerhaften Zustand.",
               "device_class": "Nur f\u00fcr Kontakte.",
               "invert": "Eingang umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
-              "repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen."
+              "repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen.",
+              "emergency": "Was die Bridge mit diesem Eingang selbst schaltet, solange Home Assistant nicht erreichbar ist: einen OM117-Ausgang (\u21c4 umschalten, \u2293 Impuls) oder ein Rollladen-Paar (\u25b2 auf, \u25bc ab, \u25b2\u25bc abwechselnd). Ein fahrender Rollladen h\u00e4lt bei jedem Tastendruck an. Solange Home Assistant verbunden ist, wirken nur deine Automationen auf den Eingang."
             }
           },
           "port_8": {
@@ -706,13 +732,15 @@
               "role": "Funktion",
               "device_class": "Ger\u00e4teklasse",
               "invert": "Invertieren",
-              "repeat": "Wiederholen beim Halten"
+              "repeat": "Wiederholen beim Halten",
+              "emergency": "Notbetrieb-Ziel"
             },
             "data_description": {
               "role": "Taster melden Ereignisse, Kontakte einen dauerhaften Zustand.",
               "device_class": "Nur f\u00fcr Kontakte.",
               "invert": "Eingang umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
-              "repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen."
+              "repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen.",
+              "emergency": "Was die Bridge mit diesem Eingang selbst schaltet, solange Home Assistant nicht erreichbar ist: einen OM117-Ausgang (\u21c4 umschalten, \u2293 Impuls) oder ein Rollladen-Paar (\u25b2 auf, \u25bc ab, \u25b2\u25bc abwechselnd). Ein fahrender Rollladen h\u00e4lt bei jedem Tastendruck an. Solange Home Assistant verbunden ist, wirken nur deine Automationen auf den Eingang."
             }
           }
         }
@@ -840,7 +868,9 @@
               "b_role": "Kanal B: Funktion",
               "b_device_class": "Kanal B: Ger\u00e4teklasse",
               "b_invert": "Kanal B invertieren",
-              "b_repeat": "Kanal B: Wiederholen beim Halten"
+              "b_repeat": "Kanal B: Wiederholen beim Halten",
+              "a_emergency": "Kanal A: Notbetrieb-Ziel",
+              "b_emergency": "Kanal B: Notbetrieb-Ziel"
             },
             "data_description": {
               "type": "Was in diesem Steckplatz steckt.",
@@ -851,7 +881,9 @@
               "b_role": "Taster melden Ereignisse, Kontakte einen dauerhaften Zustand.",
               "b_device_class": "Nur f\u00fcr Kontakte.",
               "b_invert": "Eingang umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
-              "b_repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen."
+              "b_repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen.",
+              "a_emergency": "Was die Bridge mit diesem Eingang selbst schaltet, solange Home Assistant nicht erreichbar ist: einen OM117-Ausgang (\u21c4 umschalten, \u2293 Impuls) oder ein Rollladen-Paar (\u25b2 auf, \u25bc ab, \u25b2\u25bc abwechselnd). Ein fahrender Rollladen h\u00e4lt bei jedem Tastendruck an. Solange Home Assistant verbunden ist, wirken nur deine Automationen auf den Eingang.",
+              "b_emergency": "Was die Bridge mit diesem Eingang selbst schaltet, solange Home Assistant nicht erreichbar ist: einen OM117-Ausgang (\u21c4 umschalten, \u2293 Impuls) oder ein Rollladen-Paar (\u25b2 auf, \u25bc ab, \u25b2\u25bc abwechselnd). Ein fahrender Rollladen h\u00e4lt bei jedem Tastendruck an. Solange Home Assistant verbunden ist, wirken nur deine Automationen auf den Eingang."
             }
           },
           "slot_2": {
@@ -865,7 +897,9 @@
               "b_role": "Kanal B: Funktion",
               "b_device_class": "Kanal B: Ger\u00e4teklasse",
               "b_invert": "Kanal B invertieren",
-              "b_repeat": "Kanal B: Wiederholen beim Halten"
+              "b_repeat": "Kanal B: Wiederholen beim Halten",
+              "a_emergency": "Kanal A: Notbetrieb-Ziel",
+              "b_emergency": "Kanal B: Notbetrieb-Ziel"
             },
             "data_description": {
               "type": "Was in diesem Steckplatz steckt.",
@@ -876,7 +910,9 @@
               "b_role": "Taster melden Ereignisse, Kontakte einen dauerhaften Zustand.",
               "b_device_class": "Nur f\u00fcr Kontakte.",
               "b_invert": "Eingang umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
-              "b_repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen."
+              "b_repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen.",
+              "a_emergency": "Was die Bridge mit diesem Eingang selbst schaltet, solange Home Assistant nicht erreichbar ist: einen OM117-Ausgang (\u21c4 umschalten, \u2293 Impuls) oder ein Rollladen-Paar (\u25b2 auf, \u25bc ab, \u25b2\u25bc abwechselnd). Ein fahrender Rollladen h\u00e4lt bei jedem Tastendruck an. Solange Home Assistant verbunden ist, wirken nur deine Automationen auf den Eingang.",
+              "b_emergency": "Was die Bridge mit diesem Eingang selbst schaltet, solange Home Assistant nicht erreichbar ist: einen OM117-Ausgang (\u21c4 umschalten, \u2293 Impuls) oder ein Rollladen-Paar (\u25b2 auf, \u25bc ab, \u25b2\u25bc abwechselnd). Ein fahrender Rollladen h\u00e4lt bei jedem Tastendruck an. Solange Home Assistant verbunden ist, wirken nur deine Automationen auf den Eingang."
             }
           },
           "slot_3": {
@@ -890,7 +926,9 @@
               "b_role": "Kanal B: Funktion",
               "b_device_class": "Kanal B: Ger\u00e4teklasse",
               "b_invert": "Kanal B invertieren",
-              "b_repeat": "Kanal B: Wiederholen beim Halten"
+              "b_repeat": "Kanal B: Wiederholen beim Halten",
+              "a_emergency": "Kanal A: Notbetrieb-Ziel",
+              "b_emergency": "Kanal B: Notbetrieb-Ziel"
             },
             "data_description": {
               "type": "Was in diesem Steckplatz steckt.",
@@ -901,7 +939,9 @@
               "b_role": "Taster melden Ereignisse, Kontakte einen dauerhaften Zustand.",
               "b_device_class": "Nur f\u00fcr Kontakte.",
               "b_invert": "Eingang umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
-              "b_repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen."
+              "b_repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen.",
+              "a_emergency": "Was die Bridge mit diesem Eingang selbst schaltet, solange Home Assistant nicht erreichbar ist: einen OM117-Ausgang (\u21c4 umschalten, \u2293 Impuls) oder ein Rollladen-Paar (\u25b2 auf, \u25bc ab, \u25b2\u25bc abwechselnd). Ein fahrender Rollladen h\u00e4lt bei jedem Tastendruck an. Solange Home Assistant verbunden ist, wirken nur deine Automationen auf den Eingang.",
+              "b_emergency": "Was die Bridge mit diesem Eingang selbst schaltet, solange Home Assistant nicht erreichbar ist: einen OM117-Ausgang (\u21c4 umschalten, \u2293 Impuls) oder ein Rollladen-Paar (\u25b2 auf, \u25bc ab, \u25b2\u25bc abwechselnd). Ein fahrender Rollladen h\u00e4lt bei jedem Tastendruck an. Solange Home Assistant verbunden ist, wirken nur deine Automationen auf den Eingang."
             }
           },
           "slot_4": {
@@ -915,7 +955,9 @@
               "b_role": "Kanal B: Funktion",
               "b_device_class": "Kanal B: Ger\u00e4teklasse",
               "b_invert": "Kanal B invertieren",
-              "b_repeat": "Kanal B: Wiederholen beim Halten"
+              "b_repeat": "Kanal B: Wiederholen beim Halten",
+              "a_emergency": "Kanal A: Notbetrieb-Ziel",
+              "b_emergency": "Kanal B: Notbetrieb-Ziel"
             },
             "data_description": {
               "type": "Was in diesem Steckplatz steckt.",
@@ -926,7 +968,9 @@
               "b_role": "Taster melden Ereignisse, Kontakte einen dauerhaften Zustand.",
               "b_device_class": "Nur f\u00fcr Kontakte.",
               "b_invert": "Eingang umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
-              "b_repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen."
+              "b_repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen.",
+              "a_emergency": "Was die Bridge mit diesem Eingang selbst schaltet, solange Home Assistant nicht erreichbar ist: einen OM117-Ausgang (\u21c4 umschalten, \u2293 Impuls) oder ein Rollladen-Paar (\u25b2 auf, \u25bc ab, \u25b2\u25bc abwechselnd). Ein fahrender Rollladen h\u00e4lt bei jedem Tastendruck an. Solange Home Assistant verbunden ist, wirken nur deine Automationen auf den Eingang.",
+              "b_emergency": "Was die Bridge mit diesem Eingang selbst schaltet, solange Home Assistant nicht erreichbar ist: einen OM117-Ausgang (\u21c4 umschalten, \u2293 Impuls) oder ein Rollladen-Paar (\u25b2 auf, \u25bc ab, \u25b2\u25bc abwechselnd). Ein fahrender Rollladen h\u00e4lt bei jedem Tastendruck an. Solange Home Assistant verbunden ist, wirken nur deine Automationen auf den Eingang."
             }
           },
           "slot_5": {
@@ -940,7 +984,9 @@
               "b_role": "Kanal B: Funktion",
               "b_device_class": "Kanal B: Ger\u00e4teklasse",
               "b_invert": "Kanal B invertieren",
-              "b_repeat": "Kanal B: Wiederholen beim Halten"
+              "b_repeat": "Kanal B: Wiederholen beim Halten",
+              "a_emergency": "Kanal A: Notbetrieb-Ziel",
+              "b_emergency": "Kanal B: Notbetrieb-Ziel"
             },
             "data_description": {
               "type": "Was in diesem Steckplatz steckt.",
@@ -951,7 +997,9 @@
               "b_role": "Taster melden Ereignisse, Kontakte einen dauerhaften Zustand.",
               "b_device_class": "Nur f\u00fcr Kontakte.",
               "b_invert": "Eingang umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
-              "b_repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen."
+              "b_repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen.",
+              "a_emergency": "Was die Bridge mit diesem Eingang selbst schaltet, solange Home Assistant nicht erreichbar ist: einen OM117-Ausgang (\u21c4 umschalten, \u2293 Impuls) oder ein Rollladen-Paar (\u25b2 auf, \u25bc ab, \u25b2\u25bc abwechselnd). Ein fahrender Rollladen h\u00e4lt bei jedem Tastendruck an. Solange Home Assistant verbunden ist, wirken nur deine Automationen auf den Eingang.",
+              "b_emergency": "Was die Bridge mit diesem Eingang selbst schaltet, solange Home Assistant nicht erreichbar ist: einen OM117-Ausgang (\u21c4 umschalten, \u2293 Impuls) oder ein Rollladen-Paar (\u25b2 auf, \u25bc ab, \u25b2\u25bc abwechselnd). Ein fahrender Rollladen h\u00e4lt bei jedem Tastendruck an. Solange Home Assistant verbunden ist, wirken nur deine Automationen auf den Eingang."
             }
           },
           "slot_6": {
@@ -965,7 +1013,9 @@
               "b_role": "Kanal B: Funktion",
               "b_device_class": "Kanal B: Ger\u00e4teklasse",
               "b_invert": "Kanal B invertieren",
-              "b_repeat": "Kanal B: Wiederholen beim Halten"
+              "b_repeat": "Kanal B: Wiederholen beim Halten",
+              "a_emergency": "Kanal A: Notbetrieb-Ziel",
+              "b_emergency": "Kanal B: Notbetrieb-Ziel"
             },
             "data_description": {
               "type": "Was in diesem Steckplatz steckt.",
@@ -976,7 +1026,9 @@
               "b_role": "Taster melden Ereignisse, Kontakte einen dauerhaften Zustand.",
               "b_device_class": "Nur f\u00fcr Kontakte.",
               "b_invert": "Eingang umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
-              "b_repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen."
+              "b_repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen.",
+              "a_emergency": "Was die Bridge mit diesem Eingang selbst schaltet, solange Home Assistant nicht erreichbar ist: einen OM117-Ausgang (\u21c4 umschalten, \u2293 Impuls) oder ein Rollladen-Paar (\u25b2 auf, \u25bc ab, \u25b2\u25bc abwechselnd). Ein fahrender Rollladen h\u00e4lt bei jedem Tastendruck an. Solange Home Assistant verbunden ist, wirken nur deine Automationen auf den Eingang.",
+              "b_emergency": "Was die Bridge mit diesem Eingang selbst schaltet, solange Home Assistant nicht erreichbar ist: einen OM117-Ausgang (\u21c4 umschalten, \u2293 Impuls) oder ein Rollladen-Paar (\u25b2 auf, \u25bc ab, \u25b2\u25bc abwechselnd). Ein fahrender Rollladen h\u00e4lt bei jedem Tastendruck an. Solange Home Assistant verbunden ist, wirken nur deine Automationen auf den Eingang."
             }
           },
           "slot_7": {
@@ -990,7 +1042,9 @@
               "b_role": "Kanal B: Funktion",
               "b_device_class": "Kanal B: Ger\u00e4teklasse",
               "b_invert": "Kanal B invertieren",
-              "b_repeat": "Kanal B: Wiederholen beim Halten"
+              "b_repeat": "Kanal B: Wiederholen beim Halten",
+              "a_emergency": "Kanal A: Notbetrieb-Ziel",
+              "b_emergency": "Kanal B: Notbetrieb-Ziel"
             },
             "data_description": {
               "type": "Was in diesem Steckplatz steckt.",
@@ -1001,7 +1055,9 @@
               "b_role": "Taster melden Ereignisse, Kontakte einen dauerhaften Zustand.",
               "b_device_class": "Nur f\u00fcr Kontakte.",
               "b_invert": "Eingang umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
-              "b_repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen."
+              "b_repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen.",
+              "a_emergency": "Was die Bridge mit diesem Eingang selbst schaltet, solange Home Assistant nicht erreichbar ist: einen OM117-Ausgang (\u21c4 umschalten, \u2293 Impuls) oder ein Rollladen-Paar (\u25b2 auf, \u25bc ab, \u25b2\u25bc abwechselnd). Ein fahrender Rollladen h\u00e4lt bei jedem Tastendruck an. Solange Home Assistant verbunden ist, wirken nur deine Automationen auf den Eingang.",
+              "b_emergency": "Was die Bridge mit diesem Eingang selbst schaltet, solange Home Assistant nicht erreichbar ist: einen OM117-Ausgang (\u21c4 umschalten, \u2293 Impuls) oder ein Rollladen-Paar (\u25b2 auf, \u25bc ab, \u25b2\u25bc abwechselnd). Ein fahrender Rollladen h\u00e4lt bei jedem Tastendruck an. Solange Home Assistant verbunden ist, wirken nur deine Automationen auf den Eingang."
             }
           },
           "slot_8": {
@@ -1015,7 +1071,9 @@
               "b_role": "Kanal B: Funktion",
               "b_device_class": "Kanal B: Ger\u00e4teklasse",
               "b_invert": "Kanal B invertieren",
-              "b_repeat": "Kanal B: Wiederholen beim Halten"
+              "b_repeat": "Kanal B: Wiederholen beim Halten",
+              "a_emergency": "Kanal A: Notbetrieb-Ziel",
+              "b_emergency": "Kanal B: Notbetrieb-Ziel"
             },
             "data_description": {
               "type": "Was in diesem Steckplatz steckt.",
@@ -1026,7 +1084,9 @@
               "b_role": "Taster melden Ereignisse, Kontakte einen dauerhaften Zustand.",
               "b_device_class": "Nur f\u00fcr Kontakte.",
               "b_invert": "Eingang umgekehrt melden, etwa f\u00fcr einen \u00d6ffner.",
-              "b_repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen."
+              "b_repeat": "Sendet Wiederholungen, solange ein Taster gehalten wird, etwa zum Dimmen.",
+              "a_emergency": "Was die Bridge mit diesem Eingang selbst schaltet, solange Home Assistant nicht erreichbar ist: einen OM117-Ausgang (\u21c4 umschalten, \u2293 Impuls) oder ein Rollladen-Paar (\u25b2 auf, \u25bc ab, \u25b2\u25bc abwechselnd). Ein fahrender Rollladen h\u00e4lt bei jedem Tastendruck an. Solange Home Assistant verbunden ist, wirken nur deine Automationen auf den Eingang.",
+              "b_emergency": "Was die Bridge mit diesem Eingang selbst schaltet, solange Home Assistant nicht erreichbar ist: einen OM117-Ausgang (\u21c4 umschalten, \u2293 Impuls) oder ein Rollladen-Paar (\u25b2 auf, \u25bc ab, \u25b2\u25bc abwechselnd). Ein fahrender Rollladen h\u00e4lt bei jedem Tastendruck an. Solange Home Assistant verbunden ist, wirken nur deine Automationen auf den Eingang."
             }
           }
         }
@@ -1125,6 +1185,11 @@
     "abort": {
       "integration_not_ready": "Die Integration ist noch nicht geladen",
       "no_devices_found": "Auf dem Bus wurden keine Ger\u00e4te gefunden"
+    }
+  },
+  "device": {
+    "bridge": {
+      "name": "casaIT-Bridge"
     }
   }
 }

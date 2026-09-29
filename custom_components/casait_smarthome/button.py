@@ -18,7 +18,14 @@ from . import CasaITConfigEntry
 from .api import CasaITApi
 from .const import DOMAIN, OM117_MODE_PULSE, OW_PROFILE_MULTISENSOR, PCF8574_MAPPED_PORTS
 from .entity import CasaITMultisensorEntity, raise_command_error
-from .helpers import build_bridge_slug, build_device_identifier, build_entity_id, build_i2c_entity_id, get_module_name
+from .helpers import (
+    build_bridge_device_info,
+    build_bridge_slug,
+    build_device_identifier,
+    build_entity_id,
+    build_i2c_entity_id,
+    get_module_name,
+)
 from .multisensor import MultisensorCommandError
 
 PARALLEL_UPDATES = 0
@@ -139,12 +146,7 @@ class CasaITRescanButton(ButtonEntity):
         bridge_slug = build_bridge_slug(entry.entry_id, entry.unique_id)
         self._attr_unique_id = f"{entry.entry_id}_rescan_bus"
         self.entity_id = build_entity_id("button", bridge_slug, "rescan_bus")
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, build_device_identifier(entry.entry_id, "bridge", "controller"))},
-            name="casaIT bridge",
-            manufacturer="casaIT",
-            model="SMBus proxy",
-        )
+        self._attr_device_info = build_bridge_device_info(entry.entry_id)
 
     async def async_press(self) -> None:
         """Scan all supported buses."""

@@ -28,16 +28,15 @@ from homeassistant.const import (
     UnitOfTime,
 )
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import CasaITConfigEntry
 from .api import CasaITApi
-from .const import DOMAIN, OW_PROFILE_MULTISENSOR
+from .const import OW_PROFILE_MULTISENSOR
 from .entity import CasaITMultisensorEntity, CasaITOneWireEntity
 from .helpers import (
+    build_bridge_device_info,
     build_bridge_slug,
-    build_device_identifier,
     build_entity_id,
     build_onewire_device_info,
     build_onewire_entity_id,
@@ -161,12 +160,7 @@ class CasaITDebugSensor(SensorEntity):
         self._attr_unique_id = f"{entry.entry_id}_debug"
         bridge_slug = build_bridge_slug(entry.entry_id, entry.unique_id)
         self.entity_id = build_entity_id("sensor", bridge_slug, "diagnostics")
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, build_device_identifier(entry.entry_id, "bridge", "controller"))},
-            name="casaIT bridge",
-            manufacturer="CasaIT",
-            model="SMBus proxy",
-        )
+        self._attr_device_info = build_bridge_device_info(entry.entry_id)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -283,12 +277,7 @@ class CasaITBridgeDiagnosticSensor(SensorEntity):
         bridge_slug = build_bridge_slug(entry.entry_id, entry.unique_id)
         self._attr_unique_id = f"{entry.entry_id}_bridge_{description.key}"
         self.entity_id = build_entity_id("sensor", bridge_slug, description.key)
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, build_device_identifier(entry.entry_id, "bridge", "controller"))},
-            name="casaIT bridge",
-            manufacturer="casaIT",
-            model="SMBus proxy",
-        )
+        self._attr_device_info = build_bridge_device_info(entry.entry_id)
 
     async def async_update(self) -> None:
         """Read the current metric from the API diagnostics snapshot."""

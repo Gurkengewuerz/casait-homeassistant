@@ -112,6 +112,23 @@ def build_device_identifier(config_entry_id: str, device_kind: str, device_id: s
     return f"{config_entry_id}_{device_kind}_{device_id}"
 
 
+def build_bridge_device_info(config_entry_id: str, sw_version: str | None = None) -> DeviceInfo:
+    """Return the device of the bridge itself; its name comes from the translations.
+
+    Entities leave ``sw_version`` out: setup writes it to the registry from the ping.
+    """
+
+    info = DeviceInfo(
+        identifiers={(DOMAIN, build_device_identifier(config_entry_id, "bridge", "controller"))},
+        translation_key="bridge",
+        manufacturer="casaIT",
+        model="SMBus proxy",
+    )
+    if sw_version is not None:
+        info["sw_version"] = sw_version
+    return info
+
+
 def build_i2c_entity_id(
     entity_domain: str,
     bridge_slug: str,

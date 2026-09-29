@@ -390,6 +390,18 @@
     },
     "firmware_not_confirmed": {
       "message": "The bridge did not come back with the new firmware."
+    },
+    "bridge_connect_failed": {
+      "message": "Could not connect to the bridge: {error}"
+    },
+    "bridge_ping_failed": {
+      "message": "The bridge did not answer the ping: {error}"
+    },
+    "bridge_no_answer": {
+      "message": "The bridge did not answer the ping."
+    },
+    "initialization_failed": {
+      "message": "The modules on the bus could not be set up: {error}"
     }
   },
   "issues": {
@@ -1173,6 +1185,11 @@
     "abort": {
       "integration_not_ready": "The integration is not loaded yet",
       "no_devices_found": "No devices were found on the bus"
+    }
+  },
+  "device": {
+    "bridge": {
+      "name": "casaIT bridge"
     }
   }
 }

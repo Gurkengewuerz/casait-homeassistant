@@ -34,6 +34,7 @@ from .const import (
 from .emergency import build_emergency_links
 from .firmware import RECOVERY_KEY, CasaITFirmwareRecovery, get_firmware_recovery
 from .helpers import (
+    build_bridge_device_info,
     build_device_identifier,
     get_configured_module_addresses,
     get_configured_onewire_poll_intervals,
@@ -352,7 +353,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> bo
         )
     except (SMBusProxyError, OSError) as err:
         _record_bridge_setup_failure(hass, entry)
-        raise ConfigEntryNotReady(f"Failed to connect to SMBus proxy: {err}") from err
+        raise ConfigEntryNotReady(
+            translation_domain=DOMAIN,
+            translation_key="bridge_connect_failed",
+            translation_placeholders={"error": str(err)},
+        ) from err
 
     try:
         responded = await bus.ping_info()
@@ -361,11 +366,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> bo
     except (SMBusProxyError, OSError) as err:
         await bus.close()
         _record_bridge_setup_failure(hass, entry)
-        raise ConfigEntryNotReady(f"Failed to ping SMBus proxy: {err}") from err
+        raise ConfigEntryNotReady(
+            translation_domain=DOMAIN,
+            translation_key="bridge_ping_failed",
+            translation_placeholders={"error": str(err)},
+        ) from err
     if responded is None:
         await bus.close()
         _record_bridge_setup_failure(hass, entry)
-        raise ConfigEntryNotReady("SMBus proxy did not respond to ping")
+        raise ConfigEntryNotReady(translation_domain=DOMAIN, translation_key="bridge_no_answer")
 
     _clear_bridge_setup_failure(hass, entry)
     ir.async_delete_issue(hass, DOMAIN, f"bridge_firmware_outdated_{entry.entry_id}")
@@ -404,18 +413,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> bo
     await api.async_wait_initialized()
     if api.initialization_error is not None:
         await api.bus.close()
-        message = f"Failed to initialize casaIT devices: {api.initialization_error}"
-        raise ConfigEntryNotReady(message) from api.initialization_error
+        raise ConfigEntryNotReady(
+            translation_domain=DOMAIN,
+            translation_key="initialization_failed",
+            translation_placeholders={"error": str(api.initialization_error)},
+        ) from api.initialization_error
 
     device_registry = dr.async_get(hass)
     bridge_identifier = (DOMAIN, build_device_identifier(entry.entry_id, "bridge", "controller"))
     device_registry.async_get_or_create(
         config_entry_id=entry.entry_id,
-        identifiers={bridge_identifier},
-        name="casaIT bridge",
-        manufacturer="casaIT",
-        model="SMBus proxy",
-        sw_version=api.bridge_info.version if api.bridge_info else None,
+        **build_bridge_device_info(entry.entry_id, api.bridge_info.version if api.bridge_info else None),
     )
     for address in api.sm117:
         device_registry.async_get_or_create(
@@ -463,11 +471,7 @@ async def _async_setup_firmware_recovery(
     )
     dr.async_get(hass).async_get_or_create(
         config_entry_id=entry.entry_id,
-        identifiers={(DOMAIN, build_device_identifier(entry.entry_id, "bridge", "controller"))},
-        name="casaIT bridge",
-        manufacturer="casaIT",
-        model="SMBus proxy",
-        sw_version=err.version,
+        **build_bridge_device_info(entry.entry_id, err.version),
     )
     await hass.config_entries.async_forward_entry_setups(entry, RECOVERY_PLATFORMS)
     return True

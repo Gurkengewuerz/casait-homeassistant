@@ -100,10 +100,10 @@ def _normalize_entity(case: str, entity: Any) -> dict[str, Any]:
     device_info = entity.device_info
     assert device_info is not None
     identifiers = sorted([list(identifier) for identifier in device_info["identifiers"]])
+    strings_path = Path(__file__).parents[1] / "custom_components" / "casait_smarthome" / "strings.json"
+    strings = json.loads(strings_path.read_text(encoding="utf-8"))
     if (translation_key := entity.translation_key) is not None:
         platform = entity.entity_id.split(".", 1)[0]
-        strings_path = Path(__file__).parents[1] / "custom_components" / "casait_smarthome" / "strings.json"
-        strings = json.loads(strings_path.read_text(encoding="utf-8"))
         template = strings["entity"][platform][translation_key]["name"]
         name = template.format(**getattr(entity, "_attr_translation_placeholders", {}))
     else:
@@ -114,7 +114,8 @@ def _normalize_entity(case: str, entity: Any) -> dict[str, Any]:
         "unique_id": entity.unique_id,
         "name": name,
         "device_identifiers": identifiers,
-        "device_name": device_info["name"],
+        # A device named through the translations carries a key instead of a name.
+        "device_name": device_info.get("name") or strings["device"][device_info["translation_key"]]["name"],
     }
     if via_device := device_info.get("via_device"):
         normalized["via_device"] = list(via_device)

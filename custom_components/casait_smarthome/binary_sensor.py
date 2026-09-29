@@ -23,6 +23,7 @@ from .const import DOMAIN, DS2413_CHANNEL_INPUT, INPUT_ROLE_CONTACT, OW_PROFILE_
 from .entity import CasaITMultisensorEntity, CasaITOneWireEntity
 from .helpers import (
     DigitalInputConfig,
+    build_bridge_device_info,
     build_bridge_slug,
     build_device_identifier,
     build_entity_id,
@@ -155,12 +156,7 @@ class CasaITBridgeConnectionSensor(BinarySensorEntity):
         bridge_slug = build_bridge_slug(entry.entry_id, entry.unique_id)
         self._attr_unique_id = f"{entry.entry_id}_bridge_connection"
         self.entity_id = build_entity_id("binary_sensor", bridge_slug, "connection")
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, build_device_identifier(entry.entry_id, "bridge", "controller"))},
-            name="casaIT bridge",
-            manufacturer="casaIT",
-            model="SMBus proxy",
-        )
+        self._attr_device_info = build_bridge_device_info(entry.entry_id)
 
     async def async_update(self) -> None:
         """Read the transport connection flag without performing I/O."""

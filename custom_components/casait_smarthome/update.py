@@ -11,7 +11,6 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import CasaITConfigEntry
@@ -25,7 +24,7 @@ from .firmware import (
     get_firmware_recovery,
     normalize_version,
 )
-from .helpers import build_bridge_slug, build_device_identifier, build_entity_id
+from .helpers import build_bridge_device_info, build_bridge_slug, build_entity_id
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -79,12 +78,7 @@ class CasaITBridgeFirmwareUpdate(UpdateEntity):
         bridge_slug = build_bridge_slug(entry.entry_id, entry.unique_id)
         self._attr_unique_id = f"{entry.entry_id}_bridge_firmware"
         self.entity_id = build_entity_id("update", bridge_slug, "firmware")
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, build_device_identifier(entry.entry_id, "bridge", "controller"))},
-            name="casaIT bridge",
-            manufacturer="casaIT",
-            model="SMBus proxy",
-        )
+        self._attr_device_info = build_bridge_device_info(entry.entry_id)
 
     @property
     def installed_version(self) -> str | None:
