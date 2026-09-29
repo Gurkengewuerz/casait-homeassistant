@@ -86,13 +86,13 @@ Home Assistant's own **Event received** trigger.
 
 ## Home Assistant features
 
-- Fast input polling with latched push-button edges
+- Inputs sampled on the bridge and pushed as they change, with latched push-button edges
 - IM117 inputs exposed as events, switches, contacts, or unused channels
 - Press, long-press, double-press, and repeat events for automations
 - OM117 switches, pulse outputs, roller shutters, and blinds with time-based slat tilt
 - Runtime controls for cover calibration, pulse duration, LED count, and animation speed
 - Five-color LED palettes for chase and alternate animations
-- Bridge connection, latency, error-counter, send-spacing, and poll-cycle diagnostics
+- Bridge connection, latency, error-counter, send-spacing, sweep-time, I2C-retry, and interlock diagnostics
 - Zeroconf discovery, reconfiguration, device rescanning, topology watch, and repair issues
 
 ## Installation
@@ -132,23 +132,32 @@ to change host, port, or timeout later without losing module options.
 
 ## How data is updated
 
-The integration keeps a single poll loop per bridge rather than a coordinator,
-because the two classes of hardware want very different treatment.
+The integration uses no coordinator, because the two classes of hardware want
+very different treatment.
 
-**I2C modules are pushed.** One loop reads every module and dispatches only what
-actually changed, so entities never poll on their own. Inputs decide how
-responsive the system feels and are read every cycle (20 ms by default). Outputs
-cannot change by themselves, so they are re-read only on the slow cycle (5 s by
-default) to catch drift. One cycle is batched into as few bridge frames as the
-protocol allows — one operation per round trip was what made cycle time scale
-with module count, not the bus itself. Writes take priority over the loop so a
-command is not queued behind a full sweep.
+**I2C modules are read by the bridge.** At startup the integration hands every
+IM117, OM117 and DM117 to the bridge, which reads them on its own and pushes only
+what changed. While nothing happens, nothing crosses the network apart from a
+heartbeat every 5 s. Inputs decide how responsive the system feels and are
+sampled every 20 ms by default; the bridge debounces them against its own clock,
+so a press arrives one network hop after it happened and cannot fall between
+two polls. Outputs cannot change by themselves, so the bridge reads them back
+only every 5 s by default to catch drift, and pushes a relay it released itself,
+such as a cover timer running out, right away. A DM117 is read with the inputs
+if it has input slots; its input channels and a changed slot layout are pushed
+at once, output and dimmer values at most once per slow period, so a dimmer ramp
+does not flood Home Assistant. Every pushed reading is acknowledged, and one
+lost with a dropped connection is sent again after the reconnect.
+
+The bridge retries an I2C access once when a module missed its address, so the
+odd NACK of a busy module never reaches Home Assistant. A module only counts as
+unavailable when the bridge reports that it failed several reads in a row.
 
 **1-Wire chips are scheduled** by one scheduler per bridge rather than by their
 entities. Each chip is read on its own interval and the result is pushed to its
 entities. A reading is a short sequence of bus transactions, and conversion
 times are waited out with the bus released, so a temperature conversion never
-delays an input edge. All DS18B20s on one bus share a single broadcast
+delays a write. All DS18B20s on one bus share a single broadcast
 conversion. A chip is only shown as unavailable after three failed reads in a
 row.
 
@@ -172,12 +181,12 @@ first.
   what they actually do, and covers restore their last position. A cover that was
   moving during the restart references itself on its next move.
 - **The bridge restarts, or its connection drops.** The integration reconnects on
-  its own, hands the inputs to the bridge's scanner again and reads every module
-  in full before it writes anything, so a command never builds on a stale output
-  state. The bridge tells the two cases apart by a boot id in its ping, keeps
-  scanning the inputs for 15 seconds without a client so presses during a short
-  network drop arrive afterwards, and reports a scanner it lost, which the
-  integration then sets up again.
+  its own and hands the modules to the bridge again; outputs are read in full
+  before anything is written, so a command never builds on a stale output state.
+  The bridge tells the two cases apart by a boot id in its ping. It keeps reading
+  the modules for 15 seconds without a client, so presses during a short network
+  drop arrive afterwards, and it drops a client whose heartbeat stays away for
+  30 seconds.
 - **The bridge is not reachable when Home Assistant starts.** Setup is retried
   with a growing delay until the bridge answers; after three failed attempts a
   repair issue says so.
@@ -195,9 +204,16 @@ first.
   network delay, and a move ends on time even if Home Assistant restarts in the
   middle of it; the bridge also releases every such relay as soon as no client is
   connected.
-- **The bridge needs current firmware.** The integration relies on the input
-  scanner, output timers and the boot id in the ping. A bridge with older firmware
-  is refused during setup with a request to update it.
+- **Cover relays are interlocked on the bridge.** The two relays of a shutter or
+  blind pair never run together, and one direction starts at the earliest 300 ms
+  after the other stopped. The cover itself waits 500 ms before reversing; the
+  bridge is the safety net for everything that could go wrong on the way, and
+  refuses such a write instead of passing it on. The **Interlock refusals**
+  sensor counts how often it had to.
+- **The bridge needs current firmware.** The integration relies on the bridge
+  reading the modules, the 1-Wire commands, the interlock, output timers and the
+  boot id in the ping; the bridge reports what it supports in the ping. A bridge
+  with older firmware is refused during setup with a request to update it.
 
 ## Configuration options
 
@@ -234,8 +250,8 @@ mode, the form comes back once with the fields that now apply.
 | Long press threshold   | 500 ms    | How long a button must be held to report `long_press`                     |
 | Double click window    | 0 ms      | Wait for a second press. `0` reports single presses immediately           |
 | Repeat interval        | 400 ms    | Gap between `repeat` events while a button with repeat enabled is held    |
-| Fast polling interval  | 20 ms     | Delay between input polling cycles                                        |
-| Slow polling interval  | 5 s       | Consistency re-read of output-only modules                                |
+| Fast polling interval  | 20 ms     | How often the bridge samples the inputs                                   |
+| Slow polling interval  | 5 s       | How often the bridge re-reads outputs and batches output changes          |
 | Maximum send spacing   | 5 ms      | Largest spacing the adaptive transport may use after communication errors |
 | Topology scan interval | `0` (off) | How often to rescan the bus for modules that disappeared                  |
 | Scans before gone      | 3         | Consecutive scans a module must miss before it is reported                |
@@ -465,7 +481,8 @@ The bridge device includes diagnostic entities for:
 - Last roundtrip latency
 - CRC and timeout counters
 - Current adaptive send spacing
-- Fast and full poll-cycle duration
+- How long the bridge's input sweep and output sweep take
+- I2C accesses only a second attempt rescued, and writes the interlock refused
 
 The diagnostics download (**Settings > Devices & services > casaIT : Smart Home >
 ⋮ > Download diagnostics**) contains a bus overview, `bus_topology`:
@@ -530,13 +547,14 @@ Position is calculated from travel times, not measured. Send a full open or clos
 to re-synchronise, then correct the travel and tilt times in the runtime number
 entities on that device.
 
-### The bus is slow, or the poll cycle overruns
+### The bus is slow, or the input sweep overruns
 
-Look at the bridge diagnostic sensors: the poll-cycle duration against the
-configured fast interval tells you whether the cycle actually fits. If it does not,
-raise the fast polling interval or reduce how many modules are read every cycle.
-CRC and timeout counters climbing at the same time point at wiring rather than
-timing.
+Look at the bridge diagnostic sensors: the input sweep against the configured
+fast interval tells you whether the sweep actually fits. If it does not, raise
+the fast polling interval; a DM117 with input slots costs the most, because it
+needs a moment to prepare its answer. A climbing **I2C retries** count means a
+module keeps missing its address and only the second attempt reaches it; CRC and
+timeout counters climbing at the same time point at wiring rather than timing.
 
 ### Debug logging
 

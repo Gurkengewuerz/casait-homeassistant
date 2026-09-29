@@ -248,6 +248,22 @@ BRIDGE_DIAGNOSTIC_DESCRIPTIONS = (
         section="poll",
         source_key="full_cycle_ms",
     ),
+    BridgeDiagnosticDescription(
+        key="i2c_retries",
+        translation_key="bridge_i2c_retries",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        section="bridge",
+        source_key="i2c_retries",
+    ),
+    BridgeDiagnosticDescription(
+        key="interlock_refusals",
+        translation_key="bridge_interlock_refusals",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        section="bridge",
+        source_key="interlock_refusals",
+    ),
 )
 
 

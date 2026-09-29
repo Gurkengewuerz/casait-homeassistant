@@ -1,26 +1,33 @@
-"""Tests for batched bus access: frame packing, result slicing and failure isolation."""
+"""Tests for bus access: batch framing, the bridge watch and its events."""
 
 from __future__ import annotations
 
 import asyncio
 from unittest.mock import patch
 
+from crccheck.crc import Crc8Smbus
 import pytest
 
-from custom_components.casait_smarthome.api import MAX_READ_FAILURES, CasaITApi
+from custom_components.casait_smarthome.api import INTERLOCK_DEAD_MS, CasaITApi
+from custom_components.casait_smarthome.const import OM117_MODE_SHUTTER, PCF8574_MAPPED_PORTS
+from custom_components.casait_smarthome.helpers import OM117PairConfig
 from custom_components.casait_smarthome.services.i2cClasses.dm117 import DM117, DeviceType
 from custom_components.casait_smarthome.services.i2cClasses.pcf8574 import PCF8574
 from custom_components.casait_smarthome.services.smbus_proxy import (
-    CMD_SCAN_CONFIG,
-    CMD_SCAN_FETCH,
+    CMD_INTERLOCK,
+    CMD_WATCH_CONFIG,
+    EVENT_MARKER,
     MAX_BATCH_RESULTS,
     MAX_FRAME_PAYLOAD,
-    MAX_SCAN_ADDRESSES,
-    MAX_SCAN_ENTRIES,
-    SCAN_FLAG_OVERFLOW,
+    MAX_WATCH_MODULES,
+    WATCH_FLAG_OVERFLOW,
+    WATCH_KIND_DM117,
+    WATCH_KIND_PCF_INPUT,
+    WATCH_KIND_PCF_OUTPUT,
     I2CBatch,
     I2CBatchError,
     SMBus,
+    parse_watch_event,
 )
 
 
@@ -161,220 +168,59 @@ async def test_empty_batch_does_not_reach_the_wire(monkeypatch) -> None:
 
 
 @pytest.mark.unit
-async def test_scan_fetch_parses_entries_and_flags(monkeypatch) -> None:
-    bus = _bus(monkeypatch)
-    monkeypatch.setattr(bus, "_send_command", _respond(b"\x00\x01\x02\x00\xfe\x01\xff"))
-
-    flags, entries = await bus.scan_fetch()
-
-    assert flags & SCAN_FLAG_OVERFLOW
-    assert entries == [(0, 0xFE), (1, 0xFF)]
-
-
-@pytest.mark.unit
-def test_scan_limits_match_the_firmware() -> None:
-    """Guard the constants shared with modules/src/cb32.cpp.
-
-    The bridge derives its own limits from a 128 byte client buffer. Both sides have to
-    agree or a full queue silently truncates on the wire.
-    """
-
-    client_rx_buffer = 128
-    assert client_rx_buffer - 2 == MAX_FRAME_PAYLOAD
-    # Firmware: (((CLIENT_RX_BUFFER - 2) - 3) / 2)
-    assert MAX_SCAN_ENTRIES == ((client_rx_buffer - 2) - 3) // 2 == 61
-    assert MAX_SCAN_ADDRESSES == 32
-    assert SCAN_FLAG_OVERFLOW == 0x01
-    assert (CMD_SCAN_CONFIG, CMD_SCAN_FETCH) == (0x12, 0x13)
-
-
-@pytest.mark.unit
-async def test_scan_fetch_accepts_a_full_queue(monkeypatch) -> None:
-    bus = _bus(monkeypatch)
-    entries = bytes(range(MAX_SCAN_ENTRIES)) + bytes(MAX_SCAN_ENTRIES)
-    payload = bytes([0x00, 0x00, MAX_SCAN_ENTRIES]) + bytes(
-        byte for index in range(MAX_SCAN_ENTRIES) for byte in (entries[index], 0xAA)
-    )
-    assert len(payload) <= MAX_FRAME_PAYLOAD
-    monkeypatch.setattr(bus, "_send_command", _respond(payload))
-
-    flags, parsed = await bus.scan_fetch()
-
-    assert flags == 0
-    assert len(parsed) == MAX_SCAN_ENTRIES
-
-
-@pytest.mark.unit
-async def test_scan_config_refuses_more_addresses_than_the_bridge_holds(monkeypatch) -> None:
-    bus = _bus(monkeypatch)
-    monkeypatch.setattr(bus, "_send_command", _respond(b"\x00"))
-
-    with pytest.raises(ValueError, match="scan addresses"):
-        await bus.scan_config(list(range(MAX_SCAN_ADDRESSES + 1)), 20, 40)
-
-
-@pytest.mark.unit
-async def test_scan_config_frames_the_request_the_bridge_expects(monkeypatch) -> None:
+async def test_watch_config_frames_the_request_the_bridge_expects(monkeypatch) -> None:
     bus = _bus(monkeypatch)
     sent: list[bytes] = []
 
-    async def capture(payload: bytes) -> bytes:
+    async def send(payload: bytes) -> bytes:
+        sent.append(payload)
+        return b"\x00\x01"
+
+    monkeypatch.setattr(bus, "_send_command", send)
+
+    assert await bus.watch_config([(WATCH_KIND_PCF_INPUT, 0x38), (WATCH_KIND_DM117, 0x10)], 20, 5000, 40)
+    assert sent == [bytes([CMD_WATCH_CONFIG, 20, 0, 50, 40, 2, WATCH_KIND_PCF_INPUT, 0x38, WATCH_KIND_DM117, 0x10])]
+
+
+@pytest.mark.unit
+async def test_a_refused_watch_is_an_error(monkeypatch) -> None:
+    bus = _bus(monkeypatch)
+    monkeypatch.setattr(bus, "_send_command", _respond(b"\xff"))
+
+    with pytest.raises(OSError, match="refused"):
+        await bus.watch_config([(WATCH_KIND_PCF_INPUT, 0x38)], 20, 5000, 40)
+    with pytest.raises(ValueError, match="watched modules"):
+        await bus.watch_config([(WATCH_KIND_PCF_INPUT, 0x38)] * (MAX_WATCH_MODULES + 1), 20, 5000, 40)
+
+
+@pytest.mark.unit
+async def test_interlock_frames_the_pairs(monkeypatch) -> None:
+    bus = _bus(monkeypatch)
+    sent: list[bytes] = []
+
+    async def send(payload: bytes) -> bytes:
         sent.append(payload)
         return b"\x00"
 
-    monkeypatch.setattr(bus, "_send_command", capture)
+    monkeypatch.setattr(bus, "_send_command", send)
 
-    assert await bus.scan_config([0x38, 0x39], 20, 40)
-    assert sent == [bytes([CMD_SCAN_CONFIG, 20, 40, 2, 0x38, 0x39])]
-
-
-@pytest.mark.unit
-async def test_scan_fetch_rejects_a_truncated_entry_list(monkeypatch) -> None:
-    bus = _bus(monkeypatch)
-    monkeypatch.setattr(bus, "_send_command", _respond(b"\x00\x00\x04\x00\xfe"))
-
-    with pytest.raises(OSError, match="truncated"):
-        await bus.scan_fetch()
-
-
-# ---------------------------------------------------------------------------
-# Poll cycle packing
-# ---------------------------------------------------------------------------
+    await bus.interlock(0x20, 300, [(0, 1), (3, 2)])
+    assert sent == [bytes([CMD_INTERLOCK, 0x20, 0x01, 0x2C, 2, 0, 1, 3, 2])]
 
 
 @pytest.mark.unit
-def test_full_cycle_packs_into_two_frames(hass) -> None:
-    bus = FakeBus()
-    api = CasaITApi(hass, bus, "entry-test")
+def test_watch_events_decode_and_reject_truncation() -> None:
+    event = parse_watch_event(_event((5, 0, [0xFE]), (6, 1, []), flags=WATCH_FLAG_OVERFLOW))
 
-    for index in range(8):
-        _pcf(api, 0x38 + index, bus)
-    for index in range(8):
-        address = 0x10 + index
-        device = DM117(bus, address)
-        device.last_port_types = dict.fromkeys(range(8), DeviceType.INPUT)
-        device._force_full_read = False  # noqa: SLF001
-        api.dm117[address] = device
-
-    pcf = sorted(api.im117_om117)
-    plan = api._plan_poll_batches(pcf, sorted(api.dm117), set(pcf))  # noqa: SLF001
-
-    assert len(plan) == 2
-    for batch, modules in plan:
-        assert len(bytes(batch)) <= MAX_FRAME_PAYLOAD
-        assert batch.result_count <= MAX_BATCH_RESULTS
-        cursor = 0
-        for module in modules:
-            assert module.result_start == cursor
-            cursor += module.result_count
-        assert cursor == batch.result_count
-
-
-@pytest.mark.unit
-def test_rearms_are_capped_per_cycle(hass) -> None:
-    bus = FakeBus()
-    api = CasaITApi(hass, bus, "entry-test")
-    for index in range(8):
-        _pcf(api, 0x38 + index, bus, armed=False)
-
-    addresses = sorted(api.im117_om117)
-    plan = api._plan_poll_batches(addresses, [], set(addresses))  # noqa: SLF001
-
-    rearmed = [module for _, modules in plan for module in modules if module.rearmed]
-    assert len(rearmed) == 2
-    # The deferred modules are still read this cycle, just without re-arming.
-    assert sum(len(modules) for _, modules in plan) == 8
-
-
-@pytest.mark.unit
-def test_cached_dm117_is_left_out_of_the_batch(hass) -> None:
-    bus = FakeBus()
-    api = CasaITApi(hass, bus, "entry-test")
-    device = DM117(bus, 0x10)
-    device.last_values = {0: 1}
-    device._last_read_time = float("inf")  # noqa: SLF001
-    api.dm117[0x10] = device
-
-    assert api._plan_poll_batches([], [0x10], set()) == []  # noqa: SLF001
-
-
-# ---------------------------------------------------------------------------
-# Failure isolation
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-async def test_batch_failure_blames_one_module_and_rereads_the_others(hass) -> None:
-    bus = FakeBus(error=I2CBatchError("boom", 1))
-    api = CasaITApi(hass, bus, "entry-test")
-    _pcf(api, 0x38, bus)
-    _pcf(api, 0x39, bus)
-    api._pcf_states[0x38] = [1] * 8  # noqa: SLF001
-    api._pcf_states[0x39] = [1] * 8  # noqa: SLF001
-
-    addresses = sorted(api.im117_om117)
-    plan = api._plan_poll_batches(addresses, [], set(addresses))  # noqa: SLF001
-    batch, modules = plan[0]
-
-    with patch("custom_components.casait_smarthome.api.async_dispatcher_send"):
-        await api._run_poll_batch(batch, modules)  # noqa: SLF001
-
-        # One failed read is tolerated; the other module was read on its own.
-        assert api.pcf_states[0x39] == [1] * 8
-        assert bus.reads == [0x38]
-
-        for _ in range(MAX_READ_FAILURES - 1):
-            await api._run_poll_batch(batch, modules)  # noqa: SLF001
-
-    # The named module kept failing and lost its state; the other one never did.
-    assert 0x39 not in api.pcf_states
-    assert api.pcf_states[0x38] == [1] * 8
-    assert bus.reads == [0x38] * MAX_READ_FAILURES
-
-
-@pytest.mark.unit
-async def test_transport_failure_drops_every_module_in_the_frame(hass) -> None:
-    bus = FakeBus(error=OSError("link down"))
-    api = CasaITApi(hass, bus, "entry-test")
-    _pcf(api, 0x38, bus)
-    _pcf(api, 0x39, bus)
-    api._pcf_states[0x38] = [1] * 8  # noqa: SLF001
-    api._pcf_states[0x39] = [1] * 8  # noqa: SLF001
-
-    addresses = sorted(api.im117_om117)
-    batch, modules = api._plan_poll_batches(addresses, [], set(addresses))[0]  # noqa: SLF001
-
-    with patch("custom_components.casait_smarthome.api.async_dispatcher_send"):
-        for _ in range(MAX_READ_FAILURES):
-            await api._run_poll_batch(batch, modules)  # noqa: SLF001
-
-    assert api.pcf_states == {}
-    assert bus.reads == []
+    assert event.flags == WATCH_FLAG_OVERFLOW
+    assert [(entry.seq, entry.index, entry.data) for entry in event.entries] == [(5, 0, b"\xfe"), (6, 1, b"")]
+    with pytest.raises(ValueError, match="Truncated"):
+        parse_watch_event(_event((5, 0, [0xFE, 0x01]))[:-1])
 
 
 # ---------------------------------------------------------------------------
 # Bus priority
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-async def test_background_read_waits_for_a_running_poll_cycle(hass) -> None:
-    api = CasaITApi(hass, FakeBus(), "entry-test")
-    entered = False
-
-    async def background() -> None:
-        nonlocal entered
-        async with api._background_access():  # noqa: SLF001
-            entered = True
-
-    api._poll_idle.clear()  # noqa: SLF001
-    task = hass.async_create_task(background())
-    await asyncio.sleep(0)
-    assert not entered
-
-    api._poll_idle.set()  # noqa: SLF001
-    await task
-    assert entered
 
 
 @pytest.mark.unit
@@ -397,129 +243,190 @@ async def test_background_read_waits_for_a_pending_write(hass) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Bridge input scanner
+# Bridge watch
 # ---------------------------------------------------------------------------
 
 
-class ScanBus(FakeBus):
-    """Transport double exposing the scanner commands."""
+class WatchBus(FakeBus):
+    """Transport double exposing the watch and interlock commands."""
 
-    def __init__(self, accept: bool, fetch: tuple[int, list[tuple[int, int]]] | None = None) -> None:
+    connection_generation = 1
+
+    def __init__(self, *, resumed: bool = False) -> None:
         super().__init__()
-        self.accept = accept
-        self.fetch = fetch or (0, [])
+        self.resumed = resumed
+        self.watch: tuple[list[tuple[int, int]], int, int, int] | None = None
+        self.interlocks: dict[int, tuple[int, list[tuple[int, int]]]] = {}
+        self.acks: list[int] = []
+        # Pushed by the bridge right behind its answer to the watch configuration.
+        self.early: list[bytes] = []
+        self.api: CasaITApi | None = None
 
-    async def scan_config(self, addresses: list[int], period_ms: int, debounce_ms: int) -> bool:
-        self.configured = (list(addresses), period_ms, debounce_ms)
-        return self.accept
+    async def watch_config(self, modules: list[tuple[int, int]], fast_ms: int, slow_ms: int, debounce_ms: int) -> bool:
+        self.watch = (list(modules), fast_ms, slow_ms, debounce_ms)
+        assert self.api is not None
+        for payload in self.early:
+            self.api._handle_bridge_event(payload)  # noqa: SLF001
+        return self.resumed
 
-    async def scan_fetch(self) -> tuple[int, list[tuple[int, int]]]:
-        return self.fetch
+    async def interlock(self, addr: int, dead_ms: int, pairs: list[tuple[int, int]]) -> None:
+        self.interlocks[addr] = (dead_ms, list(pairs))
+
+    def watch_ack(self, seq: int) -> bool:
+        self.acks.append(seq)
+        return True
+
+
+def _event(*entries: tuple[int, int, list[int]], flags: int = 0) -> bytes:
+    payload = bytes([EVENT_MARKER, flags, len(entries)])
+    for seq, index, data in entries:
+        payload += bytes([seq, index, len(data)]) + bytes(data)
+    return payload
+
+
+def _watch_api(hass, bus: WatchBus, **kwargs) -> CasaITApi:
+    api = CasaITApi(hass, bus, "entry-test", **kwargs)
+    bus.api = api
+    return api
+
+
+def _edges(dispatch) -> list:
+    return [call.args[2] for call in dispatch.call_args_list if len(call.args) > 2]
 
 
 @pytest.mark.unit
-async def test_a_refused_scanner_leaves_the_inputs_to_the_poll_loop(hass) -> None:
-    bus = ScanBus(accept=False)
-    api = CasaITApi(hass, bus, "entry-test")
-    device = _pcf(api, 0x38, bus)
+async def test_the_session_hands_every_module_to_the_bridge(hass) -> None:
+    bus = WatchBus()
+    api = _watch_api(hass, bus, om117_pair_configuration={0x20: {0: OM117PairConfig(mode=OM117_MODE_SHUTTER)}})
+    _pcf(api, 0x20, bus)
+    _pcf(api, 0x21, bus)
+    _pcf(api, 0x38, bus)
+    api.dm117[0x10] = DM117(bus, 0x10)
 
-    await api._async_start_input_scanner()  # noqa: SLF001
+    await api._async_start_session()  # noqa: SLF001
 
-    assert api._scan_addresses == []  # noqa: SLF001
-    # Debounce stays with the driver when the bridge is not doing it.
-    assert device.debounce_time > 0
+    assert bus.watch is not None
+    assert bus.watch[0] == [
+        (WATCH_KIND_PCF_OUTPUT, 0x20),
+        (WATCH_KIND_PCF_OUTPUT, 0x21),
+        (WATCH_KIND_PCF_INPUT, 0x38),
+        (WATCH_KIND_DM117, 0x10),
+    ]
+    # The shutter pair is interlocked; the module without covers has its interlock lifted.
+    assert bus.interlocks == {
+        0x20: (INTERLOCK_DEAD_MS, [(PCF8574_MAPPED_PORTS[0], PCF8574_MAPPED_PORTS[1])]),
+        0x21: (0, []),
+    }
+    assert api._watch_ready  # noqa: SLF001
 
 
 @pytest.mark.unit
-async def test_accepted_scanner_takes_over_debounce_and_addresses(hass) -> None:
-    bus = ScanBus(accept=True)
-    api = CasaITApi(hass, bus, "entry-test")
-    device = _pcf(api, 0x38, bus)
+async def test_the_bridge_debounces_at_the_shared_floor(hass) -> None:
+    """The bridge takes one value for every input module, the driver keeps the rest."""
 
-    await api._async_start_input_scanner()  # noqa: SLF001
-
-    assert api._scan_addresses == [0x38]  # noqa: SLF001
-    assert device.debounce_time == 0
-    assert bus.configured[0] == [0x38]
-
-
-@pytest.mark.unit
-async def test_scanner_debounces_at_the_shared_floor(hass) -> None:
-    """The bridge takes one value for every address, the driver keeps the rest."""
-
-    bus = ScanBus(accept=True)
-    api = CasaITApi(hass, bus, "entry-test", input_debounce_ms={"im117": {0x38: 20, 0x39: 50}})
+    bus = WatchBus()
+    api = _watch_api(hass, bus, input_debounce_ms={"im117": {0x38: 20, 0x39: 50}})
     quick = _pcf(api, 0x38, bus)
     slow = _pcf(api, 0x39, bus)
 
-    await api._async_start_input_scanner()  # noqa: SLF001
+    await api._async_start_session()  # noqa: SLF001
 
-    assert bus.configured == ([0x38, 0x39], 20, 20)
+    assert bus.watch is not None
+    assert bus.watch[3] == 20
     assert quick.debounce_time == 0
     assert slow.debounce_time == 30
 
 
 @pytest.mark.unit
-async def test_fetched_snapshots_are_replayed_as_edges(hass) -> None:
-    # Two snapshots for one module: pressed, then released again.
-    bus = ScanBus(accept=True, fetch=(0, [(0, 0xFE), (0, 0xFF)]))
-    api = CasaITApi(hass, bus, "entry-test")
-    device = _pcf(api, 0x38, bus)
-    device.apply_reading(0xFF)
-    await api._async_start_input_scanner()  # noqa: SLF001
+async def test_pushed_readings_become_edges_and_are_acknowledged(hass) -> None:
+    bus = WatchBus()
+    api = _watch_api(hass, bus)
+    _pcf(api, 0x38, bus)
+    await api._async_start_session()  # noqa: SLF001
 
     with patch("custom_components.casait_smarthome.api.async_dispatcher_send") as dispatch:
-        await api._fetch_scanned_inputs()  # noqa: SLF001
+        # Baseline, pressed, released.
+        api._handle_bridge_event(_event((0, 0, [0xFF]), (1, 0, [0xFE]), (2, 0, [0xFF])))  # noqa: SLF001
 
-    edges = [call.args[2] for call in dispatch.call_args_list if len(call.args) > 2]
-    assert edges == [{0: [False]}, {0: [True]}]
+    assert _edges(dispatch) == [{0: [False]}, {0: [True]}]
+    assert bus.acks == [2]
 
 
 @pytest.mark.unit
-async def test_overflow_rebaselines_instead_of_reporting_edges(hass) -> None:
-    bus = ScanBus(accept=True, fetch=(SCAN_FLAG_OVERFLOW, [(0, 0x00)]))
-    api = CasaITApi(hass, bus, "entry-test")
+async def test_entries_resent_after_a_reconnect_are_not_replayed(hass) -> None:
+    bus = WatchBus()
+    api = _watch_api(hass, bus)
+    _pcf(api, 0x38, bus)
+    await api._async_start_session()  # noqa: SLF001
+    api._handle_bridge_event(_event((0, 0, [0xFF]), (1, 0, [0xFE])))  # noqa: SLF001
+
+    bus.resumed = True
+    bus.early = [_event((1, 0, [0xFE]), (2, 0, [0xFF]))]
+    with patch("custom_components.casait_smarthome.api.async_dispatcher_send") as dispatch:
+        await api._async_start_session()  # noqa: SLF001
+
+    # Entry 1 was handled before the drop, only the release is new.
+    assert _edges(dispatch) == [{0: [True]}]
+    assert bus.acks[-1] == 2
+
+
+@pytest.mark.unit
+async def test_a_fresh_watch_starts_from_a_baseline(hass) -> None:
+    bus = WatchBus()
+    api = _watch_api(hass, bus)
     device = _pcf(api, 0x38, bus)
     device.apply_reading(0xFF)
-    await api._async_start_input_scanner()  # noqa: SLF001
+    # The bridge restarted: it counts from zero again and pushes its baseline at once.
+    bus.early = [_event((0, 0, [0x00]))]
 
     with patch("custom_components.casait_smarthome.api.async_dispatcher_send") as dispatch:
-        await api._fetch_scanned_inputs()  # noqa: SLF001
+        await api._async_start_session()  # noqa: SLF001
 
-    edges = [call.args[2] for call in dispatch.call_args_list if len(call.args) > 2]
-    assert edges == []
+    assert _edges(dispatch) == []
     assert api.pcf_states[0x38] == [0] * 8
 
 
 @pytest.mark.unit
-def test_scanned_addresses_leave_the_batch(hass) -> None:
-    bus = ScanBus(accept=True)
-    api = CasaITApi(hass, bus, "entry-test")
+async def test_overflow_rebaselines_instead_of_reporting_edges(hass) -> None:
+    bus = WatchBus()
+    api = _watch_api(hass, bus)
     _pcf(api, 0x38, bus)
-    _pcf(api, 0x39, bus)
-    api._scan_addresses = [0x38]  # noqa: SLF001
+    await api._async_start_session()  # noqa: SLF001
+    api._handle_bridge_event(_event((0, 0, [0xFF])))  # noqa: SLF001
 
-    addresses = [a for a in sorted(api.im117_om117) if a not in api._scan_addresses]  # noqa: SLF001
-    plan = api._plan_poll_batches(addresses, [], set(api.im117_om117))  # noqa: SLF001
+    with patch("custom_components.casait_smarthome.api.async_dispatcher_send") as dispatch:
+        api._handle_bridge_event(_event((1, 0, [0x00]), flags=WATCH_FLAG_OVERFLOW))  # noqa: SLF001
 
-    assert [module.address for _, modules in plan for module in modules] == [0x39]
+    assert _edges(dispatch) == []
+    assert api.pcf_states[0x38] == [0] * 8
 
 
 @pytest.mark.unit
-def test_module_for_op_maps_indices_to_owners(hass) -> None:
-    bus = FakeBus()
-    api = CasaITApi(hass, bus, "entry-test")
-    _pcf(api, 0x38, bus, armed=False)
-    _pcf(api, 0x39, bus)
+async def test_a_module_the_bridge_gave_up_on_is_unavailable_at_once(hass) -> None:
+    bus = WatchBus()
+    api = _watch_api(hass, bus)
+    _pcf(api, 0x38, bus)
+    await api._async_start_session()  # noqa: SLF001
+    api._handle_bridge_event(_event((0, 0, [0xFF])))  # noqa: SLF001
+    assert 0x38 in api.pcf_states
 
-    addresses = sorted(api.im117_om117)
-    _, modules = api._plan_poll_batches(addresses, [], set(addresses))[0]  # noqa: SLF001
+    api._handle_bridge_event(_event((1, 0, [])))  # noqa: SLF001
 
-    # 0x38 re-arms, so it owns three operations before 0x39 starts.
-    assert api._module_for_op(modules, 0).address == 0x38  # noqa: SLF001
-    assert api._module_for_op(modules, 2).address == 0x38  # noqa: SLF001
-    assert api._module_for_op(modules, 3).address == 0x39  # noqa: SLF001
-    assert api._module_for_op(modules, None) is None  # noqa: SLF001
+    assert 0x38 not in api.pcf_states
+
+
+@pytest.mark.unit
+async def test_a_pushed_dm117_response_is_decoded(hass) -> None:
+    bus = WatchBus()
+    api = _watch_api(hass, bus)
+    api.dm117[0x10] = DM117(bus, 0x10)
+    await api._async_start_session()  # noqa: SLF001
+    block = [2, 0, 0x01, 2, 0x02]
+    block.append(Crc8Smbus.calc(bytes(block)))
+
+    api._handle_bridge_event(_event((0, 0, block)))  # noqa: SLF001
+
+    assert api.dm117_states[0x10] == {0: 0x01, 1: 0x02}
 
 
 # ---------------------------------------------------------------------------

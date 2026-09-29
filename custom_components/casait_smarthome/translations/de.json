@@ -211,10 +211,16 @@
         "name": "Sendeabstand"
       },
       "bridge_fast_poll_cycle": {
-        "name": "Schneller Abfragezyklus"
+        "name": "Eingangsdurchlauf"
       },
       "bridge_full_poll_cycle": {
-        "name": "Vollst\u00e4ndiger Abfragezyklus"
+        "name": "Ausgangsdurchlauf"
+      },
+      "bridge_i2c_retries": {
+        "name": "I2C-Wiederholungen"
+      },
+      "bridge_interlock_refusals": {
+        "name": "Eingriffe der Verriegelung"
       },
       "diagnostics": {
         "name": "Diagnose"
@@ -1105,8 +1111,8 @@
           "topology_missing_scans": "Scans, bis ein Ger\u00e4t als verschwunden gilt"
         },
         "data_description": {
-          "fast_poll_interval_ms": "Pause zwischen zwei Abfragen der Eing\u00e4nge.",
-          "slow_poll_interval": "Wie oft reine Ausgangsmodule zur Kontrolle zur\u00fcckgelesen werden.",
+          "fast_poll_interval_ms": "Wie oft die Bridge die Eing\u00e4nge abtastet.",
+          "slow_poll_interval": "Wie oft die Bridge Ausg\u00e4nge zur Kontrolle zur\u00fcckliest und wie lange sie \u00c4nderungen an Ausg\u00e4ngen und Dimmern sammelt, bevor sie sie meldet.",
           "max_send_interval_ms": "Gr\u00f6\u00dfter Abstand, den der adaptive Bridge-Transport nach Kommunikationsfehlern verwenden darf.",
           "topology_scan_interval": "Wie oft der Bus nach verschwundenen Modulen abgesucht wird. Mit 0 nur beim Start und auf Anforderung.",
           "topology_missing_scans": "Wie oft ein Modul hintereinander fehlen muss, bevor es gemeldet wird."

@@ -22,23 +22,32 @@ from custom_components.casait_smarthome.restore import CasaITOutputRestorer
 from custom_components.casait_smarthome.services.i2cClasses.dm117 import DeviceType
 from custom_components.casait_smarthome.services.i2cClasses.led_controller import LEDConfig
 from custom_components.casait_smarthome.services.i2cClasses.pcf8574 import PCF8574
+from custom_components.casait_smarthome.services.smbus_proxy import WATCH_KIND_PCF_INPUT, WATCH_KIND_PCF_OUTPUT
 from homeassistant.core import callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 
-class ScanningBridge(FakeBridge):
-    """Bridge double that also takes a scanner configuration and counts connections."""
+class WatchingBridge(FakeBridge):
+    """Bridge double that also takes a watch configuration and counts connections."""
 
     connection_generation = 1
 
-    def __init__(self, chips: dict[int, int], *, scanner: bool = True) -> None:
+    def __init__(self, chips: dict[int, int], *, accept: bool = True) -> None:
         super().__init__(chips)
-        self.scanner = scanner
-        self.scan_configs: list[list[int]] = []
+        self.accept = accept
+        self.watch_configs: list[list[tuple[int, int]]] = []
 
-    async def scan_config(self, addresses: list[int], period_ms: int, debounce_ms: int) -> bool:
-        self.scan_configs.append(list(addresses))
-        return self.scanner
+    async def watch_config(self, modules: list[tuple[int, int]], fast_ms: int, slow_ms: int, debounce_ms: int) -> bool:
+        if not self.accept:
+            raise OSError("Bridge refused the watch configuration")
+        self.watch_configs.append(list(modules))
+        return True
+
+    async def interlock(self, addr: int, dead_ms: int, pairs: list[tuple[int, int]]) -> None:
+        return
+
+    def watch_ack(self, seq: int) -> bool:
+        return True
 
 
 def _api(hass, bridge: FakeBridge, *addresses: int, policies: dict[str, str] | None = None) -> CasaITApi:
@@ -80,33 +89,31 @@ def _bit(port: int) -> int:
 
 
 @pytest.mark.unit
-async def test_a_reconnect_sets_the_scanner_up_again_and_drops_cached_outputs(hass) -> None:
-    bridge = ScanningBridge({0x20: 0xFE, 0x38: 0xFF})
+async def test_a_reconnect_sets_the_watch_up_again_and_drops_cached_outputs(hass) -> None:
+    bridge = WatchingBridge({0x20: 0xFE, 0x38: 0xFF})
     api = _api(hass, bridge, 0x20, 0x38)
-    assert await api._async_start_input_scanner()  # noqa: SLF001
-    api._session_generation = bridge.connection_generation  # noqa: SLF001
+    await api._async_start_session()  # noqa: SLF001
 
     bridge.connection_generation += 1
     await api._async_resume_session()  # noqa: SLF001
 
-    assert bridge.scan_configs == [[0x38], [0x38]]
+    assert bridge.watch_configs == [[(WATCH_KIND_PCF_OUTPUT, 0x20), (WATCH_KIND_PCF_INPUT, 0x38)]] * 2
     assert api._session_generation == bridge.connection_generation  # noqa: SLF001
     assert api.im117_om117[0x20].last_value == -1
 
 
 @pytest.mark.unit
-async def test_a_failed_scanner_setup_is_retried_on_the_next_cycle(hass) -> None:
-    bridge = ScanningBridge({0x38: 0xFF})
+async def test_a_failed_watch_setup_is_retried_on_the_next_cycle(hass) -> None:
+    bridge = WatchingBridge({0x38: 0xFF})
     api = _api(hass, bridge, 0x38)
-    assert await api._async_start_input_scanner()  # noqa: SLF001
-    api._session_generation = bridge.connection_generation  # noqa: SLF001
+    await api._async_start_session()  # noqa: SLF001
 
     bridge.connection_generation += 1
-    bridge.scanner = False
+    bridge.accept = False
     await api._async_resume_session()  # noqa: SLF001
 
     assert api._session_generation != bridge.connection_generation  # noqa: SLF001
-    assert api._scan_addresses == []  # noqa: SLF001
+    assert not api._watch_ready  # noqa: SLF001
 
 
 # ---------------------------------------------------------------------------

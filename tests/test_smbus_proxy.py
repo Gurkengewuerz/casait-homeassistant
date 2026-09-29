@@ -70,13 +70,49 @@ async def test_send_command_frames_request_and_response() -> None:
 
     assert response == b"\xaa\x55"
     assert bytes(writer.sent) == _frame(b"\x11")
+    await bus.close()
+
+
+@pytest.mark.unit
+async def test_events_reach_the_handler_and_do_not_answer_a_request() -> None:
+    event = bytes([smbus_proxy.EVENT_MARKER, 0, 0])
+    bus, _ = _bus(_frame(event) + _frame(b"\xaa"))
+    events: list[bytes] = []
+    bus.event_handler = events.append
+
+    assert await bus._send_command(b"\x11") == b"\xaa"  # noqa: SLF001
+    assert events == [event]
+    await bus.close()
+
+
+@pytest.mark.unit
+async def test_a_dropped_connection_is_reported() -> None:
+    bus, _ = _bus(eof=True)
+    dropped: list[bool] = []
+    bus.disconnect_handler = lambda: dropped.append(True)
+
+    bus._ensure_reader()  # noqa: SLF001
+    await asyncio.sleep(0.01)
+
+    assert dropped == [True]
+    assert bus.stats["connected"] is False
+
+
+@pytest.mark.unit
+def test_acknowledgements_are_sent_without_waiting() -> None:
+    bus, writer = _bus()
+
+    assert bus.watch_ack(0x105)
+    assert bytes(writer.sent) == _frame(bytes([smbus_proxy.CMD_WATCH_ACK, 0x05]))
 
 
 @pytest.mark.unit
 async def test_ping_checks_the_echoed_command() -> None:
-    bus, _ = _bus(_frame(bytes([0x00, smbus_proxy.CMD_PING, 0xAA, 0, 0, 0, 7, 0, 0, 0, 9, 7]) + b"1afd286"))
+    tail = bytes([smbus_proxy.REQUIRED_CAPABILITIES]) + bytes(12)
+    bus, _ = _bus(_frame(bytes([0x00, smbus_proxy.CMD_PING, 0xAA, 0, 0, 0, 7, 0, 0, 0, 9, 7]) + b"1afd286" + tail))
 
     assert await bus.ping_info() == smbus_proxy.BridgeInfo(boot_id=7, uptime_s=9, version="1afd286")
+    await bus.close()
 
 
 @pytest.mark.unit
@@ -91,26 +127,29 @@ async def test_bad_crc_is_counted() -> None:
 
 @pytest.mark.unit
 async def test_send_retries_and_increases_spacing(monkeypatch: pytest.MonkeyPatch) -> None:
-    bus, _ = _bus()
+    bus = SMBus("bridge.test", timeout=0.05)
     attempts = 0
 
-    async def receive() -> bytes:
+    async def connect() -> None:
         nonlocal attempts
+        if bus._writer is not None:  # noqa: SLF001
+            return
         attempts += 1
+        reader = asyncio.StreamReader()
         if attempts < 3:
-            raise SMBusProxyError("temporary failure")
-        return b"\x01"
+            reader.feed_eof()
+        else:
+            reader.feed_data(_frame(b""))
+        bus._reader, bus._writer = reader, FakeWriter()  # type: ignore[assignment]  # noqa: SLF001
+        bus._ensure_reader()  # noqa: SLF001
 
-    async def reconnect() -> None:
-        bus._writer = FakeWriter()  # type: ignore[assignment]  # noqa: SLF001
-
-    monkeypatch.setattr(bus, "_receive_frame", receive)
-    monkeypatch.setattr(bus, "_connect", reconnect)
+    monkeypatch.setattr(bus, "_connect", connect)
     monkeypatch.setattr(smbus_proxy, "RETRY_BACKOFF", (0, 0))
 
-    assert await bus._send_command(b"\x11") == b"\x01"  # noqa: SLF001
+    assert await bus._send_command(b"") == b""  # noqa: SLF001
     assert attempts == 3
     assert bus.stats["send_interval_ms"] == 3.0
+    await bus.close()
 
 
 @pytest.mark.unit

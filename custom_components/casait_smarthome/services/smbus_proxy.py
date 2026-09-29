@@ -5,21 +5,24 @@ W5500) that performs I2C operations on behalf of Home Assistant. Its method
 names follow smbus2 so the drivers read like ordinary I2C code, but every call
 is a coroutine on the event loop - there is no socket in an executor thread.
 
-Only one frame is in flight at a time; the bridge answers strictly in order.
+Requests are answered strictly in order and only one is in flight at a time. The
+bridge also pushes events on its own - what changed on the modules it watches - so
+a reader task owns the socket and hands responses and events to their receivers.
 """
 
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 import contextlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import logging
 import socket
 import time
 
 _LOGGER = logging.getLogger(__name__)
 
-# Protocol commands (matching implementation.cpp)
+# Protocol commands (matching cb32.cpp)
 CMD_WRITE_BYTE = 0x01
 CMD_WRITE_BYTE_DATA = 0x02
 CMD_READ_BYTE = 0x03
@@ -28,14 +31,16 @@ CMD_WRITE_I2C_BLOCK_DATA = 0x05
 CMD_READ_I2C_BLOCK = 0x06
 CMD_BATCH = 0x07
 CMD_PING = 0x11
-# Autonomous input scanning. The bridge samples a configured set of PCF8574s on its
-# own and latches the transitions, so a press cannot fall between two HA cycles and
-# the input latency stops depending on the network round trip.
-CMD_SCAN_CONFIG = 0x12
-CMD_SCAN_FETCH = 0x13
 # Sets PCF8574 bits and has the bridge put them back after a duration, so a cover
 # stops on time even when Home Assistant is late or gone.
 CMD_TIMED_OUTPUT = 0x14
+# The bridge reads the configured modules on its own and pushes what changed, so
+# Home Assistant sends nothing while nothing happens and an input edge arrives one
+# network hop after the bridge sampled it.
+CMD_WATCH_CONFIG = 0x15
+CMD_WATCH_ACK = 0x16
+# Direction pairs the bridge never switches on together, with a pause before reversing.
+CMD_INTERLOCK = 0x17
 
 # Batch sub-opcodes, numbered like the top-level commands so both sides stay readable
 BOP_WRITE_BYTE = 0x01
@@ -45,6 +50,26 @@ BOP_READ_BYTE_DATA = 0x04
 BOP_READ_BLOCK = 0x06
 BOP_WAIT_STATUS = 0x07
 BOP_DELAY = 0x08
+
+# Frames the bridge sends unasked start with this byte instead of a status.
+EVENT_MARKER = 0xFE
+MAINTENANCE_NOTICE = b"\xff\xee\x01"
+
+# Capability bits in the ping. The integration needs all of them.
+CAP_WATCH = 0x01
+CAP_ONEWIRE = 0x02
+CAP_INTERLOCK = 0x04
+REQUIRED_CAPABILITIES = CAP_WATCH | CAP_ONEWIRE | CAP_INTERLOCK
+
+# What a watched module is to the bridge.
+WATCH_KIND_PCF_INPUT = 1
+WATCH_KIND_PCF_OUTPUT = 2
+WATCH_KIND_DM117 = 3
+MAX_WATCH_MODULES = 32
+# Set on an event when the bridge had to drop older ones.
+WATCH_FLAG_OVERFLOW = 0x01
+# Bridge-side limits of the interlock.
+MAX_INTERLOCK_PAIRS = 4
 
 # The bridge frames both directions as [len][payload][crc] with a single length byte
 # and a 128 byte buffer, and a block read or batch spends one payload byte on status.
@@ -57,18 +82,13 @@ MAX_BATCH_RESULTS = MAX_FRAME_PAYLOAD - 1
 MAX_WAIT_STATUS_MS = 50
 MAX_DELAY_MS = 10
 
-# Scanner limits. Entries are (address index, sampled value) pairs and share the one
-# frame with the status, flags and count bytes.
-MAX_SCAN_ADDRESSES = 32
-MAX_SCAN_ENTRIES = (MAX_FRAME_PAYLOAD - 3) // 2
-# Set by the bridge when its transition queue overflowed and snapshots were dropped.
-SCAN_FLAG_OVERFLOW = 0x01
-# Set by the bridge when no scanner is configured, for example after it restarted.
-SCAN_FLAG_UNCONFIGURED = 0x02
 # The bridge refuses longer timers.
 MAX_TIMED_OUTPUT_MS = 3_600_000
 # [status][command][0xAA][boot id, 4 bytes][uptime in s, 4 bytes][version length][version]
 PING_HEADER_SIZE = 12
+# After the version: [capabilities][fast sweep us, 2][slow sweep us, 2][I2C retries, 4]
+# [interlock refusals, 4]
+PING_TAIL_SIZE = 13
 
 # Default configuration from environment variables
 DEFAULT_PORT = 8555
@@ -106,6 +126,54 @@ class BridgeInfo:
     boot_id: int
     uptime_s: int
     version: str
+    capabilities: int = REQUIRED_CAPABILITIES
+    # How long the bridge's last sweep over the inputs, and over everything, took.
+    fast_sweep_us: int = 0
+    slow_sweep_us: int = 0
+    # Second I2C attempts since the bridge started, and writes the interlock cut.
+    i2c_retries: int = 0
+    interlock_refusals: int = 0
+
+
+@dataclass(frozen=True)
+class WatchEntry:
+    """One module reading the bridge pushed.
+
+    ``data`` is the port byte of a PCF8574 or the complete read response of a
+    DM117; empty means the bridge could not read the module any more.
+    """
+
+    seq: int
+    index: int
+    data: bytes
+
+
+@dataclass(frozen=True)
+class WatchEvent:
+    """One event frame: its flags and the readings it carries, oldest first."""
+
+    flags: int
+    entries: list[WatchEntry] = field(default_factory=list)
+
+
+def parse_watch_event(payload: bytes) -> WatchEvent:
+    """Decode an event frame, raising ValueError when it is malformed."""
+
+    if len(payload) < 3 or payload[0] != EVENT_MARKER:
+        raise ValueError("Not a watch event")
+    flags, count = payload[1], payload[2]
+    entries: list[WatchEntry] = []
+    pos = 3
+    for _ in range(count):
+        if pos + 3 > len(payload):
+            raise ValueError("Truncated watch event")
+        seq, index, size = payload[pos : pos + 3]
+        pos += 3
+        if pos + size > len(payload):
+            raise ValueError("Truncated watch entry")
+        entries.append(WatchEntry(seq, index, bytes(payload[pos : pos + size])))
+        pos += size
+    return WatchEvent(flags, entries)
 
 
 class BridgeFirmwareError(SMBusProxyError):
@@ -272,9 +340,16 @@ class SMBus:
         self._frames = 0
         self._last_rtt = 0.0
         # Counts the TCP connections opened so far. The bridge forgets per-client
-        # state such as the input scanner with every connection, so callers compare
-        # this against the value they set that state up under.
+        # state such as who receives its events with every connection, so callers
+        # compare this against the value they set that state up under.
         self.connection_generation = 0
+        # Owns the socket's read side and routes each frame to its receiver.
+        self._read_task: asyncio.Task[None] | None = None
+        self._pending: asyncio.Future[bytes] | None = None
+        # Receives every event frame the bridge pushes, and learns when the
+        # connection went away, which is when the bridge stops pushing.
+        self.event_handler: Callable[[bytes], None] | None = None
+        self.disconnect_handler: Callable[[], None] | None = None
 
     @classmethod
     async def connect(
@@ -310,7 +385,49 @@ class SMBus:
                 sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
         self._reader, self._writer = reader, writer
         self.connection_generation += 1
+        self._ensure_reader()
         _LOGGER.info("Connected to SMBus bridge at %s:%s", self.host, self.port)
+
+    def _ensure_reader(self) -> None:
+        """Start the task that reads the current connection, if it is not running."""
+
+        if self._reader is None or (self._read_task is not None and not self._read_task.done()):
+            return
+        self._read_task = asyncio.get_running_loop().create_task(
+            self._read_loop(self._reader), name="casait_bridge_reader"
+        )
+
+    async def _read_loop(self, reader: asyncio.StreamReader) -> None:
+        """Read frames until the connection breaks, routing each to its receiver."""
+
+        try:
+            while True:
+                payload = await self._receive_frame(idle=True, reader=reader)
+                if payload[:1] == bytes([EVENT_MARKER]):
+                    if self.event_handler is not None:
+                        try:
+                            self.event_handler(payload)
+                        except Exception:
+                            _LOGGER.exception("Error handling a bridge event")
+                    continue
+                if payload[:3] == MAINTENANCE_NOTICE:
+                    raise SMBusProxyError("Bridge in maintenance mode")  # noqa: TRY301
+                if self._pending is not None and not self._pending.done():
+                    self._pending.set_result(payload)
+                else:
+                    _LOGGER.debug("Dropping a bridge response nobody waits for")
+        except asyncio.CancelledError:
+            raise
+        except Exception as err:  # noqa: BLE001
+            if reader is not self._reader:
+                return
+            _LOGGER.debug("Bridge connection lost: %s", err)
+            if self._pending is not None and not self._pending.done():
+                self._pending.set_exception(
+                    err if isinstance(err, SMBusProxyError) else SMBusProxyError(f"Communication error: {err}")
+                )
+            self._read_task = None
+            self._reset_socket()
 
     @staticmethod
     def _calc_crc8(data: bytes) -> int:
@@ -323,27 +440,37 @@ class SMBus:
                 crc = ((crc << 1) ^ 0x07) & 0xFF if crc & 0x80 else (crc << 1) & 0xFF
         return crc
 
-    async def _recv_exact(self, size: int) -> bytes:
+    async def _recv_exact(
+        self, size: int, *, timeout: bool = True, reader: asyncio.StreamReader | None = None
+    ) -> bytes:
         """Receive exactly ``size`` bytes or raise."""
 
-        if self._reader is None:
+        reader = reader or self._reader
+        if reader is None:
             raise SMBusProxyError("Not connected")
         try:
+            if not timeout:
+                return await reader.readexactly(size)
             async with asyncio.timeout(self.timeout):
-                return await self._reader.readexactly(size)
+                return await reader.readexactly(size)
         except TimeoutError as err:
             self._timeouts += 1
             raise SMBusProxyError("Communication timeout") from err
         except asyncio.IncompleteReadError as err:
             raise SMBusProxyError("Communication error: connection closed") from err
 
-    async def _receive_frame(self) -> bytes:
-        """Read a framed response [len][payload][crc8]."""
+    async def _receive_frame(self, *, idle: bool = False, reader: asyncio.StreamReader | None = None) -> bytes:
+        """Read a frame [len][payload][crc8].
 
-        length_bytes = await self._recv_exact(1)
+        With ``idle`` the wait for the frame to start has no timeout: between
+        requests the bridge only speaks when something happened. Once a frame has
+        started, the rest has to follow promptly.
+        """
+
+        length_bytes = await self._recv_exact(1, timeout=not idle, reader=reader)
         frame_len = length_bytes[0]
-        payload = await self._recv_exact(frame_len) if frame_len else b""
-        crc_recv = (await self._recv_exact(1))[0]
+        payload = await self._recv_exact(frame_len, reader=reader) if frame_len else b""
+        crc_recv = (await self._recv_exact(1, reader=reader))[0]
 
         frame = length_bytes + payload
         if crc_recv != self._calc_crc8(frame):
@@ -401,24 +528,29 @@ class SMBus:
                     send_start = time.monotonic()
                     self._last_send = send_start
 
-                    frame = bytes([len(payload)]) + payload
-                    self._writer.write(frame + bytes([self._calc_crc8(frame)]))
-                    await self._writer.drain()
-                    response = await self._receive_frame()
+                    self._ensure_reader()
+                    future: asyncio.Future[bytes] = asyncio.get_running_loop().create_future()
+                    self._pending = future
+                    try:
+                        self._writer.write(self._frame(payload))
+                        await self._writer.drain()
+                        async with asyncio.timeout(self.timeout):
+                            response = await future
+                    except TimeoutError as err:
+                        self._timeouts += 1
+                        raise SMBusProxyError("Communication timeout") from err
+                    finally:
+                        self._pending = None
                     rtt = time.monotonic() - send_start
-
-                    # The bridge may signal maintenance; back off to avoid a busy
-                    # reconnect loop.
-                    if len(response) >= 3 and response[:3] == b"\xff\xee\x01":
-                        self._reset_socket()
-                        await asyncio.sleep(MAINTENANCE_BACKOFF)
-                        raise SMBusProxyError("Bridge in maintenance mode")  # noqa: TRY301
                 except SMBusProxyError as err:
                     self._note_failure()
                     _LOGGER.warning("SMBus proxy error (attempt %d/3): %s", attempt + 1, err)
                     self._reset_socket()
                     if attempt < 2:
-                        await asyncio.sleep(RETRY_BACKOFF[attempt])
+                        # The bridge may signal maintenance; back off to avoid a
+                        # busy reconnect loop.
+                        maintenance = "maintenance" in str(err)
+                        await asyncio.sleep(MAINTENANCE_BACKOFF if maintenance else RETRY_BACKOFF[attempt])
                         continue
                     raise
                 except OSError as err:
@@ -435,19 +567,48 @@ class SMBus:
                     return response
             return b""
 
+    def _frame(self, payload: bytes) -> bytes:
+        """Return a payload framed as [len][payload][crc8]."""
+
+        frame = bytes([len(payload)]) + payload
+        return frame + bytes([self._calc_crc8(frame)])
+
+    def send_nowait(self, payload: bytes) -> bool:
+        """Send a command the bridge does not answer, without waiting for anything.
+
+        Safe next to a request in flight: the bridge handles frames in order and
+        this one produces no response that could be mistaken for another's.
+        """
+
+        if self._writer is None:
+            return False
+        try:
+            self._writer.write(self._frame(payload))
+        except (OSError, RuntimeError) as err:
+            _LOGGER.debug("Could not send to the bridge: %s", err)
+            return False
+        return True
+
     def _reset_socket(self) -> None:
         """Drop the current connection so the next call reconnects."""
 
+        was_connected = self._writer is not None
         if self._writer is not None:
             with contextlib.suppress(Exception):
                 self._writer.close()
         self._reader = None
         self._writer = None
+        task, self._read_task = self._read_task, None
+        if task is not None and task is not asyncio.current_task():
+            task.cancel()
+        if was_connected and self.disconnect_handler is not None:
+            self.disconnect_handler()
 
     async def close(self) -> None:
         """Close the connection to the bridge."""
 
         writer = self._writer
+        self.disconnect_handler = None
         self._reset_socket()
         if writer is not None:
             with contextlib.suppress(Exception):
@@ -639,59 +800,74 @@ class SMBus:
         except SMBusProxyError as e:
             raise OSError(str(e)) from e
 
-    async def scan_config(self, addresses: list[int], period_ms: int, debounce_ms: int) -> bool:
-        """Hand the bridge the input addresses to sample on its own.
+    async def watch_config(self, modules: list[tuple[int, int]], fast_ms: int, slow_ms: int, debounce_ms: int) -> bool:
+        """Have the bridge read the given modules on its own and push what changes.
 
-        Returns False when the bridge refused the configuration.
+        Events go to this connection until another client configures the watch.
 
         Args:
-            addresses: PCF8574 addresses to sample, in the order fetch results index
-            period_ms: How often the bridge samples the whole set
-            debounce_ms: Per-bit debounce the bridge applies before latching an edge
+            modules: (kind, address) per module, in the order events index them
+            fast_ms: How often inputs are sampled, 1 to 255 ms
+            slow_ms: How often outputs are read back, in steps of 100 ms
+            debounce_ms: Per-bit debounce the bridge applies to PCF8574 inputs
 
         Returns:
-            True if the bridge accepted the configuration
+            True when the bridge already ran this configuration and resends what was
+            not acknowledged yet; False when everything starts from a fresh baseline.
+
+        Raises:
+            OSError: If the bridge refused the configuration
         """
 
-        if not addresses:
-            return False
-        if len(addresses) > MAX_SCAN_ADDRESSES:
-            raise ValueError(f"At most {MAX_SCAN_ADDRESSES} scan addresses, got {len(addresses)}")
-
-        payload = bytes([CMD_SCAN_CONFIG, period_ms & 0xFF, debounce_ms & 0xFF, len(addresses), *addresses])
+        if not modules or len(modules) > MAX_WATCH_MODULES:
+            raise ValueError(f"Between 1 and {MAX_WATCH_MODULES} watched modules, got {len(modules)}")
+        slow_ds = max(1, min(0xFFFF, round(slow_ms / 100)))
+        payload = bytes(
+            [
+                CMD_WATCH_CONFIG,
+                max(1, min(0xFF, fast_ms)),
+                slow_ds >> 8,
+                slow_ds & 0xFF,
+                max(0, min(0xFF, debounce_ms)),
+                len(modules),
+            ]
+        ) + bytes(byte for module in modules for byte in module)
         try:
             response = await self._send_command(payload)
         except SMBusProxyError as e:
             raise OSError(str(e)) from e
-        return bool(response) and response[0] == 0x00
+        if len(response) < 2 or response[0] != 0x00:
+            raise OSError("Bridge refused the watch configuration")
+        return response[1] == 0x01
 
-    async def scan_fetch(self) -> tuple[int, list[tuple[int, int]]]:
-        """Collect the transitions the bridge latched since the last fetch.
+    def watch_ack(self, seq: int) -> bool:
+        """Acknowledge every pushed entry up to and including ``seq``."""
 
-        Returns:
-            The flags byte and the latched (address index, port value) snapshots in
-            the order they were sampled. Several snapshots for one address mean the
-            input changed more than once between fetches.
+        return self.send_nowait(bytes([CMD_WATCH_ACK, seq & 0xFF]))
+
+    async def interlock(self, addr: int, dead_ms: int, pairs: list[tuple[int, int]]) -> None:
+        """Have the bridge keep each pair of output bits from running together.
+
+        Bits are active low. A bit whose partner is on, or went off less than
+        ``dead_ms`` ago, stays off, and the write that asked for it fails. An empty
+        list lifts the interlock of the module.
 
         Raises:
-            OSError: If the fetch fails or the response is malformed
+            OSError: If the bridge refused the configuration
         """
 
+        if len(pairs) > MAX_INTERLOCK_PAIRS:
+            raise ValueError(f"At most {MAX_INTERLOCK_PAIRS} interlocked pairs, got {len(pairs)}")
+        dead_ms = max(0, min(0xFFFF, dead_ms))
+        payload = bytes([CMD_INTERLOCK, addr, dead_ms >> 8, dead_ms & 0xFF, len(pairs)]) + bytes(
+            bit for pair in pairs for bit in pair
+        )
         try:
-            response = await self._send_command(bytes([CMD_SCAN_FETCH]))
+            response = await self._send_command(payload)
         except SMBusProxyError as e:
             raise OSError(str(e)) from e
-
-        if len(response) < 3 or response[0] != 0x00:
-            raise OSError("Scan fetch returned a malformed response")
-
-        flags = response[1]
-        count = response[2]
-        if count > MAX_SCAN_ENTRIES or len(response) < 3 + count * 2:
-            raise OSError("Scan fetch returned a truncated entry list")
-
-        entries = response[3 : 3 + count * 2]
-        return flags, [(entries[index], entries[index + 1]) for index in range(0, count * 2, 2)]
+        if not response or response[0] != 0x00:
+            raise OSError(f"Bridge refused the interlock for 0x{addr:02X}")
 
     async def ping_info(self) -> BridgeInfo | None:
         """Ping the bridge and return what it reports about itself, None if it did not answer.
@@ -707,12 +883,21 @@ class SMBus:
             return None
         if len(response) < 3 or response[0] != 0x00 or response[1] != CMD_PING:
             return None
-        if len(response) < PING_HEADER_SIZE or len(response) < PING_HEADER_SIZE + response[11]:
+        if len(response) < PING_HEADER_SIZE:
+            raise BridgeFirmwareError("The bridge firmware is too old for this integration")
+        tail_start = PING_HEADER_SIZE + response[11]
+        tail = response[tail_start : tail_start + PING_TAIL_SIZE]
+        if len(tail) < PING_TAIL_SIZE or tail[0] & REQUIRED_CAPABILITIES != REQUIRED_CAPABILITIES:
             raise BridgeFirmwareError("The bridge firmware is too old for this integration")
         return BridgeInfo(
             boot_id=int.from_bytes(response[3:7], "big"),
             uptime_s=int.from_bytes(response[7:11], "big"),
-            version=response[PING_HEADER_SIZE : PING_HEADER_SIZE + response[11]].decode("ascii", "replace"),
+            version=response[PING_HEADER_SIZE:tail_start].decode("ascii", "replace"),
+            capabilities=tail[0],
+            fast_sweep_us=int.from_bytes(tail[1:3], "big"),
+            slow_sweep_us=int.from_bytes(tail[3:5], "big"),
+            i2c_retries=int.from_bytes(tail[5:9], "big"),
+            interlock_refusals=int.from_bytes(tail[9:13], "big"),
         )
 
     async def timed_output(self, addr: int, mask: int, value: int, revert: int, duration_ms: int) -> int:

@@ -1,4 +1,4 @@
-"""Tests for what newer bridge firmware offers: boot ids, output timers and scanner state."""
+"""Tests for what newer bridge firmware offers: boot ids, capabilities, output timers and sessions."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from custom_components.casait_smarthome.helpers import OM117PairConfig
 from custom_components.casait_smarthome.services.i2cClasses.pcf8574 import PCF8574
 from custom_components.casait_smarthome.services.smbus_proxy import (
     CMD_TIMED_OUTPUT,
-    SCAN_FLAG_UNCONFIGURED,
+    REQUIRED_CAPABILITIES,
     BridgeFirmwareError,
     BridgeInfo,
     SMBus,
@@ -26,20 +26,24 @@ ENTRY = type("Entry", (), {"entry_id": "entry-test", "unique_id": "AA:BB:CC:DD:E
 UP = 1 << PCF8574_MAPPED_PORTS[0]
 
 
-class ScanBridge(FakeBridge):
-    """Bridge double that answers scanner commands."""
+class WatchBridge(FakeBridge):
+    """Bridge double that answers the watch and interlock commands."""
 
     def __init__(self, chips: dict[int, int], *, boot_id: int = 0x1234) -> None:
         super().__init__(chips, boot_id=boot_id)
-        self.scan_configs = 0
-        self.fetch_flags = 0
+        self.watch_configs = 0
+        # Whether the bridge reports that it continues an earlier watch.
+        self.resumed = True
 
-    async def scan_config(self, addresses: list[int], period_ms: int, debounce_ms: int) -> bool:
-        self.scan_configs += 1
+    async def watch_config(self, modules: list[tuple[int, int]], fast_ms: int, slow_ms: int, debounce_ms: int) -> bool:
+        self.watch_configs += 1
+        return self.resumed
+
+    async def interlock(self, addr: int, dead_ms: int, pairs: list[tuple[int, int]]) -> None:
+        return
+
+    def watch_ack(self, seq: int) -> bool:
         return True
-
-    async def scan_fetch(self) -> tuple[int, list[tuple[int, int]]]:
-        return self.fetch_flags, []
 
 
 async def _api(hass, bridge: FakeBridge, *addresses: int) -> CasaITApi:
@@ -75,6 +79,10 @@ async def test_ping_reports_boot_id_and_uptime_and_refuses_old_firmware() -> Non
     sent: list[bytes] = []
     bus._send_command = _responding(  # type: ignore[method-assign]  # noqa: SLF001
         [
+            bytes([0x00, 0x11, 0xAA, 0xDE, 0xAD, 0xBE, 0xEF, 0, 0, 1, 0, 6])
+            + b"v0.0.1"
+            + bytes([REQUIRED_CAPABILITIES, 0x01, 0xF4, 0x03, 0xE8, 0, 0, 0, 7, 0, 0, 0, 2]),
+            # Firmware before the watch: the version is the last thing it sends.
             bytes([0x00, 0x11, 0xAA, 0xDE, 0xAD, 0xBE, 0xEF, 0, 0, 1, 0, 6]) + b"v0.0.1",
             bytes([0x00, 0x11, 0xAA, 0xDE, 0xAD, 0xBE, 0xEF, 0, 0, 1, 0]),
             b"",
@@ -82,7 +90,17 @@ async def test_ping_reports_boot_id_and_uptime_and_refuses_old_firmware() -> Non
         sent,
     )
 
-    assert await bus.ping_info() == BridgeInfo(boot_id=0xDEADBEEF, uptime_s=256, version="v0.0.1")
+    assert await bus.ping_info() == BridgeInfo(
+        boot_id=0xDEADBEEF,
+        uptime_s=256,
+        version="v0.0.1",
+        fast_sweep_us=500,
+        slow_sweep_us=1000,
+        i2c_retries=7,
+        interlock_refusals=2,
+    )
+    with pytest.raises(BridgeFirmwareError):
+        await bus.ping_info()
     with pytest.raises(BridgeFirmwareError):
         await bus.ping_info()
     assert await bus.ping_info() is None
@@ -103,15 +121,15 @@ async def test_timed_output_encodes_the_duration_and_checks_the_answer() -> None
 
 
 # ---------------------------------------------------------------------------
-# Reconnects and a lost scanner
+# Reconnects and bridge restarts
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 async def test_a_network_drop_keeps_input_state_but_drops_outputs_and_timers(hass) -> None:
-    bridge = ScanBridge({0x20: 0xFF, 0x38: 0xF0})
+    bridge = WatchBridge({0x20: 0xFF, 0x38: 0xF0})
     api = await _api(hass, bridge, 0x20, 0x38)
-    assert await api._async_start_input_scanner()  # noqa: SLF001
+    await api._async_start_session()  # noqa: SLF001
     assert await api.async_arm_output_timer(0x20, UP, 0, UP, 30)
 
     bridge.connection_generation += 1
@@ -120,13 +138,13 @@ async def test_a_network_drop_keeps_input_state_but_drops_outputs_and_timers(has
     assert api.im117_om117[0x38].last_value == 0xF0
     assert api.im117_om117[0x20].last_value == -1
     assert api.outputs.diagnostics() == {}
-    assert bridge.scan_configs == 2
+    assert bridge.watch_configs == 2
     assert api._session_generation == bridge.connection_generation  # noqa: SLF001
 
 
 @pytest.mark.unit
 async def test_a_changed_boot_id_is_logged_as_a_restart(hass, caplog) -> None:
-    bridge = ScanBridge({0x38: 0xFF})
+    bridge = WatchBridge({0x38: 0xFF})
     api = await _api(hass, bridge, 0x38)
     bridge.boot_id = 0x9999
     bridge.connection_generation += 1
@@ -138,20 +156,18 @@ async def test_a_changed_boot_id_is_logged_as_a_restart(hass, caplog) -> None:
 
 
 @pytest.mark.unit
-async def test_an_unconfigured_scanner_is_set_up_again_without_a_reconnect(hass) -> None:
-    bridge = ScanBridge({0x38: 0xFF})
+async def test_a_restart_seen_by_the_heartbeat_sets_the_session_up_again(hass) -> None:
+    bridge = WatchBridge({0x38: 0xFF})
     api = await _api(hass, bridge, 0x38)
-    assert await api._async_start_input_scanner()  # noqa: SLF001
-    api._session_generation = bridge.connection_generation  # noqa: SLF001
+    await api._async_start_session()  # noqa: SLF001
+    assert api._watch_ready  # noqa: SLF001
 
-    bridge.fetch_flags = SCAN_FLAG_UNCONFIGURED
-    await api._fetch_scanned_inputs()  # noqa: SLF001
-    assert api._scanner_lost  # noqa: SLF001
+    await api._async_heartbeat()  # noqa: SLF001
+    assert api._watch_ready  # noqa: SLF001
 
-    bridge.fetch_flags = 0
-    await api._async_resume_session()  # noqa: SLF001
-    assert not api._scanner_lost  # noqa: SLF001
-    assert bridge.scan_configs == 2
+    bridge.boot_id = 0x9999
+    await api._async_heartbeat()  # noqa: SLF001
+    assert not api._watch_ready  # noqa: SLF001
 
 
 # ---------------------------------------------------------------------------

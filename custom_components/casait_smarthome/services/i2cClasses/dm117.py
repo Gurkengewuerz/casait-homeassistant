@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass
 import enum
 import logging
@@ -198,22 +197,26 @@ class DM117:
     async def read_ports(self) -> dict[int, int] | None:
         """Read all port values; returns dict of port→raw-value or None on error.
 
-        Convenience wrapper for single-device access. The poll loop instead batches
-        the bus traffic for every module into one frame and calls ``decode_response``.
+        The bridge reads the module on its own and pushes the responses, which
+        ``decode_response`` takes. This is for a read that cannot wait for that.
         """
         try:
             if (cached := self.cached_ports()) is not None:
                 return cached
 
-            # Locking must be handled by the caller. This method only prepares
-            # and sends the payload.
-            await self.bus.write_byte(self.address, self.CMD_READ)
-            await asyncio.sleep(0.001)
-
+            # Locking must be handled by the caller. Command and answer go in one
+            # frame: the bridge reads this module itself between frames, and its
+            # own read request would take the answer prepared for this one.
             # The slave streams its whole prepared buffer from a single transaction
             # and answers 0xFF once it runs out, so reading the worst-case length in
-            # one go is safe and costs one round trip instead of up to 26.
-            block = await self.bus.read_i2c_block(self.address, self.expected_response_size())
+            # one go is safe.
+            batch = (
+                self.bus.new_batch()
+                .write_byte(self.address, self.CMD_READ)
+                .delay(1)
+                .read_block(self.address, self.expected_response_size())
+            )
+            block = await self.bus.execute_batch(batch)
         except OSError:
             return None
         return self.decode_response(block)

@@ -211,10 +211,16 @@
         "name": "Send spacing"
       },
       "bridge_fast_poll_cycle": {
-        "name": "Fast poll cycle"
+        "name": "Input sweep"
       },
       "bridge_full_poll_cycle": {
-        "name": "Full poll cycle"
+        "name": "Output sweep"
+      },
+      "bridge_i2c_retries": {
+        "name": "I2C retries"
+      },
+      "bridge_interlock_refusals": {
+        "name": "Interlock refusals"
       },
       "diagnostics": {
         "name": "Diagnostics"
@@ -1105,8 +1111,8 @@
           "topology_missing_scans": "Scans before a device counts as gone"
         },
         "data_description": {
-          "fast_poll_interval_ms": "Pause between two reads of the inputs.",
-          "slow_poll_interval": "How often output-only modules are read back to catch drift.",
+          "fast_poll_interval_ms": "How often the bridge samples the inputs.",
+          "slow_poll_interval": "How often the bridge reads outputs back to catch drift, and how long it holds back output and dimmer changes it pushes.",
           "max_send_interval_ms": "Largest spacing the adaptive bridge transport may use after communication errors.",
           "topology_scan_interval": "How often the bus is searched for modules that disappeared. 0 scans only at startup and on request.",
           "topology_missing_scans": "How many scans in a row a module has to be missing before it is reported."
