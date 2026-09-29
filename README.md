@@ -486,6 +486,8 @@ The bridge device includes diagnostic entities for:
 - I2C accesses only a second attempt rescued, and writes the interlock refused
 - The emergency operation: how many links the bridge holds, how often it switched
   since it started, how often that failed, and when it last acted
+- Why the bridge last restarted (power on, watchdog, crash, supply voltage drop, …)
+  and how often it freed a stuck I2C bus since
 
 The diagnostics download (**Settings > Devices & services > casaIT : Smart Home >
 ⋮ > Download diagnostics**) contains a bus overview, `bus_topology`:

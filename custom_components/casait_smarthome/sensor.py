@@ -45,6 +45,7 @@ from .helpers import (
 )
 from .services.i2cClasses.ds2438 import DS2438Reading
 from .services.i2cClasses.multisensor import MultisensorComponents, MultisensorReading
+from .services.smbus_proxy import RESET_REASON_OTHER, RESET_REASONS
 
 TEMP_COMP_A = 1.0546
 TEMP_COMP_B = 0.00216
@@ -261,6 +262,23 @@ BRIDGE_DIAGNOSTIC_DESCRIPTIONS = (
         entity_category=EntityCategory.DIAGNOSTIC,
         section="bridge",
         source_key="interlock_refusals",
+    ),
+    BridgeDiagnosticDescription(
+        key="bus_recoveries",
+        translation_key="bridge_bus_recoveries",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        section="bridge",
+        source_key="bus_recoveries",
+    ),
+    BridgeDiagnosticDescription(
+        key="reset_reason",
+        translation_key="bridge_reset_reason",
+        device_class=SensorDeviceClass.ENUM,
+        options=sorted({*RESET_REASONS.values(), RESET_REASON_OTHER}),
+        entity_category=EntityCategory.DIAGNOSTIC,
+        section="bridge",
+        source_key="reset_reason",
     ),
     BridgeDiagnosticDescription(
         key="emergency_links",

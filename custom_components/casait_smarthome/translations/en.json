@@ -247,6 +247,21 @@
       },
       "bridge_emergency_last_action": {
         "name": "Last emergency action"
+      },
+      "bridge_bus_recoveries": {
+        "name": "I2C bus recoveries"
+      },
+      "bridge_reset_reason": {
+        "name": "Last restart reason",
+        "state": {
+          "power_on": "Power on",
+          "external": "Reset pin",
+          "software": "Software restart",
+          "panic": "Crash",
+          "watchdog": "Watchdog",
+          "brownout": "Supply voltage drop",
+          "other": "Other"
+        }
       }
     },
     "update": {

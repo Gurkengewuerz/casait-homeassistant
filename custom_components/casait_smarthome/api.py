@@ -79,6 +79,8 @@ MAX_READ_FAILURES = 3
 # How often Home Assistant pings the bridge. The bridge drops a client that stays
 # silent for 30 s, and a changed boot id in the answer is how a restart shows.
 HEARTBEAT_INTERVAL = 5.0
+# Restarts the bridge did not choose; worth more than the usual note in the log.
+UNPLANNED_RESET_REASONS = {"panic", "watchdog", "brownout"}
 # Seconds the reported time of the last emergency action may wander before it moves.
 EMERGENCY_TIME_TOLERANCE_S = 3
 # Pause the bridge enforces before a cover motor may reverse. Kept below the pause
@@ -298,6 +300,8 @@ class CasaITApi:
                 "i2c_retries": self.bridge_info.i2c_retries if self.bridge_info else None,
                 "interlock_refusals": self.bridge_info.interlock_refusals if self.bridge_info else None,
                 "emergency": self._emergency_diagnostics(),
+                "reset_reason": self.bridge_info.reset_reason if self.bridge_info else None,
+                "bus_recoveries": self.bridge_info.bus_recoveries if self.bridge_info else None,
                 "active_output_timers": self.outputs.diagnostics(),
             },
             "multisensors": self.multisensor.diagnostic_data,
@@ -710,6 +714,8 @@ class CasaITApi:
         previous, self.bridge_info = self.bridge_info, info
         if previous is not None and info.boot_id == previous.boot_id:
             _LOGGER.info("Bridge connection was re-established; setting up the session again")
+        elif info.reset_reason in UNPLANNED_RESET_REASONS:
+            _LOGGER.warning("Bridge restarted after a %s; setting up the session again", info.reset_reason)
         else:
             _LOGGER.warning("Bridge restarted; setting up the session again")
         self.outputs.forget_timers()

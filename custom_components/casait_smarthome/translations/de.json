@@ -247,6 +247,21 @@
       },
       "bridge_emergency_last_action": {
         "name": "Letzte Notbetrieb-Schaltung"
+      },
+      "bridge_bus_recoveries": {
+        "name": "I2C-Bus-Recoveries"
+      },
+      "bridge_reset_reason": {
+        "name": "Grund des letzten Neustarts",
+        "state": {
+          "power_on": "Einschalten",
+          "external": "Reset-Pin",
+          "software": "Software-Neustart",
+          "panic": "Absturz",
+          "watchdog": "Watchdog",
+          "brownout": "Unterspannung",
+          "other": "Sonstiges"
+        }
       }
     },
     "update": {

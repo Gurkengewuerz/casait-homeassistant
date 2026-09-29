@@ -74,6 +74,8 @@ REQUIRED_CAPABILITIES = CAP_WATCH | CAP_ONEWIRE | CAP_INTERLOCK
 CAP_LINKS = 0x08
 # The ping reports what the emergency operation did, see EmergencyStats.
 CAP_LINK_STATS = 0x10
+# The ping reports why the bridge last restarted and how often it freed a stuck bus.
+CAP_HEALTH = 0x20
 
 # What a watched module is to the bridge.
 WATCH_KIND_PCF_INPUT = 1
@@ -124,6 +126,21 @@ PING_TAIL_SIZE = 13
 PING_LINK_STATS_SIZE = 22
 LINK_STATS_FLAG_ACTIVE = 0x01
 LINK_STATS_NEVER = 0xFFFFFFFF
+# Behind those with CAP_HEALTH: [reset reason, esp_reset_reason_t][bus recoveries, 4]
+PING_HEALTH_SIZE = 5
+# esp_reset_reason_t as the diagnostics name it; anything else is "other".
+RESET_REASONS = {
+    1: "power_on",
+    2: "external",
+    3: "software",
+    4: "panic",
+    5: "watchdog",
+    6: "watchdog",
+    7: "watchdog",
+    9: "brownout",
+    14: "brownout",
+}
+RESET_REASON_OTHER = "other"
 
 # Default configuration from environment variables
 DEFAULT_PORT = 8555
@@ -170,6 +187,10 @@ class BridgeInfo:
     interlock_refusals: int = 0
     # None when the firmware does not report the emergency operation.
     emergency: EmergencyStats | None = None
+    # Why the bridge last started, see RESET_REASONS, and how often it clocked a
+    # stuck I2C bus free since; None when the firmware does not report them.
+    reset_reason: str | None = None
+    bus_recoveries: int | None = None
 
 
 @dataclass(frozen=True)
@@ -1075,10 +1096,16 @@ class SMBus:
                 boot_id=int.from_bytes(response[3:7], "big"),
             )
         emergency = None
+        reset_reason = bus_recoveries = None
+        pos = tail_start + PING_TAIL_SIZE
         if tail[0] & CAP_LINK_STATS:
-            stats = response[tail_start + PING_TAIL_SIZE : tail_start + PING_TAIL_SIZE + PING_LINK_STATS_SIZE]
+            stats = response[pos : pos + PING_LINK_STATS_SIZE]
             if len(stats) == PING_LINK_STATS_SIZE:
                 emergency = EmergencyStats.decode(stats)
+            pos += PING_LINK_STATS_SIZE
+        if tail[0] & CAP_HEALTH and len(health := response[pos : pos + PING_HEALTH_SIZE]) == PING_HEALTH_SIZE:
+            reset_reason = RESET_REASONS.get(health[0], RESET_REASON_OTHER)
+            bus_recoveries = int.from_bytes(health[1:5], "big")
         return BridgeInfo(
             boot_id=int.from_bytes(response[3:7], "big"),
             uptime_s=int.from_bytes(response[7:11], "big"),
@@ -1089,6 +1116,8 @@ class SMBus:
             i2c_retries=int.from_bytes(tail[5:9], "big"),
             interlock_refusals=int.from_bytes(tail[9:13], "big"),
             emergency=emergency,
+            reset_reason=reset_reason,
+            bus_recoveries=bus_recoveries,
         )
 
     async def clear_link_failures(self) -> None:
