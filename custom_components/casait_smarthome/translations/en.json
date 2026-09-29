@@ -235,6 +235,18 @@
       },
       "co2_calibration_correction": {
         "name": "CO2 calibration correction"
+      },
+      "bridge_emergency_links": {
+        "name": "Emergency links"
+      },
+      "bridge_emergency_actions": {
+        "name": "Emergency actions"
+      },
+      "bridge_emergency_failures": {
+        "name": "Failed emergency actions"
+      },
+      "bridge_emergency_last_action": {
+        "name": "Last emergency action"
       }
     },
     "update": {
@@ -502,6 +514,20 @@
     "bridge_firmware_outdated": {
       "title": "Bridge firmware too old",
       "description": "The bridge runs firmware {version}, which is too old for this integration. Until it is updated, only the firmware update of the bridge is available. Install the offered release from the bridge's update entity; the integration then sets everything up again. If the update entity reports no newer release, the firmware this integration needs has not been released yet."
+    },
+    "emergency_link_failed": {
+      "title": "Emergency operation could not switch",
+      "fix_flow": {
+        "step": {
+          "emergency_failed": {
+            "title": "Emergency operation could not switch",
+            "description": "While Home Assistant was away, the bridge failed {failures} times to act on an emergency link, most recently from {source} to {target}. Check that output module, its power and its bus wiring. Submit to clear the count on the bridge."
+          }
+        },
+        "error": {
+          "bridge_unreachable": "The bridge could not be reached; the count stays."
+        }
+      }
     }
   },
   "selector": {

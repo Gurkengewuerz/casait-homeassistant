@@ -484,6 +484,8 @@ The bridge device includes diagnostic entities for:
 - Current adaptive send spacing
 - How long the bridge's input sweep and output sweep take
 - I2C accesses only a second attempt rescued, and writes the interlock refused
+- The emergency operation: how many links the bridge holds, how often it switched
+  since it started, how often that failed, and when it last acted
 
 The diagnostics download (**Settings > Devices & services > casaIT : Smart Home >
 ⋮ > Download diagnostics**) contains a bus overview, `bus_topology`:
@@ -499,6 +501,12 @@ It answers which device is slow or unreliable, where the bridge counters only
 say that something is.
 
 Home Assistant raises repair issues when a configured module is missing, a DM117 slot reports a different type than configured, or the bridge repeatedly fails to connect.
+
+The bridge counts emergency actions that did not get through - an output module
+that did not answer while Home Assistant was away. Once Home Assistant is back and
+sees such a count, it raises a repair issue naming the last failed link, from the
+input to the output. Submitting the repair clears the count on the bridge. A
+restart of the bridge clears it too.
 
 ### Topology watch
 

@@ -37,7 +37,39 @@ class CasaITRepairFlow(RepairsFlow):
             return await self.async_step_device_gone()
         if self._issue_id.startswith("multisensor_chip_missing_"):
             return await self.async_step_chip_missing()
+        if self._issue_id.startswith("emergency_link_failed_"):
+            return await self.async_step_emergency_failed()
         return await self.async_step_confirm(user_input)
+
+    # ------------------------------------------------------------------
+    # Emergency operation that could not switch
+    # ------------------------------------------------------------------
+
+    async def async_step_emergency_failed(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> data_entry_flow.FlowResult:
+        """Show what failed and clear the bridge's count once the user has seen it."""
+
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            if (api := self._loaded_api()) is not None:
+                try:
+                    await api.async_clear_emergency_failures()
+                except OSError:
+                    errors["base"] = "bridge_unreachable"
+                else:
+                    return self.async_create_entry(title="", data={})
+            else:
+                errors["base"] = "bridge_unreachable"
+
+        issue = ir.async_get(self.hass).async_get_issue(DOMAIN, self._issue_id)
+        return self.async_show_form(
+            step_id="emergency_failed",
+            data_schema=vol.Schema({}),
+            errors=errors,
+            description_placeholders=dict(issue.translation_placeholders or {}) if issue else None,
+        )
 
     # ------------------------------------------------------------------
     # A Multisensor chip that stopped answering

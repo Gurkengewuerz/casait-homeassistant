@@ -179,10 +179,14 @@ class CasaITDebugSensor(SensorEntity):
 
 @dataclass(kw_only=True, frozen=True)
 class BridgeDiagnosticDescription(SensorEntityDescription):
-    """Describe one transport or poll-loop diagnostic value."""
+    """Describe one transport or poll-loop diagnostic value.
 
-    section: str
-    source_key: str
+    ``value_fn`` reads the value from the API instead of the diagnostics snapshot.
+    """
+
+    section: str = ""
+    source_key: str = ""
+    value_fn: Callable[[CasaITApi], Any] | None = None
 
 
 BRIDGE_DIAGNOSTIC_DESCRIPTIONS = (
@@ -258,6 +262,33 @@ BRIDGE_DIAGNOSTIC_DESCRIPTIONS = (
         section="bridge",
         source_key="interlock_refusals",
     ),
+    BridgeDiagnosticDescription(
+        key="emergency_links",
+        translation_key="bridge_emergency_links",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda api: api.emergency_stats.links if api.emergency_stats else None,
+    ),
+    BridgeDiagnosticDescription(
+        key="emergency_actions",
+        translation_key="bridge_emergency_actions",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda api: api.emergency_stats.actions if api.emergency_stats else None,
+    ),
+    BridgeDiagnosticDescription(
+        key="emergency_failures",
+        translation_key="bridge_emergency_failures",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda api: api.emergency_stats.failures if api.emergency_stats else None,
+    ),
+    BridgeDiagnosticDescription(
+        key="emergency_last_action",
+        translation_key="bridge_emergency_last_action",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda api: api.emergency_last_action,
+    ),
 )
 
 
@@ -282,8 +313,11 @@ class CasaITBridgeDiagnosticSensor(SensorEntity):
     async def async_update(self) -> None:
         """Read the current metric from the API diagnostics snapshot."""
 
-        section = self._api.diagnostic_data[self.entity_description.section]
-        self._attr_native_value = section[self.entity_description.source_key]
+        if (value_fn := self.entity_description.value_fn) is not None:
+            self._attr_native_value = value_fn(self._api)
+        else:
+            section = self._api.diagnostic_data[self.entity_description.section]
+            self._attr_native_value = section[self.entity_description.source_key]
         self._attr_available = True
 
 

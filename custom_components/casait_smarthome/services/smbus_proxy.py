@@ -44,6 +44,8 @@ CMD_INTERLOCK = 0x17
 # Input-to-output links the bridge keeps in flash and runs itself once no client
 # watches the modules any more: emergency operation without Home Assistant.
 CMD_LINKS = 0x18
+# Starts the count of failed emergency actions over, once someone has seen them.
+CMD_LINK_FAILURES_CLEAR = 0x19
 
 # Batch sub-opcodes, numbered like the top-level commands so both sides stay readable
 BOP_WRITE_BYTE = 0x01
@@ -70,6 +72,8 @@ CAP_INTERLOCK = 0x04
 REQUIRED_CAPABILITIES = CAP_WATCH | CAP_ONEWIRE | CAP_INTERLOCK
 # Optional: without it the bridge has no emergency operation, everything else works.
 CAP_LINKS = 0x08
+# The ping reports what the emergency operation did, see EmergencyStats.
+CAP_LINK_STATS = 0x10
 
 # What a watched module is to the bridge.
 WATCH_KIND_PCF_INPUT = 1
@@ -115,6 +119,11 @@ PING_HEADER_SIZE = 12
 # After the version: [capabilities][fast sweep us, 2][slow sweep us, 2][I2C retries, 4]
 # [interlock refusals, 4]
 PING_TAIL_SIZE = 13
+# Behind the tail with CAP_LINK_STATS: [flags][links][actions, 4][failures, 4]
+# [s since the last action, 4][last failed link, 8]
+PING_LINK_STATS_SIZE = 22
+LINK_STATS_FLAG_ACTIVE = 0x01
+LINK_STATS_NEVER = 0xFFFFFFFF
 
 # Default configuration from environment variables
 DEFAULT_PORT = 8555
@@ -159,6 +168,8 @@ class BridgeInfo:
     # Second I2C attempts since the bridge started, and writes the interlock cut.
     i2c_retries: int = 0
     interlock_refusals: int = 0
+    # None when the firmware does not report the emergency operation.
+    emergency: EmergencyStats | None = None
 
 
 @dataclass(frozen=True)
@@ -236,6 +247,54 @@ class BridgeLink:
                 self.time_ds >> 8,
                 self.time_ds & 0xFF,
             ]
+        )
+
+    @classmethod
+    def decode(cls, data: bytes) -> BridgeLink:
+        """Read the 8 bytes the bridge stores for a link."""
+
+        return cls(
+            source_kind=data[0] & 0x03,
+            source_address=data[1],
+            source_bit=data[2],
+            action=data[3],
+            target_address=data[4],
+            bit_a=data[5] & 0x0F,
+            bit_b=data[5] >> 4,
+            time_ds=int.from_bytes(data[6:8], "big"),
+            flags=data[0] & 0xF0,
+        )
+
+
+@dataclass(frozen=True)
+class EmergencyStats:
+    """What the emergency operation did since the bridge started.
+
+    ``active`` is whether the bridge runs its links right now, which it only does
+    while no client watches the modules. ``last_failure`` is the link whose last
+    action did not get through, until the failures are cleared.
+    """
+
+    active: bool
+    links: int
+    actions: int
+    failures: int
+    last_action_s_ago: int | None
+    last_failure: BridgeLink | None
+
+    @classmethod
+    def decode(cls, data: bytes) -> EmergencyStats:
+        """Read the part of the ping behind the tail."""
+
+        since = int.from_bytes(data[10:14], "big")
+        failed = data[14:22]
+        return cls(
+            active=bool(data[0] & LINK_STATS_FLAG_ACTIVE),
+            links=data[1],
+            actions=int.from_bytes(data[2:6], "big"),
+            failures=int.from_bytes(data[6:10], "big"),
+            last_action_s_ago=None if since == LINK_STATS_NEVER else since,
+            last_failure=BridgeLink.decode(failed) if any(failed) else None,
         )
 
 
@@ -1015,6 +1074,11 @@ class SMBus:
                 version=response[PING_HEADER_SIZE:tail_start].decode("ascii", "replace") or None,
                 boot_id=int.from_bytes(response[3:7], "big"),
             )
+        emergency = None
+        if tail[0] & CAP_LINK_STATS:
+            stats = response[tail_start + PING_TAIL_SIZE : tail_start + PING_TAIL_SIZE + PING_LINK_STATS_SIZE]
+            if len(stats) == PING_LINK_STATS_SIZE:
+                emergency = EmergencyStats.decode(stats)
         return BridgeInfo(
             boot_id=int.from_bytes(response[3:7], "big"),
             uptime_s=int.from_bytes(response[7:11], "big"),
@@ -1024,7 +1088,22 @@ class SMBus:
             slow_sweep_us=int.from_bytes(tail[3:5], "big"),
             i2c_retries=int.from_bytes(tail[5:9], "big"),
             interlock_refusals=int.from_bytes(tail[9:13], "big"),
+            emergency=emergency,
         )
+
+    async def clear_link_failures(self) -> None:
+        """Have the bridge count failed emergency actions from zero again.
+
+        Raises:
+            OSError: If the bridge did not confirm
+        """
+
+        try:
+            response = await self._send_command(bytes([CMD_LINK_FAILURES_CLEAR]))
+        except SMBusProxyError as e:
+            raise OSError(str(e)) from e
+        if not response or response[0] != 0x00:
+            raise OSError("Bridge refused to clear the emergency failures")
 
     async def timed_output(self, addr: int, mask: int, value: int, revert: int, duration_ms: int) -> int:
         """Set the ``mask`` bits of a PCF8574 to ``value`` and have the bridge restore ``revert`` later.

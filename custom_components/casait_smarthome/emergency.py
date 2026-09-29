@@ -187,6 +187,32 @@ def _link(
     return BridgeLink(kind, address, bit, action, target.address, bit_a, bit_b, time_ds, flags)
 
 
+def describe_link(options: Mapping[str, Any], link: BridgeLink) -> tuple[str, str]:
+    """Name the input and the output of a link the way the options show them."""
+
+    ports = {bit: port for port, bit in PCF8574_MAPPED_PORTS.items()}
+
+    def module(kind: str, address: int) -> str:
+        base = f"{kind.upper()} 0x{address:02X}"
+        if name := get_module_name(options, kind, address, ""):
+            return f"{base} · {name}"
+        return base
+
+    if link.source_kind == LINK_SOURCE_DM117:
+        slot, channel = divmod(link.source_bit, 2)
+        source = f"{module('dm117', link.source_address)} · {slot + 1}{'AB'[channel]}"
+    else:
+        source = f"{module('im117', link.source_address)} · {ports.get(link.source_bit, link.source_bit) + 1}"
+
+    target = module("om117", link.target_address)
+    port_a = ports.get(link.bit_a, link.bit_a)
+    if link.action in COVER_ACTIONS.values():
+        mark = next(COVER_MARKS[name] for name, action in COVER_ACTIONS.items() if action == link.action)
+        return source, f"{target} · {port_a + 1}/{ports.get(link.bit_b, link.bit_b) + 1} {mark}"
+    mark = PULSE_MARK if link.action == LINK_ACTION_PULSE else TOGGLE_MARK
+    return source, f"{target} · {port_a + 1} {mark}"
+
+
 def build_emergency_links(options: Mapping[str, Any]) -> tuple[list[BridgeLink], int]:
     """Return the links for the bridge and the debounce time it applies to them."""
 

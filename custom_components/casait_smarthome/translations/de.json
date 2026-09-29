@@ -235,6 +235,18 @@
       },
       "co2_calibration_correction": {
         "name": "CO2-Kalibrierkorrektur"
+      },
+      "bridge_emergency_links": {
+        "name": "Notbetrieb-Verkn\u00fcpfungen"
+      },
+      "bridge_emergency_actions": {
+        "name": "Notbetrieb-Schaltungen"
+      },
+      "bridge_emergency_failures": {
+        "name": "Fehlgeschlagene Notbetrieb-Schaltungen"
+      },
+      "bridge_emergency_last_action": {
+        "name": "Letzte Notbetrieb-Schaltung"
       }
     },
     "update": {
@@ -502,6 +514,20 @@
     "bridge_firmware_outdated": {
       "title": "Bridge-Firmware zu alt",
       "description": "Die Bridge l\u00e4uft mit Firmware {version}, die f\u00fcr diese Integration zu alt ist. Bis zum Update ist nur das Firmware-Update der Bridge verf\u00fcgbar. Installiere das angebotene Release \u00fcber die Update-Entit\u00e4t der Bridge; danach richtet die Integration alles neu ein. Meldet die Update-Entit\u00e4t kein neueres Release, ist die ben\u00f6tigte Firmware noch nicht ver\u00f6ffentlicht."
+    },
+    "emergency_link_failed": {
+      "title": "Notbetrieb konnte nicht schalten",
+      "fix_flow": {
+        "step": {
+          "emergency_failed": {
+            "title": "Notbetrieb konnte nicht schalten",
+            "description": "W\u00e4hrend Home Assistant nicht da war, konnte die Bridge {failures}-mal eine Direktverkn\u00fcpfung nicht ausf\u00fchren, zuletzt von {source} nach {target}. Pr\u00fcfe dieses Ausgangsmodul, seine Versorgung und die Busverkabelung. Best\u00e4tige, um den Z\u00e4hler auf der Bridge zur\u00fcckzusetzen."
+          }
+        },
+        "error": {
+          "bridge_unreachable": "Die Bridge war nicht erreichbar; der Z\u00e4hler bleibt stehen."
+        }
+      }
     }
   },
   "selector": {

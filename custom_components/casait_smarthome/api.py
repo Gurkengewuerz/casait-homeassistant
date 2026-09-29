@@ -7,6 +7,7 @@ from collections import defaultdict
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Mapping
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 import logging
 import time
 from typing import Any
@@ -15,6 +16,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr, issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.util import dt as dt_util
 
 from .const import (
     DEFAULT_FAST_POLL_INTERVAL,
@@ -29,6 +31,7 @@ from .const import (
     PCF8574_MAPPED_PORTS,
     SIGNAL_STATE_UPDATED,
 )
+from .emergency import describe_link
 from .firmware import async_flash_bridge
 from .health import LinkHealth
 from .helpers import (
@@ -59,6 +62,7 @@ from .services.smbus_proxy import (
     BridgeFirmwareError,
     BridgeInfo,
     BridgeLink,
+    EmergencyStats,
     SMBus,
     SMBusProxyError,
     WatchEntry,
@@ -75,6 +79,8 @@ MAX_READ_FAILURES = 3
 # How often Home Assistant pings the bridge. The bridge drops a client that stays
 # silent for 30 s, and a changed boot id in the answer is how a restart shows.
 HEARTBEAT_INTERVAL = 5.0
+# Seconds the reported time of the last emergency action may wander before it moves.
+EMERGENCY_TIME_TOLERANCE_S = 3
 # Pause the bridge enforces before a cover motor may reverse. Kept below the pause
 # the cover waits itself, so network jitter between its stop and its restart does
 # not make the bridge refuse a legitimate reversal.
@@ -174,6 +180,9 @@ class CasaITApi:
         # The bridge connection the session state above was set up on.
         self._session_generation = 0
         self.bridge_info: BridgeInfo | None = None
+        # Failed emergency actions the repair issue was last synced to.
+        self._emergency_failures_reported: int | None = None
+        self._emergency_last_action: datetime | None = None
         self._stop_event: asyncio.Event | None = None
         # Set when the connection drops, so the session is set up again right away
         # rather than at the next heartbeat.
@@ -288,6 +297,7 @@ class CasaITApi:
                 "firmware": self.bridge_info.version if self.bridge_info else None,
                 "i2c_retries": self.bridge_info.i2c_retries if self.bridge_info else None,
                 "interlock_refusals": self.bridge_info.interlock_refusals if self.bridge_info else None,
+                "emergency": self._emergency_diagnostics(),
                 "active_output_timers": self.outputs.diagnostics(),
             },
             "multisensors": self.multisensor.diagnostic_data,
@@ -295,6 +305,47 @@ class CasaITApi:
             "onewire_schedule": self.onewire.diagnostic_data,
             "transport": self.bus.stats,
         }
+
+    def _emergency_diagnostics(self) -> dict[str, Any] | None:
+        """Return what the bridge reports about its emergency operation."""
+
+        stats = self.bridge_info.emergency if self.bridge_info else None
+        if stats is None:
+            return None
+        return {
+            "active": stats.active,
+            "links_stored": stats.links,
+            "links_configured": len(self._emergency_links),
+            "actions": stats.actions,
+            "failures": stats.failures,
+            "last_action_s_ago": stats.last_action_s_ago,
+            "last_failure": stats.last_failure.encode().hex() if stats.last_failure else None,
+        }
+
+    @property
+    def emergency_stats(self) -> EmergencyStats | None:
+        """Return the emergency operation counters of the last ping."""
+
+        return self.bridge_info.emergency if self.bridge_info else None
+
+    @property
+    def emergency_last_action(self) -> datetime | None:
+        """Return when the bridge last acted on an emergency link, None if never since it started.
+
+        The bridge reports whole seconds ago, so the time is only moved when it
+        differs by more than that rounding; otherwise the state would change on
+        every ping.
+        """
+
+        stats = self.emergency_stats
+        if stats is None or stats.last_action_s_ago is None:
+            self._emergency_last_action = None
+            return None
+        at = dt_util.utcnow() - timedelta(seconds=stats.last_action_s_ago)
+        previous = self._emergency_last_action
+        if previous is None or abs((at - previous).total_seconds()) > EMERGENCY_TIME_TOLERANCE_S:
+            self._emergency_last_action = at.replace(microsecond=0)
+        return self._emergency_last_action
 
     @property
     def bus_topology(self) -> dict[str, Any]:
@@ -591,6 +642,7 @@ class CasaITApi:
             except Exception:
                 _LOGGER.exception("Error keeping the casaIT bridge session")
             self._sync_bridge_connection_issue()
+            self._sync_emergency_issue()
 
             self._wake.clear()
             stop = asyncio.ensure_future(self._stop_event.wait())
@@ -858,6 +910,56 @@ class CasaITApi:
             severity=ir.IssueSeverity.ERROR,
             translation_key="bridge_unavailable",
         )
+
+    @property
+    def emergency_issue_id(self) -> str:
+        """Return the repair issue raised when an emergency action failed."""
+
+        return f"emergency_link_failed_{self.entry_id}"
+
+    def _sync_emergency_issue(self) -> None:
+        """Raise a repair issue while the bridge reports failed emergency actions.
+
+        The bridge counts them until the repair flow clears them or it restarts, so
+        the issue survives a restart of Home Assistant in between.
+        """
+
+        stats = self.bridge_info.emergency if self.bridge_info else None
+        failures = stats.failures if stats else 0
+        if failures == self._emergency_failures_reported:
+            return
+        self._emergency_failures_reported = failures
+        if stats is None or failures == 0:
+            ir.async_delete_issue(self.hass, DOMAIN, self.emergency_issue_id)
+            return
+
+        source, target = "?", "?"
+        if stats.last_failure is not None and (entry := self.hass.config_entries.async_get_entry(self.entry_id)):
+            source, target = describe_link(entry.options, stats.last_failure)
+        _LOGGER.warning("Emergency operation failed %s times, last from %s to %s", failures, source, target)
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            self.emergency_issue_id,
+            data={"entry_id": self.entry_id},
+            is_fixable=True,
+            is_persistent=False,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key="emergency_link_failed",
+            translation_placeholders={"failures": str(failures), "source": source, "target": target},
+        )
+
+    async def async_clear_emergency_failures(self) -> None:
+        """Have the bridge start its count of failed emergency actions over.
+
+        Raises:
+            OSError: If the bridge did not confirm
+        """
+
+        async with self.write_access():
+            await self.bus.clear_link_failures()
+        self._emergency_failures_reported = 0
+        ir.async_delete_issue(self.hass, DOMAIN, self.emergency_issue_id)
 
     def _publish_pcf_reading(self, address: int, reading: PCF8574Reading) -> None:
         """Cache one PCF8574 reading and dispatch state changes plus input edges."""
