@@ -276,8 +276,9 @@ async def test_sht41_values_compensate_the_voc_sensor() -> None:
 
     assert state.reading.temperature == pytest.approx(25.0, abs=0.01)
     assert state.reading.humidity == pytest.approx(50.2, abs=0.1)
-    # The SGP40 got humidity first, then temperature, both as the SHT41's ticks.
-    assert slaves[SGP40_ADDRESS].writes[-1] == bytes([0x26, 0x0F]) + encode_words(0x7333, 0x6666)
+    # The SGP40 got humidity first, then temperature, in its own scaling:
+    # 50.25 %RH of 100 and 25 °C of -45 to 130 over the full word.
+    assert slaves[SGP40_ADDRESS].writes[-1] == bytes([0x26, 0x0F]) + encode_words(32931, 0x6666)
     assert state.reading.voc_raw == 30000
     # Still inside the algorithm's initial blackout.
     assert state.reading.voc_index is None

@@ -162,6 +162,18 @@ def sht_humidity(ticks: int) -> float:
     return min(100.0, max(0.0, -6.0 + 125.0 * ticks / 65535.0))
 
 
+def sgp40_compensation_ticks(temperature: float, humidity: float) -> tuple[int, int]:
+    """Return the SGP40's humidity and temperature ticks for a reading.
+
+    The SGP40 scales humidity as 0 to 100 %RH over the full word, unlike the
+    SHT4x and STCC4, so their raw ticks cannot be passed on as they are.
+    """
+
+    rh_ticks = round(min(100.0, max(0.0, humidity)) * 65535 / 100)
+    t_ticks = round((min(130.0, max(-45.0, temperature)) + 45.0) * 65535 / 175)
+    return rh_ticks, t_ticks
+
+
 def veml7700_lux(raw: int, gain: float, integration_ms: int) -> float:
     """Convert a VEML7700 light count to lux, including the high-range correction."""
 
@@ -291,7 +303,7 @@ class MultisensorState:
     components: MultisensorComponents
     voc: VocGasIndexAlgorithm
     reading: MultisensorReading = field(default_factory=MultisensorReading)
-    # Raw SHT41 ticks, forwarded to the SGP40 and STCC4 for compensation.
+    # Raw SHT41 ticks, forwarded to the STCC4 for compensation.
     t_ticks: int | None = None
     rh_ticks: int | None = None
     veml_range: int = VEML7700_DEFAULT_RANGE
@@ -407,10 +419,13 @@ class Multisensor:
     # ------------------------------------------------------------------
 
     async def sgp40_trigger(self, device_id: str, state: MultisensorState) -> None:
-        """Start a raw VOC measurement, compensated with the SHT41 values if known."""
+        """Start a raw VOC measurement, compensated with the last temperature and humidity if known."""
 
-        rh_ticks = state.rh_ticks if state.rh_ticks is not None else SGP40_DEFAULT_RH_TICKS
-        t_ticks = state.t_ticks if state.t_ticks is not None else SGP40_DEFAULT_T_TICKS
+        reading = state.reading
+        if reading.temperature is not None and reading.humidity is not None:
+            rh_ticks, t_ticks = sgp40_compensation_ticks(reading.temperature, reading.humidity)
+        else:
+            rh_ticks, t_ticks = SGP40_DEFAULT_RH_TICKS, SGP40_DEFAULT_T_TICKS
         payload = bytes(SGP40_CMD_MEASURE_RAW) + encode_words(rh_ticks, t_ticks)
         await self.bridge.write(device_id, SGP40_ADDRESS, payload)
 
