@@ -437,7 +437,8 @@ MULTISENSOR_SENSORS: tuple[MultisensorSensorDescription, ...] = (
         native_unit_of_measurement=UnitOfTemperature.CELSIUS,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=1,
-        fitted_fn=lambda parts: parts.sht41,
+        # Either directly or behind the STCC4.
+        fitted_fn=lambda parts: parts.sht41 or parts.stcc4,
         value_fn=_reading_value("temperature"),
     ),
     MultisensorSensorDescription(
@@ -447,7 +448,8 @@ MULTISENSOR_SENSORS: tuple[MultisensorSensorDescription, ...] = (
         native_unit_of_measurement=PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=1,
-        fitted_fn=lambda parts: parts.sht41,
+        # Either directly or behind the STCC4.
+        fitted_fn=lambda parts: parts.sht41 or parts.stcc4,
         value_fn=_reading_value("humidity"),
     ),
     MultisensorSensorDescription(

@@ -7,7 +7,8 @@ it. Unlike the other 1-Wire chips it is not polled by its entities:
 - The VOC index algorithm learns a baseline and has to be fed at a fixed rate,
   which entity polling does not guarantee.
 - The chips feed each other. The SHT41 compensates the SGP40 and the STCC4, so
-  one sample has to run them in order.
+  one sample has to run them in order. When the SHT41 sits behind the STCC4,
+  the STCC4 hands its values on instead.
 
 So the 1-Wire scheduler samples every board at SAMPLE_INTERVAL through this
 manager, which pushes the result to the entities over the dispatcher.
@@ -77,12 +78,15 @@ CHIP_MISSING_SAMPLES = 6
 STORE_VERSION = 1
 
 # The entities each chip provides, by description key. Forgetting a chip removes
-# exactly these.
+# these, except those another fitted chip still provides.
 CHIP_ENTITY_KEYS: dict[str, tuple[str, ...]] = {
     CHIP_SHT41: ("temperature", "humidity"),
     CHIP_SGP40: ("voc_index", "voc_raw"),
     CHIP_STCC4: (
         "co2",
+        # From the SHT41 on its controller bus.
+        "temperature",
+        "humidity",
         "co2_calibration_correction",
         "co2_calibration_target",
         "co2_calibrate",
@@ -347,6 +351,8 @@ class CasaITMultisensorManager:
                 except DS28E17Error as err:
                     failures.append(f"STCC4: {err}")
                     reading.co2 = None
+                    if not parts.sht41:
+                        reading.temperature = reading.humidity = None
                 if state.stcc4_running and not was_running:
                     self._stcc4_started[device_id] = time.monotonic()
 
@@ -448,12 +454,14 @@ class CasaITMultisensorManager:
 
         await self.async_load()
         assert self._known is not None
+        kept: set[str] = set()
         if (known := self._known.get(device_id)) is not None:
-            self._known[device_id] = known.without(chip)
+            remaining = self._known[device_id] = known.without(chip)
             await self._async_save()
+            kept = {key for other in CHIPS if remaining.has(other) for key in CHIP_ENTITY_KEYS[other]}
 
         registry = er.async_get(self._api.hass)
-        for key in CHIP_ENTITY_KEYS[chip]:
+        for key in set(CHIP_ENTITY_KEYS[chip]) - kept:
             unique_id = f"{self._api.entry_id}_{device_id}_{key}"
             for domain in ("sensor", "binary_sensor", "button", "number"):
                 if entity_id := registry.async_get_entity_id(domain, DOMAIN, unique_id):

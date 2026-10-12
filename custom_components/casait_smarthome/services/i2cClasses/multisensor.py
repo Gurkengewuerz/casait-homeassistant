@@ -3,6 +3,10 @@
 The board can be populated with any subset of the four chips, so which ones are
 there is found out by probing their I2C addresses rather than assumed.
 
+The SHT41 normally sits on the STCC4's own controller bus (R3/R4 not fitted),
+where only the STCC4 talks to it: it does not answer on the main bus, and its
+temperature and humidity arrive as part of the STCC4 measurement instead.
+
 Every method here is one DS28E17 transaction and never sleeps for a sensor's
 measurement time. The Sensirion chips need 10 to 90 ms between a command and
 its result; waiting that out while holding the bus would stall the input poll,
@@ -303,7 +307,8 @@ class MultisensorState:
     components: MultisensorComponents
     voc: VocGasIndexAlgorithm
     reading: MultisensorReading = field(default_factory=MultisensorReading)
-    # Raw SHT41 ticks, forwarded to the STCC4 for compensation.
+    # Raw ticks of an SHT41 on the main bus, forwarded to the STCC4 for
+    # compensation. None when the STCC4 reads its own SHT41.
     t_ticks: int | None = None
     rh_ticks: int | None = None
     veml_range: int = VEML7700_DEFAULT_RANGE
@@ -488,6 +493,10 @@ class Multisensor:
         own; a sample only reads out the most recent result. After a stop the
         chip needs a while before it takes the start command, so the first
         samples after a probe or a maintenance command may do nothing at all.
+
+        Without an SHT41 on the main bus the temperature and humidity of the
+        board come from here: the STCC4 reads them from the SHT41 on its
+        controller bus.
         """
 
         address = state.components.stcc4_address
@@ -502,7 +511,7 @@ class Multisensor:
             # The first result arrives about a second from now.
             return
 
-        if state.t_ticks is not None and state.rh_ticks is not None:
+        if state.components.sht41 and state.t_ticks is not None and state.rh_ticks is not None:
             await self.bridge.write(
                 device_id, address, command(STCC4_CMD_SET_RHT_COMPENSATION, state.t_ticks, state.rh_ticks)
             )
@@ -515,9 +524,12 @@ class Multisensor:
         except DS28E17Nack:
             # No new result since the last read; keep the previous value.
             return
-        co2_raw, _t_raw, _rh_raw, _status = decode_words(data)
+        co2_raw, t_raw, rh_raw, _status = decode_words(data)
         co2 = to_int16(co2_raw)
         state.reading.co2 = co2 if co2 >= 0 else None
+        if not state.components.sht41:
+            state.reading.temperature = round(sht_temperature(t_raw), 2)
+            state.reading.humidity = round(sht_humidity(rh_raw), 2)
 
     async def stcc4_stop(self, device_id: str, state: MultisensorState) -> None:
         """Stop continuous measurement. Leave the chip alone for STCC4_STOP_TIME after."""

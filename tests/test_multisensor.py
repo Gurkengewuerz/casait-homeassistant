@@ -28,7 +28,7 @@ from custom_components.casait_smarthome.services.i2cClasses.multisensor import (
     veml7700_config,
     veml7700_lux,
 )
-from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers import entity_registry as er, issue_registry as ir
 
 DEVICE = "1900000000000001"
 
@@ -303,6 +303,39 @@ async def test_stcc4_is_started_once_and_then_read_with_compensation() -> None:
 
 
 @pytest.mark.unit
+async def test_stcc4_supplies_temperature_and_humidity_of_the_sht41_behind_it() -> None:
+    slaves = _full_board()
+    del slaves[SHT41_ADDRESS]
+    bus = FakeOneWireBus(slaves)
+    state = _state(MultisensorComponents(sgp40=True, stcc4_address=0x64))
+
+    await bus.multisensor.stcc4_sample(DEVICE, state)
+    await bus.multisensor.stcc4_sample(DEVICE, state)
+
+    assert state.reading.temperature == pytest.approx(25.0, abs=0.01)
+    assert state.reading.humidity == pytest.approx(56.5, abs=0.1)
+    # Its own SHT41 compensates it; nothing is sent back.
+    assert all(write[:2] != bytes([0xE0, 0x00]) for write in slaves[0x64].writes)
+
+    await bus.multisensor.sgp40_trigger(DEVICE, state)
+    assert slaves[SGP40_ADDRESS].writes[-1][2:] != encode_words(0x8000, 0x6666)
+
+
+@pytest.mark.unit
+async def test_a_main_bus_sht41_wins_over_the_stcc4_values() -> None:
+    slaves = _full_board()
+    bus = FakeOneWireBus(slaves)
+    state = _state(MultisensorComponents(sht41=True, stcc4_address=0x64))
+
+    await bus.multisensor.sht41_trigger(DEVICE)
+    await bus.multisensor.sht41_fetch(DEVICE, state)
+    await bus.multisensor.stcc4_sample(DEVICE, state)
+    await bus.multisensor.stcc4_sample(DEVICE, state)
+
+    assert state.reading.humidity == pytest.approx(50.2, abs=0.1)
+
+
+@pytest.mark.unit
 async def test_veml7700_ranges_down_in_bright_light() -> None:
     slaves = _full_board()
     veml = slaves[VEML7700_ADDRESS]
@@ -425,3 +458,17 @@ async def test_chips_seen_before_are_kept_when_they_do_not_answer(hass) -> None:
 
     await manager.async_forget_chip(DEVICE, "stcc4")
     assert manager.known_components(DEVICE) == MultisensorComponents(sht41=True)
+
+
+@pytest.mark.unit
+async def test_forgetting_a_chip_keeps_entities_another_chip_still_provides(hass) -> None:
+    manager = _manager(hass, FakeOneWireBus({}))
+    await manager.async_remember(DEVICE, MultisensorComponents(sht41=True, stcc4_address=0x64))
+    registry = er.async_get(hass)
+    for key in ("temperature", "co2"):
+        registry.async_get_or_create("sensor", "casait_smarthome", f"entry_{DEVICE}_{key}")
+
+    await manager.async_forget_chip(DEVICE, "stcc4")
+
+    assert registry.async_get_entity_id("sensor", "casait_smarthome", f"entry_{DEVICE}_temperature")
+    assert registry.async_get_entity_id("sensor", "casait_smarthome", f"entry_{DEVICE}_co2") is None
