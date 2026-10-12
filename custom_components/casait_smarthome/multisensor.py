@@ -355,6 +355,9 @@ class CasaITMultisensorManager:
                         reading.temperature = reading.humidity = None
                 if state.stcc4_running and not was_running:
                     self._stcc4_started[device_id] = time.monotonic()
+                elif not state.stcc4_running:
+                    # Stopped because it had lost its measurement; warm-up starts over.
+                    self._stcc4_started.pop(device_id, None)
 
             if sgp_started is not None:
                 await asyncio.sleep(max(0.0, SGP40_MEASURE_TIME - (time.monotonic() - sgp_started)))

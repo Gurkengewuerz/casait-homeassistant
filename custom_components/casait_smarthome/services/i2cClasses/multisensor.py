@@ -522,7 +522,12 @@ class Multisensor:
         try:
             data = await self.bridge.read(device_id, address, 12)
         except DS28E17Nack:
-            # No new result since the last read; keep the previous value.
+            # A running chip has a new result every second and samples are much
+            # further apart, so it is not measuring: it lost power and came back
+            # idle, or something else stopped it. Stop it into a known state and
+            # let the next samples start it again.
+            _LOGGER.debug("STCC4 on %s has no result, restarting continuous measurement", device_id)
+            await self.stcc4_stop(device_id, state)
             return
         co2_raw, t_raw, rh_raw, _status = decode_words(data)
         co2 = to_int16(co2_raw)

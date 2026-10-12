@@ -322,6 +322,27 @@ async def test_stcc4_supplies_temperature_and_humidity_of_the_sht41_behind_it() 
 
 
 @pytest.mark.unit
+async def test_an_stcc4_that_lost_power_is_restarted() -> None:
+    slaves = _full_board()
+    bus = FakeOneWireBus(slaves)
+    state = _state(MultisensorComponents(stcc4_address=0x64))
+    stcc4 = slaves[0x64]
+    assert isinstance(stcc4, STCC4)
+
+    await bus.multisensor.stcc4_sample(DEVICE, state)
+    stcc4.running = False  # power cycle: back in idle
+
+    await bus.multisensor.stcc4_sample(DEVICE, state)
+    assert not state.stcc4_running
+    assert stcc4.writes[-1] == bytes([0x3F, 0x86])
+
+    state.stcc4_ready_at = 0.0
+    await bus.multisensor.stcc4_sample(DEVICE, state)
+    await bus.multisensor.stcc4_sample(DEVICE, state)
+    assert state.reading.co2 == 612
+
+
+@pytest.mark.unit
 async def test_a_main_bus_sht41_wins_over_the_stcc4_values() -> None:
     slaves = _full_board()
     bus = FakeOneWireBus(slaves)
