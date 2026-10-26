@@ -124,6 +124,18 @@ Files already excluded by default:
 > [!TIP]
 > If a file keeps causing conflicts in every sync PR, add it to `.templatesyncignore` instead of resolving the conflict every week.
 
+### Staying on an older Home Assistant version
+
+The blueprint tracks the current Home Assistant release, so a sync PR can raise the version your tooling targets. Your integration code and `hacs.json` are never synced, which means your minimum Home Assistant version only changes when you change it.
+
+`requirements_test.txt` is synced, and `pytest-homeassistant-custom-component` in it is tied to one Home Assistant release. If your integration stays on an older release, the pinned plugin no longer matches your `hacs.json`, tests fail, and `script/ha-version-sync` reports a mismatch. To keep control of the pin, add the file to `.templatesyncignore` and set the plugin to the release matching your minimum version:
+
+```text
+requirements_test.txt
+```
+
+Moving up later needs the minimum in `hacs.json` and the plugin pin raised together. Since Home Assistant 2026.9, schemas use `probatio` instead of `voluptuous`. Existing `import voluptuous as vol` code keeps working at runtime because Home Assistant aliases it, and only the type checker complains. Switching to `import probatio` is optional, and it is only needed for probatio-only features such as dataclass schemas.
+
 ### Opting out of template sync entirely
 
 If you don't want automatic update PRs at all, simply delete the two files:
@@ -191,7 +203,7 @@ The devcontainer setup can be customized through environment variable files with
 Values in `.env.local` always win over `.env`. Both files use standard shell variable syntax:
 
 ```bash
-HA_VERSION=2026.8
+HA_VERSION=2026.10
 HA_INSTALL_HACS=1
 APT_UPDATE=0
 ```
@@ -200,11 +212,11 @@ After changing either file, run **Dev Containers: Rebuild Container** to apply.
 
 ### Available variables
 
-| Variable          | Default                  | Description                                                                                                     |
-| ----------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------- |
-| `HA_VERSION`      | version from `hacs.json` | Home Assistant version to install. Accepts `latest`, `beta`, `YEAR.MONTH`, or an exact version like `2026.8.2`. |
-| `HA_INSTALL_HACS` | `1`                      | Set to `0` to skip HACS installation (speeds up first-time setup).                                              |
-| `APT_UPDATE`      | `0`                      | Set to `1` to run `apt-get update && apt-get upgrade` during setup.                                             |
+| Variable          | Default                  | Description                                                                                                      |
+| ----------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| `HA_VERSION`      | version from `hacs.json` | Home Assistant version to install. Accepts `latest`, `beta`, `YEAR.MONTH`, or an exact version like `2026.10.1`. |
+| `HA_INSTALL_HACS` | `1`                      | Set to `0` to skip HACS installation (speeds up first-time setup).                                               |
+| `APT_UPDATE`      | `0`                      | Set to `1` to run `apt-get update && apt-get upgrade` during setup.                                              |
 
 ### Scope limitations
 
