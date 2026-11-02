@@ -8,7 +8,7 @@ Repositories created from this blueprint can receive upstream improvements autom
 
 ### How it works
 
-Every Monday at 07:00 UTC, the workflow checks whether the upstream blueprint (`jpawlowski/hacs.integration_blueprint`) has new commits. If it does, it opens a pull request with the diff against your repository.
+Every Monday at 07:00 UTC, the workflow checks whether the upstream blueprint (`jpawlowski/ha-integration-blueprint`) has new commits. If it does, it opens a pull request with the diff against your repository.
 
 The workflow is configured to update an existing open template-sync PR when possible (force-push + PR edit) instead of closing it and opening a new one each run.
 
@@ -27,8 +27,7 @@ By default, this blueprint handles that gracefully:
 
 Make sure the target repository has:
 
-- **Settings → Actions → General → Workflow permissions** set to **Read and write permissions**
-- **Allow GitHub Actions to create and approve pull requests** enabled
+- **Allow GitHub Actions to create and approve pull requests** enabled — [`script/setup/github`](REPOSITORY_SETUP.md) sets it, with the default workflow permissions left at read, since every workflow declares its own
 - A repository secret named `TEMPLATE_SYNC_TARGET_PAT` with a PAT that has at least: `contents: write`, `pull requests: write`, `workflows: write`, `metadata: read`
 
 The template sync workflow in this blueprint is already configured to use that secret when present and to fall back to `github.token` otherwise.
@@ -61,6 +60,10 @@ In practice:
 - If you changed a synced file that upstream did not touch, the PR contains nothing for that file — your local changes are unaffected.
 
 Review the PR diff before merging. If it would overwrite something you want to keep, close the PR and manually apply the changes you actually want.
+
+**Versions are the exception.** Where your Dependabot or Renovate raised a pin further than the blueprint has, `-X theirs` would lower it again. After the sync, the workflow runs [`script/template-sync-guard`](../../script/template-sync-guard): it compares every pin the dependency bots raise — the managers and patterns in [`.github/renovate.json`](../../.github/renovate.json), so `mise.toml`, the requirements files, `package.json` (regenerating `package-lock.json` to match), the workflows and the mise version pins — with your default branch, restores each occurrence the sync lowered (a release still replaces its own pre-release), commits the higher version back to the sync branch, and comments the list on the PR. A repository made from the blueprint before this step existed does not get it through the sync, since `template-sync.yml` is excluded; copy the _Keep this repository's newer versions_ step from the blueprint's workflow.
+
+**What the sync cannot bring.** Files in `.templatesyncignore` — `AGENTS.md`, `template-sync.yml`, this documentation — never change through the sync, and some blueprint changes need a step only you can take. Ask your agent to run the `blueprint-update` skill (`/blueprint-update` in Claude Code), or run `script/blueprint-update` yourself: it shows what the blueprint changed in those files since you last went through them, already spelled with your integration's names, and the skill walks through the manual steps one at a time.
 
 ### Modifying synced files locally
 
@@ -104,11 +107,9 @@ Files already excluded by default:
 | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
 | `custom_components/`                                                           | Your integration code                                                    |
 | `tests/`                                                                       | Test files reference your domain (set by `initialize.sh`)                |
-| `pyproject.toml`                                                               | Contains your domain in package metadata                                 |
-| `.yamllint.yml`                                                                | Contains your domain in configuration comment                            |
-| `.pre-commit-config.yaml`                                                      | Contains your domain in file-match patterns                              |
+| `pyproject.toml`                                                               | Your package metadata and tool settings                                  |
 | `requirements.txt`                                                             | Your integration's PyPI dependencies (managed alongside `manifest.json`) |
-| `.vscode/launch.json`, `.vscode/tasks.json`                                    | Contain your domain in debugger/task arguments                           |
+| `.vscode/launch.json`, `.vscode/tasks.json`                                    | Your own debug configurations and tasks                                  |
 | `README.md`, `LICENSE`, etc.                                                   | Replaced by `initialize.sh`                                              |
 | `AGENTS.md`, `CLAUDE.md`                                                       | Contain domain-specific references                                       |
 | `AI_POLICY.md`, `.github/pull_request_template.md`                             | Project-specific governance and contribution process                     |
@@ -116,6 +117,7 @@ Files already excluded by default:
 | `config/`                                                                      | Local HA instance (credentials, test data)                               |
 | `docs/`                                                                        | Your project documentation                                               |
 | `script/hooks/`, `.devcontainer/hooks/`                                        | Your hook scripts                                                        |
+| `.devcontainer/project-feature/`                                               | Your project's dev container additions, such as required extensions      |
 | `.devcontainer/.env`                                                           | Your HA_VERSION pin and DevContainer settings                            |
 | `release-please-config.json`, `.release-please-manifest.json`                  | Release management                                                       |
 | `.github/workflows/template-sync.yml`                                          | Sync workflow itself                                                     |
@@ -123,6 +125,18 @@ Files already excluded by default:
 
 > [!TIP]
 > If a file keeps causing conflicts in every sync PR, add it to `.templatesyncignore` instead of resolving the conflict every week.
+
+### Staying on an older Home Assistant version
+
+The blueprint tracks the current Home Assistant release, so a sync PR can raise the version your tooling targets. Your integration code and `hacs.json` are never synced, which means your minimum Home Assistant version only changes when you change it.
+
+`requirements_test.txt` is synced, and `pytest-homeassistant-custom-component` in it is tied to one Home Assistant release. If your integration stays on an older release, the pinned plugin no longer matches your `hacs.json`, tests fail, and `script/ha-version-sync` reports a mismatch. To keep control of the pin, add the file to `.templatesyncignore` and set the plugin to the release matching your minimum version:
+
+```text
+requirements_test.txt
+```
+
+Moving up later needs the minimum in `hacs.json` and the plugin pin raised together. Since Home Assistant 2026.9, schemas use `probatio` instead of `voluptuous`. Existing `import voluptuous as vol` code keeps working at runtime because Home Assistant aliases it, and only the type checker complains. Switching to `import probatio` is optional, and it is only needed for probatio-only features such as dataclass schemas.
 
 ### Opting out of template sync entirely
 
@@ -133,7 +147,7 @@ rm .github/workflows/template-sync.yml
 rm .templatesyncignore
 ```
 
-That's it. No workflow runs, no PRs, no noise. You can still pull upstream changes manually at any time by comparing your repository against `jpawlowski/hacs.integration_blueprint`.
+That's it. No workflow runs, no PRs, no noise. You can still pull upstream changes manually at any time by comparing your repository against `jpawlowski/ha-integration-blueprint`.
 
 ---
 
@@ -191,7 +205,7 @@ The devcontainer setup can be customized through environment variable files with
 Values in `.env.local` always win over `.env`. Both files use standard shell variable syntax:
 
 ```bash
-HA_VERSION=2026.8
+HA_VERSION=2026.10
 HA_INSTALL_HACS=1
 APT_UPDATE=0
 ```
@@ -200,11 +214,11 @@ After changing either file, run **Dev Containers: Rebuild Container** to apply.
 
 ### Available variables
 
-| Variable          | Default                  | Description                                                                                                     |
-| ----------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------- |
-| `HA_VERSION`      | version from `hacs.json` | Home Assistant version to install. Accepts `latest`, `beta`, `YEAR.MONTH`, or an exact version like `2026.8.2`. |
-| `HA_INSTALL_HACS` | `1`                      | Set to `0` to skip HACS installation (speeds up first-time setup).                                              |
-| `APT_UPDATE`      | `0`                      | Set to `1` to run `apt-get update && apt-get upgrade` during setup.                                             |
+| Variable          | Default                  | Description                                                                                                                                           |
+| ----------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `HA_VERSION`      | version from `hacs.json` | Home Assistant version to install. Accepts `latest`, `beta`, `YEAR.MONTH`, or an exact version like `2026.10.1`.                                      |
+| `HA_INSTALL_HACS` | `1`                      | Set to `0` to skip HACS installation (speeds up first-time setup). Ignored from Home Assistant 2026.11, which ships HACS as the built-in Marketplace. |
+| `APT_UPDATE`      | `0`                      | Set to `1` to run `apt-get update && apt-get upgrade` during setup.                                                                                   |
 
 ### Scope limitations
 
@@ -274,6 +288,27 @@ You do **not** need to add `.vscode/settings.json` to `.templatesyncignore`:
 - Your local `settings.json` remains an untracked personal file and will not be deleted by template sync.
 
 If you intentionally want to share a tracked workspace settings file with collaborators, use `settings.default.jsonc` for that purpose.
+
+### Recommended and required extensions
+
+When your project settles on one AI agent ([`AI_AGENTS.md`](AI_AGENTS.md#editor-extensions)), there are two places
+for its extension:
+
+- **Recommend only it** by removing the other agents from `.vscode/extensions.json`. VS Code offers it when the
+  repository is opened, and contributors can decline. The file is template-managed, so add it to
+  `.templatesyncignore` at the same time (see [Modifying synced files locally](#modifying-synced-files-locally)).
+- **Require it** in `.devcontainer/project-feature/devcontainer-feature.json`, under
+  `customizations.vscode.extensions`. The dev container installs it for everyone on the next rebuild, alongside the
+  extensions from `devcontainer.json`. The directory is listed in `.templatesyncignore`, so your entries stay yours;
+  a repository created before it existed adds the entry with `./script/prune-blueprint --apply`.
+
+```json
+"customizations": {
+  "vscode": {
+    "extensions": ["anthropic.claude-code"]
+  }
+}
+```
 
 ---
 

@@ -31,6 +31,11 @@ Releases are managed with [release-please](https://github.com/googleapis/release
    manifest.json version is already updated in the merged PR
 ```
 
+The Home Assistant Marketplace offers users the tag of the latest **published** GitHub Release —
+a bare tag is not enough — and refuses an integration whose `manifest.json` has no `version`. Its update entity shows
+the release body as the release notes. Release-please covers all three; a pre-release only reaches users who switched
+on pre-releases for the repository. Details: [Releases and updates](https://contributors.home-assistant.io/marketplace/guides/releases/).
+
 ### The Release PR
 
 After any `feat`, `fix`, or `perf` commit reaches `main`, release-please opens a pull request titled:
@@ -149,23 +154,10 @@ git commit -m "feat(sensor): add air quality index sensor"  # Conventional Commi
 ## GitHub Repository Setup (One-Time)
 
 > [!NOTE]
-> These settings cannot be stored in the repository — configure them once on GitHub.com.
-
-### Required: GitHub Actions Permissions
-
-In **Settings → Actions → General → Workflow permissions**, set:
-
-- **Read and write permissions** — release-please needs to create PRs and tags
-
-### Recommended: Branch Protection for `main`
-
-In **Settings → Branches → Add branch ruleset** (or classic protection rule for `main`):
-
-- **Require a pull request before merging** — prevents direct pushes
-- **Require status checks to pass** — add `Ruff`, `Hassfest validation`, `HACS validation` as required checks
-- This ensures the release PR can only be merged when CI is green, giving you a reliable safety net
-
-With required status checks in place, a release PR with failing CI simply cannot be merged accidentally.
+> These settings cannot be stored in the repository. [`script/setup/github`](REPOSITORY_SETUP.md) applies them:
+> workflows may open pull requests, which release-please needs, and the `main` ruleset requires a pull request with
+> `Lint and test`, `Hassfest validation` and `HACS validation` green — so a release PR with failing CI cannot be merged by
+> accident.
 
 ### Optional: Protect the Release PR from Accidental Merge
 
