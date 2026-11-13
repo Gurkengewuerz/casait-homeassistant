@@ -157,7 +157,7 @@ class CasaITOneWireScheduler:
             job.key: {
                 "interval_s": job.interval,
                 "due_in_s": round(max(0.0, job.next_due - now), 1),
-                "running": job.task is not None,
+                "running": self._running(job),
             }
             for job in self._jobs.values()
         }
@@ -215,8 +215,9 @@ class CasaITOneWireScheduler:
         now = time.monotonic()
         for index, (key, job) in enumerate(sorted(jobs.items())):
             if (previous := self._jobs.get(key)) is not None:
-                job.next_due = previous.next_due
-                job.task = previous.task
+                # Keep the object: a run in flight clears ``task`` on the job it started from.
+                previous.interval, previous.run, previous.devices = job.interval, job.run, job.devices
+                jobs[key] = previous
             else:
                 # Spread first reads out a little instead of starting everything
                 # in the same instant.
@@ -260,7 +261,7 @@ class CasaITOneWireScheduler:
         while True:
             now = time.monotonic()
             for job in list(self._jobs.values()):
-                if job.task is not None or job.next_due > now:
+                if self._running(job) or job.next_due > now:
                     continue
                 # Measured from the planned slot, not from now, so the rate holds;
                 # but never catch up in a burst after a stall.
@@ -270,11 +271,21 @@ class CasaITOneWireScheduler:
                 job.next_due = max(job.next_due + interval, now + interval / 2)
                 job.task = self._api.hass.async_create_background_task(self._run_job(job), f"casait_onewire_{job.key}")
 
-            pending = [job.next_due for job in self._jobs.values() if job.task is None]
+            pending = [job.next_due for job in self._jobs.values() if not self._running(job)]
             delay = min([MAX_IDLE, *(due - now for due in pending)])
             self._wake.clear()
             with suppress(TimeoutError):
                 await asyncio.wait_for(self._wake.wait(), timeout=max(0.01, delay))
+
+    @staticmethod
+    def _running(job: _Job) -> bool:
+        """Return whether a run of the job is in flight.
+
+        Tasks start eagerly, so a run that never suspends is already done when
+        its task is stored on the job.
+        """
+
+        return job.task is not None and not job.task.done()
 
     async def _run_job(self, job: _Job) -> None:
         try:
