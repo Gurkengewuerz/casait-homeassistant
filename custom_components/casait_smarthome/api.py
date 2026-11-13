@@ -31,7 +31,7 @@ from .const import (
     PCF8574_MAPPED_PORTS,
     SIGNAL_STATE_UPDATED,
 )
-from .emergency import describe_link
+from .emergency import build_emergency_links, describe_link
 from .firmware import async_flash_bridge
 from .health import LinkHealth
 from .helpers import (
@@ -41,6 +41,7 @@ from .helpers import (
     default_onewire_profile,
     get_address_range,
     get_module_name,
+    set_om117_pairs,
 )
 from .multisensor import CasaITMultisensorManager
 from .onewire import CasaITOneWireScheduler
@@ -412,6 +413,34 @@ class CasaITApi:
 
         return {"transport": self.bus.stats, "i2c": i2c, "onewire": onewire}
 
+    def set_pair_timing(self, address: int, pair: int, values: Mapping[str, float]) -> None:
+        """Change travel or pulse times of one OM117 pair and store them in the options.
+
+        The options are the one place these times live: the options flow edits
+        them, the cover and pulse entities read the shared pair configuration, the
+        emergency links are derived from them, and the settings backup holds them.
+        Nothing reloads, so a cover keeps moving while it is being calibrated.
+        """
+
+        config = self.om117_pair_configuration.get(address, {}).get(pair)
+        entry = self.hass.config_entries.async_get_entry(self.entry_id)
+        if config is None or entry is None:
+            return
+        for field, value in values.items():
+            setattr(config, field, float(value))
+        async_dispatcher_send(self.hass, self.timing_signal(address))
+        options = set_om117_pairs(entry.options, address, self.om117_pair_configuration[address])
+        if options == entry.options:
+            return
+        self.hass.config_entries.async_update_entry(entry, options=options)
+        links = build_emergency_links(options)
+        if links != (self._emergency_links, self._emergency_debounce_ms):
+            self._emergency_links, self._emergency_debounce_ms = links
+            if self._watch_ready:
+                self.hass.async_create_background_task(
+                    self._async_configure_emergency_links(), "casait_emergency_links"
+                )
+
     def debounce_time(self, module_kind: str, address: int) -> int:
         """Return the configured debounce window of one input module."""
 
@@ -421,6 +450,11 @@ class CasaITApi:
         """Return the dispatcher signal carrying state changes for one module."""
 
         return f"{self.state_update_signal}_{address:02x}"
+
+    def timing_signal(self, address: int) -> str:
+        """Return the dispatcher signal telling that the pair times of an OM117 changed."""
+
+        return f"{self.state_update_signal}_timing_{address:02x}"
 
     def power_loss_signal(self, address: int) -> str:
         """Return the dispatcher signal telling that an output module was reset."""

@@ -14,11 +14,12 @@ from homeassistant.components.number import (
     RestoreNumber,
 )
 from homeassistant.const import EntityCategory, UnitOfRatio, UnitOfTime
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
-from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.helpers.restore_state import RestoredExtraData, RestoreEntity
 
 from . import CasaITConfigEntry
 from .api import CasaITApi
@@ -65,6 +66,8 @@ COVER_RUNTIME_NUMBERS = (
 )
 TILT_RUNTIME_NUMBER = RuntimeNumberDefinition("tilt_time", 0.1, 15.0, 0.1)
 PULSE_RUNTIME_NUMBER = RuntimeNumberDefinition("pulse_duration", 0.1, 30.0, 0.1)
+# Extra restore data of a release whose value is the one in the options.
+STORED_IN_OPTIONS = "stored_in_options"
 
 
 async def async_setup_entry(
@@ -132,7 +135,10 @@ async def async_setup_entry(
 
 
 class CasaITOM117RuntimeNumber(NumberEntity, RestoreEntity):
-    """Runtime calibration number shared with an OM117 cover or pulse output."""
+    """A travel or pulse time of an OM117 pair, kept in the entry options.
+
+    The options flow edits the same value; this entity changes it without a reload.
+    """
 
     _attr_has_entity_name = True
     _attr_should_poll = False
@@ -154,6 +160,7 @@ class CasaITOM117RuntimeNumber(NumberEntity, RestoreEntity):
 
         self._api = api
         self._address = address
+        self._pair_index = pair_index
         self._pair_config = pair_config
         self._field = definition.key
         self._attr_translation_key = f"om117_{definition.key}"
@@ -176,30 +183,42 @@ class CasaITOM117RuntimeNumber(NumberEntity, RestoreEntity):
         )
 
     async def async_added_to_hass(self) -> None:
-        """Restore the last runtime calibration value."""
+        """Follow the pair's times and take over a value an older release kept only here."""
 
         await super().async_added_to_hass()
+        self.async_on_remove(
+            async_dispatcher_connect(self.hass, self._api.timing_signal(self._address), self._handle_timing)
+        )
         if (last_state := await self.async_get_last_state()) is None:
             return
+        extra = await self.async_get_last_extra_data()
+        if extra is not None and extra.as_dict().get(STORED_IN_OPTIONS):
+            return
+        # Releases before the times lived in the options restored this entity
+        # over them at every start, so its last state is what the cover used.
         try:
             value = float(last_state.state)
         except ValueError:
             return
-        if self.native_min_value <= value <= self.native_max_value:
-            self._set_value(value)
+        if self.native_min_value <= value <= self.native_max_value and value != self._attr_native_value:
+            self._api.set_pair_timing(self._address, self._pair_index, {self._field: value})
+
+    @property
+    def extra_restore_state_data(self) -> RestoredExtraData:
+        """Mark the stored state as written by a release that keeps the value in the options."""
+
+        return RestoredExtraData({STORED_IN_OPTIONS: True})
 
     async def async_set_native_value(self, value: float) -> None:
-        """Apply a new runtime calibration value."""
-
-        self._set_value(value)
-        self.async_write_ha_state()
-
-    def _set_value(self, value: float) -> None:
-        """Update the shared pair configuration."""
+        """Store a new time in the options; the cover or pulse output uses it right away."""
 
         bounded = max(self.native_min_value, min(self.native_max_value, float(value)))
-        setattr(self._pair_config, self._field, bounded)
-        self._attr_native_value = bounded
+        self._api.set_pair_timing(self._address, self._pair_index, {self._field: bounded})
+
+    @callback
+    def _handle_timing(self) -> None:
+        self._attr_native_value = float(getattr(self._pair_config, self._field))
+        self.async_write_ha_state()
 
     @property
     def available(self) -> bool:
