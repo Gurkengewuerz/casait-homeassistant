@@ -58,7 +58,16 @@ Give the module a meaningful name and open each input to assign one role:
 Open each pair of outputs and choose independent switches, a roller shutter, a
 blind with slat tilt, or two pulse buttons. The timing fields of the chosen mode
 appear once the mode is selected. Cover timings and pulse duration can also be
-adjusted later through number entities.
+adjusted later through number entities. Both edit the same setting: a value
+changed on a number entity shows up in the options, takes effect at once, and is
+part of the settings backup and the emergency links.
+
+To measure the travel times instead of guessing them, go to **Settings** >
+**Devices & services** > **casaIT : Smart Home** > **Configure** > **Measure cover
+travel times**. Pick the cover and stay where you can see it: it closes first,
+then you confirm the moment it is fully open and the moment it is fully closed
+again. The measured times are stored right away, and the cover starts from a
+known, closed position. Closing the dialog stops the motor.
 
 Shutters and blinds also choose how they correct the drift of their calculated
 position: automatically, by running into the nearer end position before a move
@@ -74,7 +83,8 @@ and LED controllers have the same option.
 
 Open each slot and select what is installed: unused, digital input, digital
 output, or 0-10 V dimmer. A slot switched to digital input also shows its two
-channels. Home Assistant warns in Repairs if the module reports a different
+channels. A dimmer turned on without a brightness comes back at the brightness it
+had the last time it was on. Home Assistant warns in Repairs if the module reports a different
 EEPROM slot type.
 
 ### SM117 and 1-Wire

@@ -272,7 +272,8 @@ a possible second press only adds latency.
   events for as long as it is held, which an automation can turn into stepwise
   brightness changes.
 - **Roller shutters and venetian blinds.** Pair two OM117 outputs and give them
-  travel times; the integration derives position, and for a blind also slat tilt,
+  travel times, or let the **Measure cover travel times** assistant in the options
+  time them; the integration derives position, and for a blind also slat tilt,
   without any position feedback from the hardware. Covers moved by one call or one
   automation switch in the same bus frame, so a whole facade starts and stops
   together.
@@ -280,7 +281,8 @@ a possible second press only adds latency.
   class; a normally closed contact is handled by the inversion flag rather than a
   template.
 - **Impulse relays and gate drivers.** A pulse output closes for a configured
-  duration and releases on its own, exposed as a button entity.
+  duration and releases on its own, exposed as a button entity. The bridge times
+  the release, so the relay opens even if Home Assistant goes away mid-pulse.
 - **Room climate from one chip.** A DS2438 with the right profile reports humidity,
   temperature, and illuminance together.
 - **Ventilation on demand.** A Multisensor with an STCC4 reports CO2 and, with an
