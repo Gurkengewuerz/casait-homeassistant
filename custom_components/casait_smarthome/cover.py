@@ -193,9 +193,10 @@ class CasaITBlindCover(CoverEntity, RestoreEntity):
                 with contextlib.suppress(TypeError, ValueError):
                     self._tilt_position = float(tilt)
             # A restart in the middle of a move leaves the motor wherever it stopped.
-            if last_state.state not in (STATE_OPENING, STATE_CLOSING):
+            uncertainty = attributes.get(ATTR_POSITION_UNCERTAINTY)
+            if last_state.state not in (STATE_OPENING, STATE_CLOSING) and uncertainty is not None:
                 with contextlib.suppress(TypeError, ValueError):
-                    self._uncertainty = min(POSITION_UNKNOWN, float(attributes[ATTR_POSITION_UNCERTAINTY]))
+                    self._uncertainty = min(POSITION_UNKNOWN, float(uncertainty))
 
         self.async_on_remove(
             async_dispatcher_connect(self.hass, self._api.address_signal(self._address), self._handle_state_update)
