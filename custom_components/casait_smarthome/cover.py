@@ -26,6 +26,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 
 from . import CasaITConfigEntry
 from .api import CasaITApi
+from .calibration import PHASE_DONE, PHASE_START
 from .const import COVER_REFERENCE_AUTO, DOMAIN, OM117_MODE_BLIND, OM117_MODE_SHUTTER, PCF8574_MAPPED_PORTS
 from .helpers import (
     OM117PairConfig,
@@ -204,6 +205,9 @@ class CasaITBlindCover(CoverEntity, RestoreEntity):
         self.async_on_remove(
             async_dispatcher_connect(self.hass, self._api.power_loss_signal(self._address), self._handle_power_loss)
         )
+        self.async_on_remove(
+            async_dispatcher_connect(self.hass, self._api.calibration_signal(self._address), self._handle_calibration)
+        )
 
     async def async_will_remove_from_hass(self) -> None:
         """Stop movement when entity is removed."""
@@ -278,6 +282,8 @@ class CasaITBlindCover(CoverEntity, RestoreEntity):
     async def async_stop_cover(self, **kwargs: Any) -> None:
         """Stop the cover."""
 
+        if (self._address, self._pair_index) in self._api.calibrating:
+            raise HomeAssistantError(translation_domain=DOMAIN, translation_key="cover_calibrating")
         await self._stop_motion()
 
     async def async_set_cover_tilt_position(self, **kwargs: Any) -> None:
@@ -343,11 +349,18 @@ class CasaITBlindCover(CoverEntity, RestoreEntity):
             return True
         return target in (0.0, 100.0) and (force_reference or self._uncertainty > REFERENCE_THRESHOLD)
 
-    async def _start_legs(self, legs: list[float], *, force_reference: bool = False) -> None:
-        """Switch the motor on for the first leg and run all legs in a task."""
+    def _ensure_controllable(self) -> None:
+        """Refuse a command while the module is gone or the travel times are being measured."""
 
         if self._address not in self._api.im117_om117:
             raise HomeAssistantError(translation_domain=DOMAIN, translation_key="output_module_unavailable")
+        if (self._address, self._pair_index) in self._api.calibrating:
+            raise HomeAssistantError(translation_domain=DOMAIN, translation_key="cover_calibrating")
+
+    async def _start_legs(self, legs: list[float], *, force_reference: bool = False) -> None:
+        """Switch the motor on for the first leg and run all legs in a task."""
+
+        self._ensure_controllable()
 
         if not self._needs_travel(legs[0], force_reference=force_reference):
             await self._stop_motion()
@@ -381,8 +394,7 @@ class CasaITBlindCover(CoverEntity, RestoreEntity):
             raise HomeAssistantError(translation_domain=DOMAIN, translation_key="tilt_unsupported")
         if not 0 <= target <= 100:
             raise HomeAssistantError(translation_domain=DOMAIN, translation_key="tilt_position_out_of_range")
-        if self._address not in self._api.im117_om117:
-            raise HomeAssistantError(translation_domain=DOMAIN, translation_key="output_module_unavailable")
+        self._ensure_controllable()
 
         current = self._tilt_position
         if abs(target - current) < 0.5:
@@ -603,6 +615,38 @@ class CasaITBlindCover(CoverEntity, RestoreEntity):
             return
         self._uncertainty = POSITION_UNKNOWN
         self.hass.async_create_task(self._stop_motion(), f"casait_blind_power_loss_{self._address}_{self._pair_index}")
+
+    @callback
+    def _handle_calibration(self, pair: int, phase: str) -> None:
+        """Hand the relays to a travel time measurement, and take the cover back after it."""
+
+        if pair != self._pair_index:
+            return
+        if phase == PHASE_START:
+            if (task := self._movement_task) is not None:
+                # The measurement drives the relays now; the move must not release them.
+                self._handover = True
+                task.cancel()
+
+                def _done(_: asyncio.Task) -> None:
+                    self._handover = False
+
+                task.add_done_callback(_done)
+            self._movement_task = None
+            self._advance = None
+            self._active_direction = None
+            self._target_position = None
+            self._target_tilt_position = None
+        elif phase == PHASE_DONE:
+            # The measurement ended in the closed end position.
+            self._position = 0.0
+            self._tilt_position = 0.0
+            self._uncertainty = 0.0
+            self._released_motor, self._released_at = "down", time.monotonic()
+        else:
+            self._uncertainty = POSITION_UNKNOWN
+        self._running_motor = None
+        self.async_write_ha_state()
 
     @callback
     def _handle_state_update(self) -> None:

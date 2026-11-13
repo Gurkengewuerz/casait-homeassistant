@@ -132,6 +132,8 @@ class CasaITApi:
         # Device registry ids of the bridge and of each SM117 bus, set by the entry setup.
         self.bridge_device_id: str | None = None
         self.sm117_device_ids: dict[int, str] = {}
+        # OM117 pairs whose travel times are being measured, as (address, pair).
+        self.calibrating: set[tuple[int, int]] = set()
         self.im117_om117: dict[int, PCF8574] = {}
         self.dm117: dict[int, DM117] = {}
         self.sm117: dict[int, OneWireBus] = {}
@@ -466,6 +468,11 @@ class CasaITApi:
 
         bus_address = meta.get("bus_address")
         return self.sm117_device_ids.get(bus_address) if isinstance(bus_address, int) else None
+
+    def calibration_signal(self, address: int) -> str:
+        """Return the dispatcher signal telling a cover that its travel times are being measured."""
+
+        return f"{self.state_update_signal}_calibration_{address:02x}"
 
     def timing_signal(self, address: int) -> str:
         """Return the dispatcher signal telling that the pair times of an OM117 changed."""

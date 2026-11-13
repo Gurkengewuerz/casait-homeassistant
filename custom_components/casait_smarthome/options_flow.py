@@ -35,6 +35,7 @@ from homeassistant.helpers.selector import (
 )
 
 from .backup import async_list_backups, backup_choices
+from .calibration import CoverCalibrationFlowMixin
 from .const import (
     COVER_REFERENCE_MODES,
     DEFAULT_LED_COUNT,
@@ -217,7 +218,7 @@ def _section_data(user_input: Mapping[str, Any], key: str) -> Mapping[str, Any]:
 CONF_BACKUP = "backup"
 
 
-class OptionsFlowHandler(OptionsFlowWithReload):
+class OptionsFlowHandler(CoverCalibrationFlowMixin, OptionsFlowWithReload):
     """Handle the options of one casaIT bridge."""
 
     def __init__(self) -> None:
@@ -268,7 +269,7 @@ class OptionsFlowHandler(OptionsFlowWithReload):
 
         return self.async_show_menu(
             step_id="init",
-            menu_options=["device", "input_settings", "advanced_settings", "restore", "save"],
+            menu_options=["device", "calibrate_cover", "input_settings", "advanced_settings", "restore", "save"],
             description_placeholders={"pending": str(len(self._edited))},
         )
 

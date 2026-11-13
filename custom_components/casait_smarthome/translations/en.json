@@ -454,6 +454,9 @@
     },
     "backup_failed": {
       "message": "Could not write the settings backup: {error}"
+    },
+    "cover_calibrating": {
+      "message": "The travel times of this cover are being measured. Finish or close the measurement first."
     }
   },
   "issues": {
@@ -676,6 +679,7 @@
         "description": "Pick a device to configure. Changes are only applied with \"Save and close\"; closing this dialog discards them.\n\nUnsaved changes: {pending}",
         "menu_options": {
           "device": "Configure a device",
+          "calibrate_cover": "Measure cover travel times",
           "input_settings": "Button timing",
           "advanced_settings": "Advanced: polling and bus",
           "save": "Save and close",
@@ -1280,15 +1284,43 @@
         "data": {
           "backup": "Settings backup"
         }
+      },
+      "calibrate_cover": {
+        "title": "Measure travel times",
+        "description": "Pick the shutter or blind to measure. It closes as soon as you continue, so make sure nothing is in its way. Stay where you can see it: you confirm each end position yourself, and the time between starting and confirming becomes the travel time.",
+        "data": {
+          "cover": "Cover"
+        },
+        "data_description": {
+          "cover": "OM117 module and the outputs of the pair that drive it."
+        }
+      },
+      "calibrate_closing": {
+        "title": "Close the cover",
+        "description": "The cover is closing. Continue once it is fully closed and the motor has stopped. It then starts opening, and the timing begins."
+      },
+      "calibrate_opening": {
+        "title": "Time the way up",
+        "description": "The cover is opening. Continue the moment it is fully open. It then starts closing again, and the second timing begins."
+      },
+      "calibrate_closing_timed": {
+        "title": "Time the way down",
+        "description": "The cover is closing. Continue the moment it is fully closed."
+      },
+      "calibrate_done": {
+        "title": "Travel times stored",
+        "description": "Open time: {open_time} s\nClose time: {close_time} s\n\nThe times are in use right away and the cover now counts as closed. Fine-tune them with the cover's time controls if needed."
       }
     },
     "error": {
-      "fields_updated": "The mode changed, so the form now shows the fields that belong to it. Check them and submit again."
+      "fields_updated": "The mode changed, so the form now shows the fields that belong to it. Check them and submit again.",
+      "cover_write_failed": "The cover's relays could not be switched. Check that the OM117 module is reachable."
     },
     "abort": {
       "integration_not_ready": "The integration is not loaded yet",
       "no_devices_found": "No devices were found on the bus",
-      "no_backups": "There is no settings backup yet."
+      "no_backups": "There is no settings backup yet.",
+      "no_covers": "There is no shutter or blind on this bridge. Set an OM117 pair to shutter or blind first."
     }
   },
   "device": {
