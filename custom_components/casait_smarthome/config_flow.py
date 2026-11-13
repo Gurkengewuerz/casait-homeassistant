@@ -141,7 +141,14 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         if user_input is not None:
             data = _normalize_bridge_data(user_input)
-            self._async_abort_entries_match({CONF_HOST: data[CONF_HOST], CONF_PORT: data[CONF_PORT]})
+            # The entry being reconfigured matches its own host; only another one is a duplicate.
+            if any(
+                other.entry_id != entry.entry_id
+                and other.data.get(CONF_HOST) == data[CONF_HOST]
+                and other.data.get(CONF_PORT) == data[CONF_PORT]
+                for other in self._async_current_entries(include_ignore=False)
+            ):
+                return self.async_abort(reason="already_configured")
             try:
                 info = await validate_input(self.hass, data)
             except CannotConnect:
@@ -153,7 +160,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 if entry.unique_id is not None:
                     await self.async_set_unique_id(entry.unique_id)
                     self._abort_if_unique_id_mismatch()
-                return self.async_update_reload_and_abort(entry, title=info["title"], data=data)
+                return self.async_update_reload_and_abort(entry, title=info["title"], data_updates=data)
 
         return self.async_show_form(
             step_id="reconfigure",
