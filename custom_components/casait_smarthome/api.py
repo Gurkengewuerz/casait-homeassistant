@@ -1540,7 +1540,8 @@ class CasaITApi:
             if not device:
                 continue
 
-            await device.configure_ports(dict(config))
+            async with self.write_access():
+                await device.configure_ports(dict(config))
 
     def _get_onewire_bus(self, device_id: str) -> OneWireBus | None:
         """Return the OneWire bus for a given device id."""
