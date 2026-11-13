@@ -23,6 +23,8 @@ ROM_BITS = 64
 # One pass yields one device. The cap only exists so a bus that keeps reporting
 # discrepancies cannot spin here while holding the hardware lock.
 MAX_SEARCH_PASSES = 64
+# Shortest gap between two searches started because an unknown chip was asked for.
+LOOKUP_RESCAN_INTERVAL = 60.0
 
 
 class OneWireType(enum.Enum):
@@ -58,6 +60,7 @@ class OneWireBus:
         self.multisensor = Multisensor(self.ds28e17)
         self.last_scan_time = 0
         self._timeout_cache: dict[str, tuple[float, int]] = {}
+        self._lookup_scan_at = -LOOKUP_RESCAN_INTERVAL
 
     @classmethod
     async def create(cls, bus, bridge_address: int) -> OneWireBus:
@@ -225,10 +228,16 @@ class OneWireBus:
         block it for a long noticeable time.
         """
         if device_id not in self.devices:
-            _LOGGER.warning("Device %s not found in cache, rescanning bus", device_id)
+            # A chip the topology watch still holds on to is asked for at its poll
+            # rate; a search per request would keep the bus busy for nothing.
+            now = time.monotonic()
+            if now - self._lookup_scan_at < LOOKUP_RESCAN_INTERVAL:
+                return False
+            self._lookup_scan_at = now
+            _LOGGER.debug("Device %s not found in cache, rescanning bus", device_id)
             await self._scan_bus()
             if device_id not in self.devices:
-                _LOGGER.error("Device %s not found after bus scan", device_id)
+                _LOGGER.debug("Device %s not found after bus scan", device_id)
                 return False
 
         current_time = time.time()
