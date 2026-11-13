@@ -25,6 +25,9 @@ class EdgeTracker[KeyT: Hashable]:
         self.debounce_time = debounce_time
         self._levels: dict[KeyT, bool] = {}
         self._changed_at: dict[KeyT, float] = {}
+        # The level each key was last sampled at, which differs from the
+        # debounced one while a change waits out the window.
+        self._raw: dict[KeyT, bool] = {}
 
     @property
     def levels(self) -> dict[KeyT, bool]:
@@ -42,6 +45,7 @@ class EdgeTracker[KeyT: Hashable]:
 
         self._levels.clear()
         self._changed_at.clear()
+        self._raw.clear()
 
     def adopt(self, key: KeyT, level: bool, timestamp_ms: float | None = None) -> None:
         """Take on a level this side caused, so the next sample is not an edge.
@@ -50,7 +54,38 @@ class EdgeTracker[KeyT: Hashable]:
         """
 
         self._levels[key] = level
+        self._raw[key] = level
         self._changed_at[key] = time.monotonic() * 1000 if timestamp_ms is None else timestamp_ms
+
+    def due_at(self) -> float | None:
+        """Return when the earliest change held back by the window may be settled, in ms.
+
+        None when nothing waits. A source that only reports changes sends no
+        further sample to adopt it, so its caller settles it at this time.
+        """
+
+        due = [
+            self._changed_at.get(key, 0.0) + self.debounce_time
+            for key, level in self._raw.items()
+            if self._levels.get(key) is not None and level != self._levels[key]
+        ]
+        return min(due, default=None)
+
+    def settle(self, timestamp_ms: float | None = None) -> dict[KeyT, list[bool]]:
+        """Adopt every level the window held back once the window has passed."""
+
+        now = time.monotonic() * 1000 if timestamp_ms is None else timestamp_ms
+        edges: dict[KeyT, list[bool]] = {}
+        for key, level in self._raw.items():
+            previous = self._levels.get(key)
+            if previous is None or level == previous:
+                continue
+            if now - self._changed_at.get(key, 0.0) < self.debounce_time:
+                continue
+            self._levels[key] = level
+            self._changed_at[key] = now
+            edges[key] = [level]
+        return edges
 
     def apply(
         self,
@@ -68,6 +103,7 @@ class EdgeTracker[KeyT: Hashable]:
         edges: dict[KeyT, list[bool]] = {}
 
         for key, level in sample.items():
+            self._raw[key] = level
             previous = self._levels.get(key)
             if previous is None:
                 # First sample of this key: adopt the level without reporting it.

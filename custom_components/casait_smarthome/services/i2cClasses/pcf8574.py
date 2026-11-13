@@ -134,6 +134,21 @@ class PCF8574:
 
         return PCF8574Reading(list(self.port_states), self.last_value, edges)
 
+    def settle_due_ms(self) -> float | None:
+        """Return when an input change the debounce window held back can be settled."""
+
+        return self._edges.due_at()
+
+    def settle(self, timestamp_ms: float | None = None) -> PCF8574Reading | None:
+        """Adopt input changes the debounce window held back; None when there were none."""
+
+        edges = self._edges.settle(timestamp_ms)
+        if not edges:
+            return None
+        self.port_states = [int(self._edges.level(bit) or False) for bit in range(8)]
+        self.last_value = sum(state << bit for bit, state in enumerate(self.port_states))
+        return PCF8574Reading(list(self.port_states), self.last_value, edges)
+
     async def write_port(self, port: int, state: int, verify: bool = True) -> bool:
         """Write to specific port with optional verification."""
         if not 0 <= port <= 7:

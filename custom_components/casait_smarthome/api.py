@@ -151,6 +151,8 @@ class CasaITApi:
         # The DM117 reports levels, so its input edges are derived here rather than
         # inside a driver that latches them.
         self._dm117_edges: dict[int, EdgeTracker[tuple[int, int]]] = {}
+        # Timers that settle input changes the debounce window held back.
+        self._settle_handles: dict[int, asyncio.TimerHandle] = {}
         self._read_errors: set[tuple[str, int]] = set()
         # Link health per I2C module for the bus overview, keyed like _read_errors.
         self._health: dict[tuple[str, int], LinkHealth] = defaultdict(LinkHealth)
@@ -588,6 +590,7 @@ class CasaITApi:
         """Stop the session loop and stop listening to the bridge."""
 
         await self.outputs.async_shutdown()
+        self._cancel_settles()
         self.bus.event_handler = None
         self.bus.disconnect_handler = None
         if not self._poll_task or not self._stop_event:
@@ -997,6 +1000,44 @@ class CasaITApi:
             async_dispatcher_send(self.hass, self.edge_signal(address), reading.edges)
         if previous != reading.port_states:
             async_dispatcher_send(self.hass, self.address_signal(address))
+        if (pcf := self.im117_om117.get(address)) is not None:
+            self._schedule_settle(address, pcf.settle_due_ms())
+
+    def _schedule_settle(self, address: int, due_ms: float | None) -> None:
+        """Settle a held-back input change of a module once its debounce window has passed.
+
+        The bridge only pushes what changes, so a contact that bounced back within
+        the window would otherwise stay at the level it had before.
+        """
+
+        if (handle := self._settle_handles.pop(address, None)) is not None:
+            handle.cancel()
+        if due_ms is None:
+            return
+        delay = max(0.0, due_ms / 1000 - time.monotonic())
+        self._settle_handles[address] = self.hass.loop.call_later(delay, self._settle_inputs, address)
+
+    def _settle_inputs(self, address: int) -> None:
+        """Publish the input changes of one module the debounce window held back."""
+
+        self._settle_handles.pop(address, None)
+        if (pcf := self.im117_om117.get(address)) is not None and address in self._pcf_states:
+            if (reading := pcf.settle()) is not None:
+                self._publish_pcf_reading(address, reading)
+            else:
+                self._schedule_settle(address, pcf.settle_due_ms())
+            return
+        if (tracker := self._dm117_edges.get(address)) is not None and address in self._dm117_states:
+            if edges := tracker.settle():
+                async_dispatcher_send(self.hass, self.edge_signal(address), edges)
+            self._schedule_settle(address, tracker.due_at())
+
+    def _cancel_settles(self) -> None:
+        """Drop every pending settle timer."""
+
+        for handle in self._settle_handles.values():
+            handle.cancel()
+        self._settle_handles.clear()
 
     async def _poll_dm117(self, address: int) -> None:
         """Read one DM117 directly and publish state changes."""
@@ -1036,6 +1077,8 @@ class CasaITApi:
 
         if edges := self._dm117_input_edges(address, port_states):
             async_dispatcher_send(self.hass, self.edge_signal(address), edges)
+        if (tracker := self._dm117_edges.get(address)) is not None:
+            self._schedule_settle(address, tracker.due_at())
         if previous != port_states:
             async_dispatcher_send(self.hass, self.address_signal(address))
         self._sync_dm117_configuration_issues(address, device)

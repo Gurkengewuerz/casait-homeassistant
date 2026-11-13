@@ -29,6 +29,9 @@ class FakePCF:
         self.read_count += 1
         return self.reading
 
+    def settle_due_ms(self) -> float | None:
+        return None
+
 
 @pytest.mark.unit
 def test_poll_classes_only_include_real_inputs(hass) -> None:
