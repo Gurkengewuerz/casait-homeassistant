@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import suppress
 from typing import Any
 
 from homeassistant.components.light import LightEntity
@@ -19,7 +20,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
-from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.helpers.restore_state import RestoredExtraData, RestoreEntity
 
 from . import CasaITConfigEntry
 from .api import CasaITApi
@@ -41,6 +42,8 @@ from .services.i2cClasses.dm117 import DeviceType, DimmerConfig, DimmerSpeed, DM
 from .services.i2cClasses.led_controller import AnimationMode, Color, LEDConfig
 
 PARALLEL_UPDATES = 1
+# Extra restore data of a dimmer: the brightness it had the last time it was on.
+ATTR_LAST_BRIGHTNESS = "last_brightness"
 
 DM117_TRANSITION_SECONDS = {
     DimmerSpeed.INSTANT: 0.0,
@@ -96,8 +99,12 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class CasaITDM117Light(LightEntity):
-    """Representation of a DM117 dimmer slot."""
+class CasaITDM117Light(LightEntity, RestoreEntity):
+    """Representation of a DM117 dimmer slot.
+
+    Turning it on without a brightness brings back the last brightness it had,
+    across restarts, instead of full brightness.
+    """
 
     _attr_has_entity_name = True
     _attr_supported_color_modes = {ColorMode.BRIGHTNESS}
@@ -118,6 +125,7 @@ class CasaITDM117Light(LightEntity):
         self._address = address
         self._port = port
         self._slot = port + 1
+        self._last_brightness: int | None = None
         bridge_slug = entry_bridge_slug(config_entry)
         self._attr_unique_id = f"{config_entry.entry_id}_dm117_{address}_{port}_dimmer"
         self.entity_id = build_i2c_entity_id("light", bridge_slug, "dm117", address, "slot", self._slot, "dimmer")
@@ -140,6 +148,8 @@ class CasaITDM117Light(LightEntity):
 
         raw_value = states[self._port]
         brightness = self._raw_to_brightness(raw_value)
+        if brightness:
+            self._last_brightness = brightness
         self._attr_brightness = brightness
         self._attr_is_on = brightness is not None and brightness > 0
         self._attr_color_mode = ColorMode.BRIGHTNESS
@@ -150,17 +160,26 @@ class CasaITDM117Light(LightEntity):
         self.async_write_ha_state()
 
     async def async_added_to_hass(self) -> None:
-        """Register callbacks when entity is added to hass."""
+        """Register callbacks and bring back the brightness the dimmer last had."""
         await super().async_added_to_hass()
         self.async_on_remove(
             async_dispatcher_connect(self.hass, self._api.address_signal(self._address), self._handle_state_update)
         )
+        if self._last_brightness is None and (extra := await self.async_get_last_extra_data()) is not None:
+            with suppress(KeyError, TypeError, ValueError):
+                if 0 < (restored := int(extra.as_dict()[ATTR_LAST_BRIGHTNESS])) <= 255:
+                    self._last_brightness = restored
+
+    @property
+    def extra_restore_state_data(self) -> RestoredExtraData:
+        """Keep the last brightness the dimmer had while it was on."""
+        return RestoredExtraData({ATTR_LAST_BRIGHTNESS: self._last_brightness})
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        """Turn on the light with optional brightness."""
+        """Turn on the light at the given brightness, or at the last one it had."""
         brightness = kwargs.get(ATTR_BRIGHTNESS)
         if brightness is None:
-            brightness = 255
+            brightness = self._last_brightness or 255
         raw_value = max(0, min(4095, round(brightness * 4095 / 255)))
         await self._async_write(raw_value, self._transition_speed(kwargs.get(ATTR_TRANSITION)))
 
