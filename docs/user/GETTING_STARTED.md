@@ -4,7 +4,7 @@ This guide covers installation, bridge setup, hardware configuration, and the fi
 
 ## Prerequisites
 
-- Home Assistant 2026.8.0 or newer
+- Home Assistant 2026.10.0 or newer
 - A running casaIT SMBus TCP bridge
 - Network access from Home Assistant to the bridge, normally on TCP port `8555`
 - At least one supported casaIT I2C module or 1-Wire device

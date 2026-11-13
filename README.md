@@ -5,7 +5,7 @@
 `casaIT : Smart Home` is a custom Home Assistant integration for casaIT I2C and 1-Wire modules connected through the casaIT SMBus TCP bridge.
 
 - Domain: `casait_smarthome`
-- Minimum Home Assistant version: 2026.8.0
+- Minimum Home Assistant version: 2026.10.0
 - Connection: local TCP bridge, no cloud account or YAML configuration
 - Repository: `Gurkengewuerz/casait-homeassistant`
 
