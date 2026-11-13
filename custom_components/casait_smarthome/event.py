@@ -41,6 +41,7 @@ from .helpers import (
     get_input_settings,
     get_module_name,
 )
+from .services.i2cClasses.dm117 import PortConfig
 
 PARALLEL_UPDATES = 0
 
@@ -142,6 +143,9 @@ class CasaITInputEvent(EventEntity):
         self.async_on_remove(
             async_dispatcher_connect(self.hass, self._api.edge_signal(self._address), self._handle_edges)
         )
+        self.async_on_remove(
+            async_dispatcher_connect(self.hass, self._api.address_signal(self._address), self._handle_state)
+        )
         self.async_on_remove(self._close_double_window)
         self.async_on_remove(self._cancel_pending_long)
         self.async_on_remove(self._cancel_pending_repeat)
@@ -175,6 +179,25 @@ class CasaITInputEvent(EventEntity):
         if self._pending_repeat is not None:
             self._pending_repeat()
             self._pending_repeat = None
+
+    def _current_level(self) -> bool | None:
+        """Return the input's chip level from the module's state cache, None while unknown."""
+
+        raise NotImplementedError
+
+    @callback
+    def _handle_state(self) -> None:
+        """End a hold whose release was never reported as an edge.
+
+        A re-baseline after a bridge restart or a dropped event, or the module
+        going away, takes the input's new level without an edge; a hold left open
+        would keep repeating.
+        """
+
+        if self._held and self._current_level() is not self._pressed_level:
+            self._handle_release()
+        else:
+            self.async_write_ha_state()
 
     @callback
     def _handle_edges(self, edges: Mapping[Hashable, list[bool]]) -> None:
@@ -329,6 +352,7 @@ class CasaITButtonEvent(CasaITInputEvent):
         self._attr_unique_id = f"{config_entry.entry_id}_im117_{address}_{port}_button"
         self.entity_id = build_i2c_entity_id("event", bridge_slug, "im117", address, "button", port + 1)
         self._attr_translation_placeholders = {"port": str(port + 1)}
+        self._hardware_port = PCF8574_MAPPED_PORTS[port]
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, build_device_identifier(config_entry.entry_id, "im117", address))},
             name=get_module_name(config_entry.options, "im117", address, f"IM117 0x{address:02X}"),
@@ -336,6 +360,14 @@ class CasaITButtonEvent(CasaITInputEvent):
             model="PCF8574 Input",
             via_device=(DOMAIN, build_device_identifier(config_entry.entry_id, "bridge", "controller")),
         )
+
+    def _current_level(self) -> bool | None:
+        """Return the port's level from the latest PCF8574 reading."""
+
+        states = self._api.pcf_states.get(self._address)
+        if not states or self._hardware_port >= len(states):
+            return None
+        return bool(states[self._hardware_port])
 
 
 class CasaITDM117ButtonEvent(CasaITInputEvent):
@@ -377,6 +409,8 @@ class CasaITDM117ButtonEvent(CasaITInputEvent):
             "event", bridge_slug, "dm117", address, "slot", slot + 1, "button", channel_name
         )
         self._attr_translation_placeholders = {"slot": str(slot + 1), "channel": channel_name.upper()}
+        self._slot = slot
+        self._channel = channel
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, build_device_identifier(config_entry.entry_id, "dm117", address))},
             name=get_module_name(config_entry.options, "dm117", address, f"DM117 0x{address:02X}"),
@@ -384,3 +418,12 @@ class CasaITDM117ButtonEvent(CasaITInputEvent):
             model="DM117",
             via_device=(DOMAIN, build_device_identifier(config_entry.entry_id, "bridge", "controller")),
         )
+
+    def _current_level(self) -> bool | None:
+        """Return the channel's level from the latest DM117 reading."""
+
+        raw = self._api.dm117_states.get(self._address, {}).get(self._slot)
+        if raw is None:
+            return None
+        channels = PortConfig.from_raw(raw)
+        return bool(channels.port_a if self._channel == 0 else channels.port_b)
