@@ -16,6 +16,7 @@ motor stopped instead.
 from __future__ import annotations
 
 from collections.abc import Coroutine, Mapping
+from contextlib import suppress
 from copy import deepcopy
 import logging
 import time
@@ -33,6 +34,7 @@ if TYPE_CHECKING:
     import asyncio
 
     from .api import CasaITApi
+    from .services.smbus_proxy import BridgeInfo
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -43,6 +45,9 @@ SAVE_DELAY = 5.0
 RESTORE_GRACE = 10.0
 # A module that keeps losing its state is restored at most this often.
 RESTORE_COOLDOWN = 60.0
+# How long after the bridge reported emergency actions a differing output module
+# is taken as switched by them; its readings arrive right after the session is up.
+EMERGENCY_ADOPT_WINDOW = 30.0
 
 
 def _led_to_dict(config: LEDConfig) -> dict[str, Any]:
@@ -86,6 +91,10 @@ class CasaITOutputRestorer:
         self._written_at: dict[str, float] = {}
         self._restored_at: dict[str, float] = {}
         self._tasks: set[asyncio.Task[None]] = set()
+        # Boot id and action count of the emergency operation when last seen.
+        self._emergency_seen: tuple[int, int] | None = None
+        # Output modules the emergency operation may have switched, until when.
+        self._adopt_until: dict[int, float] = {}
 
     def policy(self, kind: str, ident: int | str) -> str:
         """Return what a module does after it lost power."""
@@ -110,6 +119,9 @@ class CasaITOutputRestorer:
             for device_id, raw in data.get("led", {}).items()
             if (config := _led_from_dict(raw)) is not None
         }
+        if isinstance(seen := data.get("emergency"), dict):
+            with suppress(KeyError, TypeError, ValueError):
+                self._emergency_seen = (int(seen["boot_id"]), int(seen["actions"]))
 
     def _data_to_save(self) -> dict[str, Any]:
         return {
@@ -123,6 +135,11 @@ class CasaITOutputRestorer:
                 for device_id, channels in self._ds2413.items()
             },
             "led": {device_id: _led_to_dict(config) for device_id, config in self._led.items()},
+            "emergency": (
+                {"boot_id": self._emergency_seen[0], "actions": self._emergency_seen[1]}
+                if self._emergency_seen is not None
+                else None
+            ),
         }
 
     def _save(self) -> None:
@@ -165,6 +182,36 @@ class CasaITOutputRestorer:
         self._led[device_id] = deepcopy(config)
         self._note(f"led:{device_id}")
 
+    def note_emergency(self, info: BridgeInfo | None, targets: set[int]) -> None:
+        """Take note of what the bridge's emergency operation did since it was last seen.
+
+        Outputs it switched while Home Assistant was away read differently from
+        the commanded state. That is someone's button press, not a power loss, so
+        the next differing reading of those modules becomes the commanded state
+        instead of being undone.
+        """
+
+        stats = info.emergency if info is not None else None
+        if stats is None:
+            return
+        seen = self._emergency_seen
+        if seen is None or seen[0] != info.boot_id:
+            acted = stats.actions > 0
+        else:
+            acted = stats.actions > seen[1]
+        if seen != (info.boot_id, stats.actions):
+            self._emergency_seen = (info.boot_id, stats.actions)
+            self._save()
+        if acted and targets:
+            until = time.monotonic() + EMERGENCY_ADOPT_WINDOW
+            self._adopt_until.update(dict.fromkeys(targets, until))
+
+    def _switched_by_emergency(self, address: int) -> bool:
+        """Return whether a differing reading of an output module is the emergency operation's doing."""
+
+        until = self._adopt_until.pop(address, None)
+        return until is not None and time.monotonic() < until
+
     # ------------------------------------------------------------------
     # Readings, compared against the commanded state
     # ------------------------------------------------------------------
@@ -206,7 +253,18 @@ class CasaITOutputRestorer:
             return
         # Bits under a bridge timer may already be back off before our own stop lands.
         held = self._api.outputs.timer_bits(address)
-        if not (commanded ^ value) & ~held & 0xFF or not self._due(f"pcf:{address}"):
+        if not (commanded ^ value) & ~held & 0xFF:
+            return
+        if self._switched_by_emergency(address):
+            _LOGGER.info(
+                "OM117 0x%02X reads 0x%02X after the bridge's emergency operation; keeping that state",
+                address,
+                value,
+            )
+            self._pcf[address] = value
+            self._note(f"pcf:{address}")
+            return
+        if not self._due(f"pcf:{address}"):
             return
 
         switches = self.switch_mask(self._api.om117_pair_configuration.get(address, {}))

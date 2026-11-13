@@ -575,6 +575,7 @@ class CasaITApi:
         self.bus.event_handler = self._handle_bridge_event
         self.bus.disconnect_handler = self._wake.set
         self.bridge_info = await self.bus.ping_info()
+        self._note_emergency()
         await self._async_start_session()
 
         self._stop_event = asyncio.Event()
@@ -675,9 +676,15 @@ class CasaITApi:
             self._watch_ready = False
             return
         self.bridge_info = info
+        self._note_emergency()
         if previous is not None and info.boot_id != previous.boot_id:
             self._watch_ready = False
             self._wake.set()
+
+    def _note_emergency(self) -> None:
+        """Let the restorer know what the emergency operation did since the last ping."""
+
+        self.restorer.note_emergency(self.bridge_info, {link.target_address for link in self._emergency_links})
 
     def _fast_pcf_addresses(self) -> set[int]:
         """Return PCF8574 addresses carrying inputs, which drive perceived latency."""
@@ -716,6 +723,7 @@ class CasaITApi:
         if info is None:
             return
         previous, self.bridge_info = self.bridge_info, info
+        self._note_emergency()
         if previous is not None and info.boot_id == previous.boot_id:
             _LOGGER.info("Bridge connection was re-established; setting up the session again")
         elif info.reset_reason in UNPLANNED_RESET_REASONS:
