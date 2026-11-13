@@ -12,7 +12,7 @@
 # Install both hook types with a plain `pre-commit install` — without this,
 # the commit-msg hook below would need an explicit --hook-type flag and would
 # silently never run for anyone who forgot it.
-default_install_hook_types: [pre-commit, commit-msg]
+default_install_hook_types: [pre-commit, commit-msg, pre-push]
 
 repos:
   - repo: local
@@ -108,6 +108,15 @@ repos:
         language: system
         stages: [commit-msg]
         pass_filenames: true
+
+      # Lint and type-check the exact commit a push sends.
+      - id: push-gate
+        name: push gate
+        entry: ./script/push-gate
+        language: system
+        stages: [pre-push]
+        pass_filenames: false
+        always_run: true
 
       # yamllint disable rule:comments-indentation
       # Type checking with Pyright (optional, can be slow)
