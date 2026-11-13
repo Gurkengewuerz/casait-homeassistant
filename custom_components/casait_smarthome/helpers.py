@@ -984,6 +984,14 @@ def set_dm117_slots(
     return updated
 
 
+def set_onewire_led_count(options: Mapping[str, Any], device_id: str, count: int) -> dict[str, Any]:
+    """Return options with the LED count of one LED controller changed, everything else kept."""
+
+    updated = deepcopy(dict(options))
+    _mutable_section(updated, OPT_ONEWIRE, device_id)["led_count"] = count
+    return updated
+
+
 def set_onewire_device(
     options: Mapping[str, Any],
     device_id: str,

@@ -42,6 +42,7 @@ from .helpers import (
     entry_bridge_slug,
     get_configured_onewire_profiles,
     get_module_name,
+    set_onewire_led_count,
 )
 from .services.i2cClasses.led_controller import LEDConfig
 
@@ -248,6 +249,7 @@ class CasaITLEDControllerNumber(CasaITOneWireEntity, NumberEntity):
         """Initialize one LED controller register."""
 
         self._api = api
+        self._entry = entry
         self._device_id = device_id
         self._field = field
         self._attr_translation_key = "led_animation_speed" if field == "animation_speed" else "led_count"
@@ -273,6 +275,11 @@ class CasaITLEDControllerNumber(CasaITOneWireEntity, NumberEntity):
         # The written configuration comes back through the scheduler's signal.
         if not await self._api.write_led_config(self._device_id, config):
             raise HomeAssistantError(translation_domain=DOMAIN, translation_key="led_update_failed")
+        if self._field == "led_count":
+            # The light writes the count from the options with every change it makes.
+            self.hass.config_entries.async_update_entry(
+                self._entry, options=set_onewire_led_count(self._entry.options, self._device_id, config.led_count)
+            )
 
 
 CO2_CALIBRATION_TARGET = NumberEntityDescription(

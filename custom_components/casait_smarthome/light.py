@@ -72,7 +72,6 @@ async def async_setup_entry(
     ]
 
     configured_profiles = get_configured_onewire_profiles(config_entry.options)
-    led_counts = get_configured_led_counts(config_entry.options)
 
     led_entities = [
         CasaITLEDControllerLight(
@@ -80,7 +79,6 @@ async def async_setup_entry(
             config_entry,
             device_id,
             meta,
-            led_counts.get(device_id, DEFAULT_LED_COUNT),
         )
         for device_id, meta in api.ow_devices.items()
         if (configured_profiles.get(device_id) or default_onewire_profile(meta)) == "ds28e17_led"
@@ -213,15 +211,16 @@ class CasaITLEDControllerLight(CasaITOneWireEntity, LightEntity, RestoreEntity):
         config_entry: CasaITConfigEntry,
         device_id: str,
         meta: dict[str, Any],
-        led_count: int,
+        default_led_count: int = DEFAULT_LED_COUNT,
     ) -> None:
-        """Initialize the LED controller light."""
+        """Initialize the LED controller light; the default applies while the options name no count."""
 
         self._api = api
         self._device_id = device_id
         self._meta = meta
+        self._entry = config_entry
+        self._default_led_count = default_led_count or DEFAULT_LED_COUNT
         self._config: LEDConfig | None = None
-        self._led_count = led_count or DEFAULT_LED_COUNT
         self._attr_effect_list = list(ANIMATION_EFFECTS.values())
         bridge_slug = entry_bridge_slug(config_entry)
         self._attr_unique_id = f"{config_entry.entry_id}_{device_id}_led_controller"
@@ -292,8 +291,13 @@ class CasaITLEDControllerLight(CasaITOneWireEntity, LightEntity, RestoreEntity):
             animation_speed=value.animation_speed,
             colors=list(value.colors),
         )
-        self._led_count = config.led_count or self._led_count
         self._apply_config(config, from_read=True)
+
+    @property
+    def _led_count(self) -> int:
+        """Return the LED count from the options, which the LED count number edits too."""
+
+        return get_configured_led_counts(self._entry.options).get(self._device_id, self._default_led_count)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on the LED controller with optional parameters."""
@@ -332,7 +336,7 @@ class CasaITLEDControllerLight(CasaITOneWireEntity, LightEntity, RestoreEntity):
         colors = [Color(color.red, color.green, color.blue) for color in colors]
 
         return LEDConfig(
-            led_count=base.led_count or self._led_count or DEFAULT_LED_COUNT,
+            led_count=self._led_count,
             state=base.state,
             brightness=base.brightness,
             animation=base.animation,
@@ -385,5 +389,4 @@ class CasaITLEDControllerLight(CasaITOneWireEntity, LightEntity, RestoreEntity):
 
         # The scheduler publishes the written configuration, which lands in
         # _update_from_value; this only covers the time until it arrives.
-        self._led_count = config.led_count or self._led_count
         self._apply_config(config, from_read=True)
