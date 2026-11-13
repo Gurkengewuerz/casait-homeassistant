@@ -180,7 +180,7 @@ class CasaITOM117RuntimeNumber(NumberEntity, RestoreEntity):
             name=get_module_name(entry.options, "om117", address, f"OM117 0x{address:02X}"),
             manufacturer="casaIT",
             model="PCF8574 Output",
-            via_device=(DOMAIN, build_device_identifier(entry.entry_id, "bridge", "controller")),
+            **api.bridge_link,
         )
 
     async def async_added_to_hass(self) -> None:
@@ -258,7 +258,7 @@ class CasaITLEDControllerNumber(CasaITOneWireEntity, NumberEntity):
         bridge_slug = entry_bridge_slug(entry)
         self._attr_unique_id = f"{entry.entry_id}_{device_id}_{field}"
         self.entity_id = build_onewire_entity_id("number", bridge_slug, device_id, meta, "led", field)
-        self._attr_device_info = build_onewire_device_info(entry.entry_id, device_id, meta)
+        self._attr_device_info = build_onewire_device_info(entry.entry_id, device_id, meta, api.bus_device_id(meta))
 
     def _update_from_value(self, value: Any) -> None:
         self._attr_native_value = int(getattr(value, self._field))

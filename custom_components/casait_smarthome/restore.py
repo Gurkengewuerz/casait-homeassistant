@@ -191,8 +191,7 @@ class CasaITOutputRestorer:
         instead of being undone.
         """
 
-        stats = info.emergency if info is not None else None
-        if stats is None:
+        if info is None or (stats := info.emergency) is None:
             return
         seen = self._emergency_seen
         if seen is None or seen[0] != info.boot_id:

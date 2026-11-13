@@ -19,7 +19,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
-import voluptuous as vol
+import probatio
 
 from homeassistant.config_entries import ConfigFlowResult, OptionsFlowWithReload
 from homeassistant.data_entry_flow import section
@@ -110,13 +110,13 @@ if TYPE_CHECKING:
     from .api import CasaITApi
 
 # Selector option lists must be lists: SelectSelectorConfig validates its options
-# against vol.Schema([...]), which rejects tuples with "expected a list".
+# against probatio.Schema([...]), which rejects tuples with "expected a list".
 OM117_MODES = [OM117_MODE_SWITCH, OM117_MODE_SHUTTER, OM117_MODE_BLIND, OM117_MODE_PULSE]
 DM117_SLOT_TYPES = ["none", "binary_input", "switch", "dimmer"]
 INPUT_ROLES = [INPUT_ROLE_CONTACT, INPUT_ROLE_BUTTON, INPUT_ROLE_UNUSED]
 DS2413_DIRECTIONS = [DS2413_CHANNEL_INPUT, DS2413_CHANNEL_OUTPUT]
 
-# voluptuous cannot express "no selection", so the absence of a device class is
+# probatio cannot express "no selection", so the absence of a device class is
 # carried as an explicit sentinel that is mapped back to None on save.
 NO_DEVICE_CLASS = "none"
 CONTACT_DEVICE_CLASS_OPTIONS = [NO_DEVICE_CLASS, *INPUT_DEVICE_CLASSES]
@@ -152,7 +152,7 @@ def _power_on() -> SelectSelector:
 
 
 def _collapsed(fields: dict[Any, Any]) -> section:
-    return section(vol.Schema(fields), {"collapsed": True})
+    return section(probatio.Schema(fields), {"collapsed": True})
 
 
 def _input_fields(
@@ -170,17 +170,17 @@ def _input_fields(
 
     fields: dict[Any, Any] = {}
     if with_role:
-        fields[vol.Required(f"{prefix}role", default=config.role)] = _select(INPUT_ROLES, "input_role")
-    fields[vol.Required(f"{prefix}device_class", default=config.device_class or NO_DEVICE_CLASS)] = _select(
+        fields[probatio.Required(f"{prefix}role", default=config.role)] = _select(INPUT_ROLES, "input_role")
+    fields[probatio.Required(f"{prefix}device_class", default=config.device_class or NO_DEVICE_CLASS)] = _select(
         CONTACT_DEVICE_CLASS_OPTIONS, "contact_device_class"
     )
-    fields[vol.Required(f"{prefix}invert", default=config.invert)] = BooleanSelector()
+    fields[probatio.Required(f"{prefix}invert", default=config.invert)] = BooleanSelector()
     if with_role:
-        fields[vol.Required(f"{prefix}repeat", default=config.repeat)] = BooleanSelector()
+        fields[probatio.Required(f"{prefix}repeat", default=config.repeat)] = BooleanSelector()
     if targets:
         # A target whose pair changed mode is no longer offered; the form starts at none.
         current = config.emergency if any(choice["value"] == config.emergency for choice in targets) else None
-        fields[vol.Required(f"{prefix}emergency", default=current or EMERGENCY_NONE)] = SelectSelector(
+        fields[probatio.Required(f"{prefix}emergency", default=current or EMERGENCY_NONE)] = SelectSelector(
             SelectSelectorConfig(options=targets)
         )
     return fields
@@ -292,9 +292,9 @@ class OptionsFlowHandler(OptionsFlowWithReload):
         default = next((backup.name for backup in backups if backup.bridge_slug == own), backups[0].name)
         return self.async_show_form(
             step_id="restore",
-            data_schema=vol.Schema(
+            data_schema=probatio.Schema(
                 {
-                    vol.Required(CONF_BACKUP, default=default): SelectSelector(
+                    probatio.Required(CONF_BACKUP, default=default): SelectSelector(
                         SelectSelectorConfig(options=backup_choices(backups, include_none=False))
                     )
                 }
@@ -381,7 +381,9 @@ class OptionsFlowHandler(OptionsFlowWithReload):
 
         return self.async_show_form(
             step_id="device",
-            data_schema=vol.Schema({vol.Required(DEVICE_FIELD): SelectSelector(SelectSelectorConfig(options=choices))}),
+            data_schema=probatio.Schema(
+                {probatio.Required(DEVICE_FIELD): SelectSelector(SelectSelectorConfig(options=choices))}
+            ),
         )
 
     def _emergency_targets(self) -> list[SelectOptionDict]:
@@ -447,18 +449,18 @@ class OptionsFlowHandler(OptionsFlowWithReload):
             return await self._stage(options, f"im117:{address}")
 
         schema: dict[Any, Any] = {
-            vol.Optional(NAME_FIELD, description={"suggested_value": name}): TextSelector(),
-            vol.Required(OPT_DEBOUNCE_MS, default=settings.debounce_ms): _box(0, 255),
-            vol.Required(OPT_POWER_ON, default=get_power_on_policy(self._options, "dm117", address)): _power_on(),
+            probatio.Optional(NAME_FIELD, description={"suggested_value": name}): TextSelector(),
+            probatio.Required(OPT_DEBOUNCE_MS, default=settings.debounce_ms): _box(0, 255),
+            probatio.Required(OPT_POWER_ON, default=get_power_on_policy(self._options, "dm117", address)): _power_on(),
         }
         targets = self._emergency_targets()
         for port in range(8):
-            schema[vol.Required(f"port_{port + 1}")] = _collapsed(
+            schema[probatio.Required(f"port_{port + 1}")] = _collapsed(
                 _input_fields(configured.get(port, DigitalInputConfig()), targets=targets)
             )
         return self.async_show_form(
             step_id="im117",
-            data_schema=vol.Schema(schema),
+            data_schema=probatio.Schema(schema),
             description_placeholders={"device": f"IM117 0x{address:02X}"},
         )
 
@@ -504,27 +506,29 @@ class OptionsFlowHandler(OptionsFlowWithReload):
         existing = get_om117_pair_configuration(self._options).get(address, {})
         name = get_module_name(self._options, "om117", address, "")
         schema: dict[Any, Any] = {
-            vol.Optional(NAME_FIELD, description={"suggested_value": name}): TextSelector(),
-            vol.Required(OPT_POWER_ON, default=get_power_on_policy(self._options, "om117", address)): _power_on(),
+            probatio.Optional(NAME_FIELD, description={"suggested_value": name}): TextSelector(),
+            probatio.Required(OPT_POWER_ON, default=get_power_on_policy(self._options, "om117", address)): _power_on(),
         }
         for pair in range(4):
             config = existing.get(pair, OM117PairConfig())
-            fields: dict[Any, Any] = {vol.Required("mode", default=config.mode): _select(OM117_MODES, "om117_mode")}
+            fields: dict[Any, Any] = {
+                probatio.Required("mode", default=config.mode): _select(OM117_MODES, "om117_mode")
+            }
             if config.mode == OM117_MODE_PULSE:
-                fields[vol.Required("pulse_duration", default=config.pulse_duration)] = _box(0.1, 30, 0.1)
+                fields[probatio.Required("pulse_duration", default=config.pulse_duration)] = _box(0.1, 30, 0.1)
             elif config.mode in {OM117_MODE_SHUTTER, OM117_MODE_BLIND}:
-                fields[vol.Required("open_time", default=config.open_time)] = _box(1, 180, 0.1)
-                fields[vol.Required("close_time", default=config.close_time)] = _box(1, 180, 0.1)
-                fields[vol.Required("overrun_time", default=config.overrun_time)] = _box(0, 15, 0.1)
-                fields[vol.Required("reference_mode", default=config.reference_mode)] = _select(
+                fields[probatio.Required("open_time", default=config.open_time)] = _box(1, 180, 0.1)
+                fields[probatio.Required("close_time", default=config.close_time)] = _box(1, 180, 0.1)
+                fields[probatio.Required("overrun_time", default=config.overrun_time)] = _box(0, 15, 0.1)
+                fields[probatio.Required("reference_mode", default=config.reference_mode)] = _select(
                     list(COVER_REFERENCE_MODES), "cover_reference_mode"
                 )
                 if config.mode == OM117_MODE_BLIND:
-                    fields[vol.Required("tilt_time", default=config.tilt_time)] = _box(0.1, 15, 0.1)
-            schema[vol.Required(f"pair_{pair + 1}")] = _collapsed(fields)
+                    fields[probatio.Required("tilt_time", default=config.tilt_time)] = _box(0.1, 15, 0.1)
+            schema[probatio.Required(f"pair_{pair + 1}")] = _collapsed(fields)
         return self.async_show_form(
             step_id="om117",
-            data_schema=vol.Schema(schema),
+            data_schema=probatio.Schema(schema),
             errors=errors,
             description_placeholders={"device": f"OM117 0x{address:02X}"},
         )
@@ -574,24 +578,24 @@ class OptionsFlowHandler(OptionsFlowWithReload):
         settings = get_input_module_settings(self._options, "dm117").get(address, InputModuleSettings())
         name = get_module_name(self._options, "dm117", address, "")
         schema: dict[Any, Any] = {
-            vol.Optional(NAME_FIELD, description={"suggested_value": name}): TextSelector(),
-            vol.Required(OPT_DEBOUNCE_MS, default=settings.debounce_ms): _box(0, 255),
+            probatio.Optional(NAME_FIELD, description={"suggested_value": name}): TextSelector(),
+            probatio.Required(OPT_DEBOUNCE_MS, default=settings.debounce_ms): _box(0, 255),
         }
         targets = self._emergency_targets()
         for slot in range(8):
             slot_type = slot_types.get(slot, "none")
             fields: dict[Any, Any] = {
-                vol.Required("type", default=slot_type): _select(DM117_SLOT_TYPES, "dm117_slot_type")
+                probatio.Required("type", default=slot_type): _select(DM117_SLOT_TYPES, "dm117_slot_type")
             }
             if slot_type == "binary_input":
                 for channel, prefix in ((0, "a_"), (1, "b_")):
                     fields.update(
                         _input_fields(inputs.get((slot, channel), DigitalInputConfig()), prefix, targets=targets)
                     )
-            schema[vol.Required(f"slot_{slot + 1}")] = _collapsed(fields)
+            schema[probatio.Required(f"slot_{slot + 1}")] = _collapsed(fields)
         return self.async_show_form(
             step_id="dm117",
-            data_schema=vol.Schema(schema),
+            data_schema=probatio.Schema(schema),
             errors=errors,
             description_placeholders={"device": f"DM117 0x{address:02X}"},
         )
@@ -614,7 +618,9 @@ class OptionsFlowHandler(OptionsFlowWithReload):
         name = get_module_name(self._options, "sm117", address, "")
         return self.async_show_form(
             step_id="sm117",
-            data_schema=vol.Schema({vol.Optional(NAME_FIELD, description={"suggested_value": name}): TextSelector()}),
+            data_schema=probatio.Schema(
+                {probatio.Optional(NAME_FIELD, description={"suggested_value": name}): TextSelector()}
+            ),
             description_placeholders={"device": f"SM117 0x{address:02X}"},
         )
 
@@ -687,10 +693,10 @@ class OptionsFlowHandler(OptionsFlowWithReload):
         family = meta.get("family_code")
         name = get_onewire_names(self._options).get(device_id, "")
 
-        schema: dict[Any, Any] = {vol.Optional(NAME_FIELD, description={"suggested_value": name}): TextSelector()}
+        schema: dict[Any, Any] = {probatio.Optional(NAME_FIELD, description={"suggested_value": name}): TextSelector()}
         choices = ONEWIRE_PROFILE_CHOICES.get(family, []) if isinstance(family, int) else []
         if len(choices) > 1:
-            schema[vol.Required("profile", default=profile if profile in choices else choices[0])] = _select(
+            schema[probatio.Required("profile", default=profile if profile in choices else choices[0])] = _select(
                 choices, "onewire_profile"
             )
 
@@ -699,14 +705,14 @@ class OptionsFlowHandler(OptionsFlowWithReload):
             interval = get_configured_onewire_poll_intervals(self._options).get(
                 device_id, DEFAULT_OW_POLL_INTERVAL.get(profile, 60)
             )
-            schema[vol.Required("poll_interval", default=interval)] = _box(1, 3600)
+            schema[probatio.Required("poll_interval", default=interval)] = _box(1, 3600)
 
         if profile in {OW_PROFILE_LED, "ds2413"}:
             policy = get_power_on_policy(self._options, "onewire", device_id)
-            schema[vol.Required(OPT_POWER_ON, default=policy)] = _power_on()
+            schema[probatio.Required(OPT_POWER_ON, default=policy)] = _power_on()
         if profile == OW_PROFILE_LED:
             count = get_configured_led_counts(self._options).get(device_id, DEFAULT_LED_COUNT)
-            schema[vol.Required("led_count", default=count)] = _box(1, 255)
+            schema[probatio.Required("led_count", default=count)] = _box(1, 255)
         elif profile == "ds2413":
             directions = get_configured_ds2413_channels(self._options).get(
                 device_id, {0: DS2413_CHANNEL_INPUT, 1: DS2413_CHANNEL_INPUT}
@@ -715,20 +721,22 @@ class OptionsFlowHandler(OptionsFlowWithReload):
             for channel in range(2):
                 direction = directions.get(channel, DS2413_CHANNEL_INPUT)
                 fields: dict[Any, Any] = {
-                    vol.Required("direction", default=direction): _select(DS2413_DIRECTIONS, "ds2413_channel_profile")
+                    probatio.Required("direction", default=direction): _select(
+                        DS2413_DIRECTIONS, "ds2413_channel_profile"
+                    )
                 }
                 # Contact settings are shown for both directions: switching a
                 # channel to input in this same form should not need a second
                 # round just to set its device class.
                 fields.update(_input_fields(inputs.get(channel, DigitalInputConfig()), with_role=False))
-                schema[vol.Required(f"channel_{channel + 1}")] = _collapsed(fields)
+                schema[probatio.Required(f"channel_{channel + 1}")] = _collapsed(fields)
 
         details = str(meta.get("device_type") or "1-Wire")
         if components := meta.get("components"):
             details = f"{details}: {', '.join(components)}"
         return self.async_show_form(
             step_id="onewire",
-            data_schema=vol.Schema(schema),
+            data_schema=probatio.Schema(schema),
             errors=errors,
             description_placeholders={"device": device_id, "details": details},
         )
@@ -751,11 +759,11 @@ class OptionsFlowHandler(OptionsFlowWithReload):
         current = get_input_settings(self._options)
         return self.async_show_form(
             step_id="input_settings",
-            data_schema=vol.Schema(
+            data_schema=probatio.Schema(
                 {
-                    vol.Required(OPT_LONG_PRESS_MS, default=current.long_press_ms): _box(100, 5000, 10),
-                    vol.Required(OPT_DOUBLE_CLICK_MS, default=current.double_click_ms): _box(0, 2000, 10),
-                    vol.Required(OPT_REPEAT_INTERVAL_MS, default=current.repeat_interval_ms): _box(50, 5000, 10),
+                    probatio.Required(OPT_LONG_PRESS_MS, default=current.long_press_ms): _box(100, 5000, 10),
+                    probatio.Required(OPT_DOUBLE_CLICK_MS, default=current.double_click_ms): _box(0, 2000, 10),
+                    probatio.Required(OPT_REPEAT_INTERVAL_MS, default=current.repeat_interval_ms): _box(50, 5000, 10),
                 }
             ),
         )
@@ -780,17 +788,17 @@ class OptionsFlowHandler(OptionsFlowWithReload):
         topology = get_topology_settings(self._options)
         return self.async_show_form(
             step_id="advanced_settings",
-            data_schema=vol.Schema(
+            data_schema=probatio.Schema(
                 {
-                    vol.Required(OPT_FAST_POLL_INTERVAL_MS, default=round(polling.fast_poll_interval * 1000, 3)): _box(
-                        5, 1000
-                    ),
-                    vol.Required(OPT_SLOW_POLL_INTERVAL, default=polling.slow_poll_interval): _box(1, 3600),
-                    vol.Required(OPT_MAX_SEND_INTERVAL_MS, default=round(polling.max_send_interval * 1000, 3)): _box(
-                        1, 20
-                    ),
-                    vol.Required(OPT_TOPOLOGY_SCAN_INTERVAL, default=topology.scan_interval): _box(0, 86400, 60),
-                    vol.Required(OPT_TOPOLOGY_MISSING_SCANS, default=topology.missing_scans): _box(1, 20),
+                    probatio.Required(
+                        OPT_FAST_POLL_INTERVAL_MS, default=round(polling.fast_poll_interval * 1000, 3)
+                    ): _box(5, 1000),
+                    probatio.Required(OPT_SLOW_POLL_INTERVAL, default=polling.slow_poll_interval): _box(1, 3600),
+                    probatio.Required(
+                        OPT_MAX_SEND_INTERVAL_MS, default=round(polling.max_send_interval * 1000, 3)
+                    ): _box(1, 20),
+                    probatio.Required(OPT_TOPOLOGY_SCAN_INTERVAL, default=topology.scan_interval): _box(0, 86400, 60),
+                    probatio.Required(OPT_TOPOLOGY_MISSING_SCANS, default=topology.missing_scans): _box(1, 20),
                 }
             ),
         )

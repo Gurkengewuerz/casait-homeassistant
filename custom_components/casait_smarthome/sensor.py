@@ -78,12 +78,14 @@ class OneWireEntity(CasaITOneWireEntity, SensorEntity):
 
     def __init__(
         self,
+        api: CasaITApi,
         entry: CasaITConfigEntry,
         device_id: str,
         meta: dict[str, Any],
         description: OneWireSensorDescription,
     ) -> None:
         """Initialize the entity."""
+        self._api = api
         self._device_id = device_id
         self._meta = meta
         self._bus_address: int | None = meta.get("bus_address")
@@ -99,7 +101,7 @@ class OneWireEntity(CasaITOneWireEntity, SensorEntity):
                 "OneWire device %s has no bus address; it will not be grouped under a common device in Home Assistant",
                 device_id,
             )
-        self._attr_device_info = build_onewire_device_info(entry.entry_id, device_id, meta)
+        self._attr_device_info = build_onewire_device_info(entry.entry_id, device_id, meta, api.bus_device_id(meta))
 
 
 class DS18B20TemperatureSensor(OneWireEntity):
@@ -108,6 +110,7 @@ class DS18B20TemperatureSensor(OneWireEntity):
     def __init__(self, api: CasaITApi, entry: CasaITConfigEntry, device_id: str, meta: dict[str, Any]) -> None:
         """Initialize the DS18B20 temperature sensor entity."""
         super().__init__(
+            api,
             entry,
             device_id,
             meta,
@@ -121,7 +124,6 @@ class DS18B20TemperatureSensor(OneWireEntity):
                 value_fn=lambda reading: float(reading) if isinstance(reading, (int, float)) else None,
             ),
         )
-        self._api = api
 
     def _update_from_value(self, value: Any) -> None:
         self._attr_native_value = value
@@ -141,8 +143,7 @@ class DS2438Sensor(OneWireEntity):
         description: OneWireSensorDescription,
     ) -> None:
         """Initialize the DS2438 sensor entity."""
-        super().__init__(entry, device_id, meta, description)
-        self._api = api
+        super().__init__(api, entry, device_id, meta, description)
 
     def _update_from_value(self, value: Any) -> None:
         self._attr_native_value = self.entity_description.value_fn(value)
@@ -212,7 +213,7 @@ class CasaITRelayWearSensor(SensorEntity):
             name=get_module_name(entry.options, "om117", address, f"OM117 0x{address:02X}"),
             manufacturer="casaIT",
             model="PCF8574 Output",
-            via_device=(DOMAIN, build_device_identifier(entry.entry_id, "bridge", "controller")),
+            **api.bridge_link,
         )
 
     async def async_update(self) -> None:

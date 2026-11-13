@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass, replace
 import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.util import slugify
@@ -1118,10 +1118,17 @@ ONEWIRE_BOARD_MODELS = {
 }
 
 
-def build_onewire_device_info(config_entry_id: str, device_id: str, meta: Mapping[str, Any]) -> DeviceInfo:
-    """Return DeviceInfo for a 1-Wire device linked through its SM117 bus."""
+class DeviceLink(TypedDict, total=False):
+    """The device another one is reached through, as DeviceInfo takes it."""
 
-    bus_address = meta.get("bus_address")
+    via_device_id: str
+
+
+def build_onewire_device_info(
+    config_entry_id: str, device_id: str, meta: Mapping[str, Any], bus_device_id: str | None = None
+) -> DeviceInfo:
+    """Return DeviceInfo for a 1-Wire device reached through its SM117 bus, given the bus's device id."""
+
     chip = str(meta.get("device_type") or "").strip() or "OneWire"
     board = ONEWIRE_BOARD_MODELS.get(str(meta.get("detected_profile") or ""))
     name = str(meta.get(OPT_NAME) or "").strip() or f"{board or chip} {device_id}"
@@ -1133,11 +1140,8 @@ def build_onewire_device_info(config_entry_id: str, device_id: str, meta: Mappin
         manufacturer="casaIT" if board else "Maxim Integrated",
         serial_number=device_id,
     )
-    if bus_address is not None:
-        device_info["via_device"] = (
-            DOMAIN,
-            build_device_identifier(config_entry_id, "sm117", f"{int(bus_address):02x}"),
-        )
+    if bus_device_id is not None:
+        device_info["via_device_id"] = bus_device_id
     return device_info
 
 

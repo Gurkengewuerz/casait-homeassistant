@@ -7,7 +7,7 @@ import contextlib
 import logging
 from typing import Any
 
-import voluptuous as vol
+import probatio
 
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntry, ConfigFlowResult, OptionsFlow
@@ -37,18 +37,22 @@ _LOGGER = logging.getLogger(__name__)
 CONF_BACKUP = "backup"
 
 
-def _bridge_data_schema(defaults: Mapping[str, Any] | None = None) -> vol.Schema:
+def _bridge_data_schema(defaults: Mapping[str, Any] | None = None) -> probatio.Schema:
     """Return the bridge connection schema with optional current values."""
 
     current = defaults or {}
-    host_key = vol.Required(CONF_HOST, default=current[CONF_HOST]) if CONF_HOST in current else vol.Required(CONF_HOST)
-    return vol.Schema(
+    host_key = (
+        probatio.Required(CONF_HOST, default=current[CONF_HOST])
+        if CONF_HOST in current
+        else probatio.Required(CONF_HOST)
+    )
+    return probatio.Schema(
         {
-            host_key: vol.All(TextSelector(TextSelectorConfig()), vol.Length(min=1)),
-            vol.Required(CONF_PORT, default=current.get(CONF_PORT, DEFAULT_PORT)): NumberSelector(
+            host_key: probatio.All(TextSelector(TextSelectorConfig()), probatio.Length(min=1)),
+            probatio.Required(CONF_PORT, default=current.get(CONF_PORT, DEFAULT_PORT)): NumberSelector(
                 NumberSelectorConfig(min=1, max=65535, step=1, mode=NumberSelectorMode.BOX)
             ),
-            vol.Required(CONF_TIMEOUT, default=current.get(CONF_TIMEOUT, DEFAULT_TIMEOUT)): NumberSelector(
+            probatio.Required(CONF_TIMEOUT, default=current.get(CONF_TIMEOUT, DEFAULT_TIMEOUT)): NumberSelector(
                 NumberSelectorConfig(min=0.1, max=60, step=0.1, mode=NumberSelectorMode.BOX)
             ),
         }
@@ -294,9 +298,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="restore",
-            data_schema=vol.Schema(
+            data_schema=probatio.Schema(
                 {
-                    vol.Required(CONF_BACKUP, default=self._suggested_backup(data)): SelectSelector(
+                    probatio.Required(CONF_BACKUP, default=self._suggested_backup(data)): SelectSelector(
                         SelectSelectorConfig(
                             options=backup_choices(self._backups, include_none=True),
                             mode=SelectSelectorMode.DROPDOWN,

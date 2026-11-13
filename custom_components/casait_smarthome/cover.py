@@ -173,7 +173,7 @@ class CasaITBlindCover(CoverEntity, RestoreEntity):
             name=get_module_name(config_entry.options, "om117", address, f"OM117 0x{address:02X}"),
             manufacturer="casaIT",
             model="PCF8574 Output",
-            via_device=(DOMAIN, build_device_identifier(config_entry.entry_id, "bridge", "controller")),
+            **api.bridge_link,
         )
         self._attr_available = True
 

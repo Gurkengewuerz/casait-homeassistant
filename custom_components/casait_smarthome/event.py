@@ -358,7 +358,7 @@ class CasaITButtonEvent(CasaITInputEvent):
             name=get_module_name(config_entry.options, "im117", address, f"IM117 0x{address:02X}"),
             manufacturer="casaIT",
             model="PCF8574 Input",
-            via_device=(DOMAIN, build_device_identifier(config_entry.entry_id, "bridge", "controller")),
+            **api.bridge_link,
         )
 
     def _current_level(self) -> bool | None:
@@ -416,7 +416,7 @@ class CasaITDM117ButtonEvent(CasaITInputEvent):
             name=get_module_name(config_entry.options, "dm117", address, f"DM117 0x{address:02X}"),
             manufacturer="casaIT",
             model="DM117",
-            via_device=(DOMAIN, build_device_identifier(config_entry.entry_id, "bridge", "controller")),
+            **api.bridge_link,
         )
 
     def _current_level(self) -> bool | None:

@@ -4,10 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-import voluptuous as vol
+import probatio
 
-from homeassistant import data_entry_flow
-from homeassistant.components.repairs import RepairsFlow
+from homeassistant.components.repairs import RepairsFlow, RepairsFlowResult
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
@@ -31,7 +30,7 @@ class CasaITRepairFlow(RepairsFlow):
     async def async_step_init(
         self,
         user_input: dict[str, Any] | None = None,
-    ) -> data_entry_flow.FlowResult:
+    ) -> RepairsFlowResult:
         """Open the step this issue is answered with."""
 
         if self._issue_id.startswith("device_gone_"):
@@ -51,7 +50,7 @@ class CasaITRepairFlow(RepairsFlow):
     async def async_step_onewire_faulty(
         self,
         user_input: dict[str, Any] | None = None,
-    ) -> data_entry_flow.FlowResult:
+    ) -> RepairsFlowResult:
         """Ask whether to keep trying the device or to remove it."""
 
         return self.async_show_menu(
@@ -63,7 +62,7 @@ class CasaITRepairFlow(RepairsFlow):
     async def async_step_retry_onewire(
         self,
         user_input: dict[str, Any] | None = None,
-    ) -> data_entry_flow.FlowResult:
+    ) -> RepairsFlowResult:
         """Read the device again at its normal rate; the issue returns if it keeps failing."""
 
         if (api := self._loaded_api()) is not None:
@@ -74,13 +73,13 @@ class CasaITRepairFlow(RepairsFlow):
     async def async_step_forget_onewire(
         self,
         user_input: dict[str, Any] | None = None,
-    ) -> data_entry_flow.FlowResult:
+    ) -> RepairsFlowResult:
         """Remove the device once the user confirms it is gone or broken for good."""
 
         if user_input is None:
             return self.async_show_form(
                 step_id="forget_onewire",
-                data_schema=vol.Schema({}),
+                data_schema=probatio.Schema({}),
                 description_placeholders=self._onewire_placeholders,
             )
 
@@ -106,7 +105,7 @@ class CasaITRepairFlow(RepairsFlow):
     async def async_step_emergency_failed(
         self,
         user_input: dict[str, Any] | None = None,
-    ) -> data_entry_flow.FlowResult:
+    ) -> RepairsFlowResult:
         """Show what failed and clear the bridge's count once the user has seen it."""
 
         errors: dict[str, str] = {}
@@ -124,7 +123,7 @@ class CasaITRepairFlow(RepairsFlow):
         issue = ir.async_get(self.hass).async_get_issue(DOMAIN, self._issue_id)
         return self.async_show_form(
             step_id="emergency_failed",
-            data_schema=vol.Schema({}),
+            data_schema=probatio.Schema({}),
             errors=errors,
             description_placeholders=dict(issue.translation_placeholders or {}) if issue else None,
         )
@@ -136,7 +135,7 @@ class CasaITRepairFlow(RepairsFlow):
     async def async_step_chip_missing(
         self,
         user_input: dict[str, Any] | None = None,
-    ) -> data_entry_flow.FlowResult:
+    ) -> RepairsFlowResult:
         """Ask whether the chip should be looked for again or given up on."""
 
         return self.async_show_menu(
@@ -148,7 +147,7 @@ class CasaITRepairFlow(RepairsFlow):
     async def async_step_rescan_chip(
         self,
         user_input: dict[str, Any] | None = None,
-    ) -> data_entry_flow.FlowResult:
+    ) -> RepairsFlowResult:
         """Probe the chip once more and close the issue if it answers."""
 
         api = self._loaded_api()
@@ -159,7 +158,7 @@ class CasaITRepairFlow(RepairsFlow):
 
         return self.async_show_form(
             step_id="chip_still_missing",
-            data_schema=vol.Schema({}),
+            data_schema=probatio.Schema({}),
             errors={"base": "still_missing"},
             description_placeholders=self._chip_placeholders,
         )
@@ -167,7 +166,7 @@ class CasaITRepairFlow(RepairsFlow):
     async def async_step_chip_still_missing(
         self,
         user_input: dict[str, Any] | None = None,
-    ) -> data_entry_flow.FlowResult:
+    ) -> RepairsFlowResult:
         """Return to the choice after a probe that found nothing."""
 
         return await self.async_step_chip_missing()
@@ -175,13 +174,13 @@ class CasaITRepairFlow(RepairsFlow):
     async def async_step_forget_chip(
         self,
         user_input: dict[str, Any] | None = None,
-    ) -> data_entry_flow.FlowResult:
+    ) -> RepairsFlowResult:
         """Remove the chip's entities once the user confirms it is gone for good."""
 
         if user_input is None:
             return self.async_show_form(
                 step_id="forget_chip",
-                data_schema=vol.Schema({}),
+                data_schema=probatio.Schema({}),
                 description_placeholders=self._chip_placeholders,
             )
 
@@ -208,7 +207,7 @@ class CasaITRepairFlow(RepairsFlow):
     async def async_step_device_gone(
         self,
         user_input: dict[str, Any] | None = None,
-    ) -> data_entry_flow.FlowResult:
+    ) -> RepairsFlowResult:
         """Ask whether the device should be looked for again or given up on."""
 
         return self.async_show_menu(
@@ -220,7 +219,7 @@ class CasaITRepairFlow(RepairsFlow):
     async def async_step_rescan(
         self,
         user_input: dict[str, Any] | None = None,
-    ) -> data_entry_flow.FlowResult:
+    ) -> RepairsFlowResult:
         """Scan the bus again and close the issue once the device answers."""
 
         if await self._async_device_returned():
@@ -232,7 +231,7 @@ class CasaITRepairFlow(RepairsFlow):
 
         return self.async_show_form(
             step_id="still_missing",
-            data_schema=vol.Schema({}),
+            data_schema=probatio.Schema({}),
             errors={"base": "still_missing"},
             description_placeholders=self._device_placeholders,
         )
@@ -240,7 +239,7 @@ class CasaITRepairFlow(RepairsFlow):
     async def async_step_still_missing(
         self,
         user_input: dict[str, Any] | None = None,
-    ) -> data_entry_flow.FlowResult:
+    ) -> RepairsFlowResult:
         """Return to the choice after a scan that did not find the device."""
 
         return await self.async_step_device_gone()
@@ -248,13 +247,13 @@ class CasaITRepairFlow(RepairsFlow):
     async def async_step_forget(
         self,
         user_input: dict[str, Any] | None = None,
-    ) -> data_entry_flow.FlowResult:
+    ) -> RepairsFlowResult:
         """Remove the device from the registry once the user confirms it is gone."""
 
         if user_input is None:
             return self.async_show_form(
                 step_id="forget",
-                data_schema=vol.Schema({}),
+                data_schema=probatio.Schema({}),
                 description_placeholders=self._device_placeholders,
             )
 
@@ -295,7 +294,7 @@ class CasaITRepairFlow(RepairsFlow):
     async def async_step_confirm(
         self,
         user_input: dict[str, Any] | None = None,
-    ) -> data_entry_flow.FlowResult:
+    ) -> RepairsFlowResult:
         """Verify that the hardware issue has been resolved."""
 
         errors: dict[str, str] = {}
@@ -305,7 +304,7 @@ class CasaITRepairFlow(RepairsFlow):
                 return self.async_create_entry(title="", data={})
             errors["base"] = "still_unresolved"
 
-        return self.async_show_form(step_id="confirm", data_schema=vol.Schema({}), errors=errors)
+        return self.async_show_form(step_id="confirm", data_schema=probatio.Schema({}), errors=errors)
 
     async def _async_issue_resolved(self) -> bool:
         """Probe the bridge or bus and report whether the issue disappeared."""

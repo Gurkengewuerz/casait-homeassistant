@@ -35,6 +35,7 @@ from .emergency import build_emergency_links, describe_link
 from .firmware import async_flash_bridge
 from .health import LinkHealth
 from .helpers import (
+    DeviceLink,
     OM117PairConfig,
     TopologySettings,
     build_device_identifier,
@@ -128,6 +129,9 @@ class CasaITApi:
         self.bus = bus
         self.entry_id = entry_id
         self.state_update_signal = f"{SIGNAL_STATE_UPDATED}_{entry_id}"
+        # Device registry ids of the bridge and of each SM117 bus, set by the entry setup.
+        self.bridge_device_id: str | None = None
+        self.sm117_device_ids: dict[int, str] = {}
         self.im117_om117: dict[int, PCF8574] = {}
         self.dm117: dict[int, DM117] = {}
         self.sm117: dict[int, OneWireBus] = {}
@@ -450,6 +454,18 @@ class CasaITApi:
         """Return the dispatcher signal carrying state changes for one module."""
 
         return f"{self.state_update_signal}_{address:02x}"
+
+    @property
+    def bridge_link(self) -> DeviceLink:
+        """Return the DeviceInfo part linking a module to the bridge it is reached through."""
+
+        return DeviceLink(via_device_id=self.bridge_device_id) if self.bridge_device_id else DeviceLink()
+
+    def bus_device_id(self, meta: Mapping[str, Any]) -> str | None:
+        """Return the device id of the SM117 bus a 1-Wire chip sits on."""
+
+        bus_address = meta.get("bus_address")
+        return self.sm117_device_ids.get(bus_address) if isinstance(bus_address, int) else None
 
     def timing_signal(self, address: int) -> str:
         """Return the dispatcher signal telling that the pair times of an OM117 changed."""

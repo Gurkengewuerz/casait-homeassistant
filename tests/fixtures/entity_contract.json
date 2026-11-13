@@ -14,7 +14,7 @@
     "name": "Input 1",
     "device_identifiers": [["casait_smarthome", "entry-test_im117_56"]],
     "device_name": "IM117 0x38",
-    "via_device": ["casait_smarthome", "entry-test_bridge_controller"]
+    "via_device_id": "bridge-device"
   },
   {
     "case": "dm117_binary_sensor",
@@ -23,7 +23,7 @@
     "name": "Slot 1 input A",
     "device_identifiers": [["casait_smarthome", "entry-test_dm117_16"]],
     "device_name": "DM117 0x10",
-    "via_device": ["casait_smarthome", "entry-test_bridge_controller"]
+    "via_device_id": "bridge-device"
   },
   {
     "case": "ds2413_binary_sensor",
@@ -32,7 +32,7 @@
     "name": "Input A",
     "device_identifiers": [["casait_smarthome", "entry-test_onewire_3a00000000000001"]],
     "device_name": "DS2413 3a00000000000001",
-    "via_device": ["casait_smarthome", "entry-test_sm117_18"]
+    "via_device_id": "sm117-0x18-device"
   },
   {
     "case": "om117_switch",
@@ -41,7 +41,7 @@
     "name": "Output 1",
     "device_identifiers": [["casait_smarthome", "entry-test_om117_32"]],
     "device_name": "OM117 0x20",
-    "via_device": ["casait_smarthome", "entry-test_bridge_controller"]
+    "via_device_id": "bridge-device"
   },
   {
     "case": "dm117_switch",
@@ -50,7 +50,7 @@
     "name": "Slot 1 output A",
     "device_identifiers": [["casait_smarthome", "entry-test_dm117_16"]],
     "device_name": "DM117 0x10",
-    "via_device": ["casait_smarthome", "entry-test_bridge_controller"]
+    "via_device_id": "bridge-device"
   },
   {
     "case": "ds2413_switch",
@@ -59,7 +59,7 @@
     "name": "Output A",
     "device_identifiers": [["casait_smarthome", "entry-test_onewire_3a00000000000001"]],
     "device_name": "DS2413 3a00000000000001",
-    "via_device": ["casait_smarthome", "entry-test_sm117_18"]
+    "via_device_id": "sm117-0x18-device"
   },
   {
     "case": "dm117_light",
@@ -68,7 +68,7 @@
     "name": "Slot 1 dimmer",
     "device_identifiers": [["casait_smarthome", "entry-test_dm117_16"]],
     "device_name": "DM117 0x10",
-    "via_device": ["casait_smarthome", "entry-test_bridge_controller"]
+    "via_device_id": "bridge-device"
   },
   {
     "case": "led_controller_light",
@@ -77,7 +77,7 @@
     "name": "LED controller",
     "device_identifiers": [["casait_smarthome", "entry-test_onewire_1900000000000001"]],
     "device_name": "DS28E17 1900000000000001",
-    "via_device": ["casait_smarthome", "entry-test_sm117_18"]
+    "via_device_id": "sm117-0x18-device"
   },
   {
     "case": "om117_cover",
@@ -86,7 +86,7 @@
     "name": "Blind 1",
     "device_identifiers": [["casait_smarthome", "entry-test_om117_32"]],
     "device_name": "OM117 0x20",
-    "via_device": ["casait_smarthome", "entry-test_bridge_controller"]
+    "via_device_id": "bridge-device"
   },
   {
     "case": "im117_event",
@@ -95,7 +95,7 @@
     "name": "Button 1",
     "device_identifiers": [["casait_smarthome", "entry-test_im117_56"]],
     "device_name": "IM117 0x38",
-    "via_device": ["casait_smarthome", "entry-test_bridge_controller"]
+    "via_device_id": "bridge-device"
   },
   {
     "case": "rescan_button",
@@ -112,7 +112,7 @@
     "name": "Pulse output 1",
     "device_identifiers": [["casait_smarthome", "entry-test_om117_32"]],
     "device_name": "OM117 0x20",
-    "via_device": ["casait_smarthome", "entry-test_bridge_controller"]
+    "via_device_id": "bridge-device"
   },
   {
     "case": "om117_open_time",
@@ -121,7 +121,7 @@
     "name": "Pair 1 opening time",
     "device_identifiers": [["casait_smarthome", "entry-test_om117_32"]],
     "device_name": "OM117 0x20",
-    "via_device": ["casait_smarthome", "entry-test_bridge_controller"]
+    "via_device_id": "bridge-device"
   },
   {
     "case": "led_count_number",
@@ -130,7 +130,7 @@
     "name": "LED count",
     "device_identifiers": [["casait_smarthome", "entry-test_onewire_1900000000000001"]],
     "device_name": "DS28E17 1900000000000001",
-    "via_device": ["casait_smarthome", "entry-test_sm117_18"]
+    "via_device_id": "sm117-0x18-device"
   },
   {
     "case": "ds18b20_temperature",
@@ -139,7 +139,7 @@
     "name": "Temperature",
     "device_identifiers": [["casait_smarthome", "entry-test_onewire_2800000000000001"]],
     "device_name": "DS18B20 2800000000000001",
-    "via_device": ["casait_smarthome", "entry-test_sm117_18"]
+    "via_device_id": "sm117-0x18-device"
   },
   {
     "case": "ds2438_sensor",
@@ -148,7 +148,7 @@
     "name": "Humidity",
     "device_identifiers": [["casait_smarthome", "entry-test_onewire_2600000000000001"]],
     "device_name": "DS2438 2600000000000001",
-    "via_device": ["casait_smarthome", "entry-test_sm117_18"]
+    "via_device_id": "sm117-0x18-device"
   },
   {
     "case": "debug_sensor",

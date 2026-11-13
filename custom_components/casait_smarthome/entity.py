@@ -40,7 +40,7 @@ class CasaITMultisensorEntity(Entity):
         bridge_slug = entry_bridge_slug(entry)
         self._attr_unique_id = f"{entry.entry_id}_{device_id}_{description.key}"
         self.entity_id = build_onewire_entity_id(platform_domain, bridge_slug, device_id, meta, description.key)
-        self._attr_device_info = build_onewire_device_info(entry.entry_id, device_id, meta)
+        self._attr_device_info = build_onewire_device_info(entry.entry_id, device_id, meta, api.bus_device_id(meta))
 
     async def async_added_to_hass(self) -> None:
         """Follow the board's samples."""

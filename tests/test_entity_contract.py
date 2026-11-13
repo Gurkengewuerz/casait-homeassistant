@@ -39,7 +39,13 @@ ENTRY = SimpleNamespace(entry_id="entry-test", unique_id="AA:BB:CC:DD:EE:FF", op
 
 
 def _api() -> SimpleNamespace:
-    return SimpleNamespace(pcf_states={}, dm117_states={}, bus=SimpleNamespace(stats={"connected": True}))
+    return SimpleNamespace(
+        pcf_states={},
+        dm117_states={},
+        bus=SimpleNamespace(stats={"connected": True}),
+        bridge_link={"via_device_id": "bridge-device"},
+        bus_device_id=lambda meta: f"sm117-0x{meta['bus_address']:02x}-device",
+    )
 
 
 def _meta(device_type: str) -> dict[str, Any]:
@@ -117,8 +123,8 @@ def _normalize_entity(case: str, entity: Any) -> dict[str, Any]:
         # A device named through the translations carries a key instead of a name.
         "device_name": device_info.get("name") or strings["device"][device_info["translation_key"]]["name"],
     }
-    if via_device := device_info.get("via_device"):
-        normalized["via_device"] = list(via_device)
+    if via_device_id := device_info.get("via_device_id"):
+        normalized["via_device_id"] = via_device_id
     return normalized
 
 

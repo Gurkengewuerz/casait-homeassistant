@@ -4,8 +4,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from homeassistant.components.light import ATTR_BRIGHTNESS, ATTR_EFFECT, ATTR_RGB_COLOR, ATTR_TRANSITION, LightEntity
-from homeassistant.components.light.const import ColorMode, LightEntityFeature
+from homeassistant.components.light import LightEntity
+from homeassistant.components.light.const import (
+    ATTR_BRIGHTNESS,
+    ATTR_EFFECT,
+    ATTR_RGB_COLOR,
+    ATTR_TRANSITION,
+    ColorMode,
+    LightEntityFeature,
+)
 from homeassistant.const import STATE_ON
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
@@ -120,7 +127,7 @@ class CasaITDM117Light(LightEntity):
             name=get_module_name(config_entry.options, "dm117", address, f"DM117 0x{address:02X}"),
             manufacturer="casaIT",
             model="DM117",
-            via_device=(DOMAIN, build_device_identifier(config_entry.entry_id, "bridge", "controller")),
+            **api.bridge_link,
         )
         self._update_state()
 
@@ -225,7 +232,9 @@ class CasaITLEDControllerLight(CasaITOneWireEntity, LightEntity, RestoreEntity):
         bridge_slug = entry_bridge_slug(config_entry)
         self._attr_unique_id = f"{config_entry.entry_id}_{device_id}_led_controller"
         self.entity_id = build_onewire_entity_id("light", bridge_slug, device_id, meta, "led", "controller")
-        self._attr_device_info = build_onewire_device_info(config_entry.entry_id, device_id, meta)
+        self._attr_device_info = build_onewire_device_info(
+            config_entry.entry_id, device_id, meta, api.bus_device_id(meta)
+        )
         self._attr_assumed_state = True
 
     async def async_added_to_hass(self) -> None:

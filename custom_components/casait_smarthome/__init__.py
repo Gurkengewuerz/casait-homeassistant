@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-import voluptuous as vol
+import probatio
 
 from homeassistant.components.cover import DOMAIN as COVER_DOMAIN
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
@@ -68,25 +68,25 @@ RECOVERY_PLATFORMS = ["update"]
 
 type CasaITConfigEntry = ConfigEntry[CasaITApi]
 
-RGB_COLOR_SCHEMA = vol.All(
+RGB_COLOR_SCHEMA = probatio.All(
     cv.ensure_list,
-    [vol.All(vol.Coerce(int), vol.Range(min=0, max=255))],
-    vol.Length(min=3, max=3),
+    [probatio.All(probatio.Coerce(int), probatio.Range(min=0, max=255))],
+    probatio.Length(min=3, max=3),
 )
-SET_LED_PALETTE_SCHEMA = vol.Schema(
+SET_LED_PALETTE_SCHEMA = probatio.Schema(
     {
-        vol.Required("device_id"): cv.string,
-        vol.Required("color_1"): RGB_COLOR_SCHEMA,
-        vol.Optional("color_2"): RGB_COLOR_SCHEMA,
-        vol.Optional("color_3"): RGB_COLOR_SCHEMA,
-        vol.Optional("color_4"): RGB_COLOR_SCHEMA,
-        vol.Optional("color_5"): RGB_COLOR_SCHEMA,
+        probatio.Required("device_id"): cv.string,
+        probatio.Required("color_1"): RGB_COLOR_SCHEMA,
+        probatio.Optional("color_2"): RGB_COLOR_SCHEMA,
+        probatio.Optional("color_3"): RGB_COLOR_SCHEMA,
+        probatio.Optional("color_4"): RGB_COLOR_SCHEMA,
+        probatio.Optional("color_5"): RGB_COLOR_SCHEMA,
     }
 )
-CALIBRATE_CO2_SCHEMA = vol.Schema(
+CALIBRATE_CO2_SCHEMA = probatio.Schema(
     {
-        vol.Required("device_id"): cv.string,
-        vol.Optional("target_ppm"): vol.All(vol.Coerce(int), vol.Range(min=300, max=5000)),
+        probatio.Required("device_id"): cv.string,
+        probatio.Optional("target_ppm"): probatio.All(probatio.Coerce(int), probatio.Range(min=300, max=5000)),
     }
 )
 
@@ -198,11 +198,13 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             DOMAIN,
             SERVICE_BACKUP_SETTINGS,
             async_backup_settings_service,
-            schema=vol.Schema({}),
+            schema=probatio.Schema({}),
             supports_response=SupportsResponse.OPTIONAL,
         )
     if not hass.services.has_service(DOMAIN, SERVICE_SCAN_DEVICES):
-        hass.services.async_register(DOMAIN, SERVICE_SCAN_DEVICES, async_scan_devices_service, schema=vol.Schema({}))
+        hass.services.async_register(
+            DOMAIN, SERVICE_SCAN_DEVICES, async_scan_devices_service, schema=probatio.Schema({})
+        )
     if not hass.services.has_service(DOMAIN, SERVICE_SET_LED_PALETTE):
         hass.services.async_register(
             DOMAIN,
@@ -215,7 +217,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         DOMAIN,
         SERVICE_REFERENCE_RUN,
         entity_domain=COVER_DOMAIN,
-        schema={vol.Optional("return_to_position", default=True): cv.boolean},
+        schema={probatio.Optional("return_to_position", default=True): cv.boolean},
         func="async_reference_run",
     )
 
@@ -450,20 +452,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: CasaITConfigEntry) -> bo
         ) from api.initialization_error
 
     device_registry = dr.async_get(hass)
-    bridge_identifier = (DOMAIN, build_device_identifier(entry.entry_id, "bridge", "controller"))
-    device_registry.async_get_or_create(
+    bridge = device_registry.async_get_or_create(
         config_entry_id=entry.entry_id,
         **build_bridge_device_info(entry.entry_id, api.bridge_info.version if api.bridge_info else None),
     )
+    api.bridge_device_id = bridge.id
     for address in api.sm117:
-        device_registry.async_get_or_create(
+        bus = device_registry.async_get_or_create(
             config_entry_id=entry.entry_id,
             identifiers={(DOMAIN, build_device_identifier(entry.entry_id, "sm117", f"{address:02x}"))},
             name=get_module_name(entry.options, "sm117", address, f"SM117 0x{address:02X}"),
             manufacturer="CasaIT",
             model="SM117 1-Wire bridge",
-            via_device=bridge_identifier,
+            via_device_id=bridge.id,
         )
+        api.sm117_device_ids[address] = bus.id
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     await async_setup_backups(hass, entry, api)

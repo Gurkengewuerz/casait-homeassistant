@@ -70,7 +70,7 @@ def timers(monkeypatch) -> _Timers:
 def _build(
     settings: InputSettings, *, invert: bool = False, repeat: bool = False
 ) -> tuple[CasaITButtonEvent, list[str]]:
-    api = SimpleNamespace(pcf_states={0x38: [1] * 8})
+    api = SimpleNamespace(pcf_states={0x38: [1] * 8}, bridge_link={})
     entity = CasaITButtonEvent(api, ENTRY, 0x38, PORT, settings, invert=invert, repeat=repeat)
 
     fired: list[str] = []
@@ -242,7 +242,7 @@ def test_inverted_button_swaps_the_edges(timers) -> None:
 def test_dm117_button_presses_on_the_high_level(timers) -> None:
     """A DM117 input reports a closed contact as a set bit, unlike the IM117."""
 
-    api = SimpleNamespace(dm117_states={0x10: {0: 0}}, pcf_states={})
+    api = SimpleNamespace(dm117_states={0x10: {0: 0}}, pcf_states={}, bridge_link={})
     entity = CasaITDM117ButtonEvent(api, ENTRY, 0x10, 0, 1, InputSettings(long_press_ms=500, double_click_ms=0))
     fired: list[str] = []
     entity._fire = fired.append  # noqa: SLF001

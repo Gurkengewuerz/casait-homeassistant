@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import override
 
-import voluptuous as vol
+import probatio
 
 from homeassistant.components.event import ATTR_EVENT_TYPE, DOMAIN as EVENT_DOMAIN
 from homeassistant.const import CONF_OPTIONS
@@ -32,8 +32,10 @@ CONF_PRESS = "press"
 
 BUTTON_TRIGGER_SCHEMA = ENTITY_STATE_TRIGGER_SCHEMA.extend(
     {
-        vol.Required(CONF_OPTIONS): {
-            vol.Required(CONF_PRESS): vol.All(cv.ensure_list, vol.Length(min=1), [vol.In(BUTTON_EVENT_TYPES)]),
+        probatio.Required(CONF_OPTIONS): {
+            probatio.Required(CONF_PRESS): probatio.All(
+                cv.ensure_list, probatio.Length(min=1), [probatio.In(BUTTON_EVENT_TYPES)]
+            ),
         },
     }
 )

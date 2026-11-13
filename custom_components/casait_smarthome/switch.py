@@ -118,7 +118,7 @@ class CasaITSwitch(SwitchEntity):
             name=get_module_name(config_entry.options, "om117", address, f"OM117 0x{address:02X}"),
             manufacturer="casaIT",
             model="PCF8574 Output",
-            via_device=(DOMAIN, build_device_identifier(config_entry.entry_id, "bridge", "controller")),
+            **api.bridge_link,
         )
         self._update_state()
 
@@ -202,7 +202,7 @@ class CasaITDM117Switch(SwitchEntity):
             name=get_module_name(config_entry.options, "dm117", address, f"DM117 0x{address:02X}"),
             manufacturer="casaIT",
             model="DM117",
-            via_device=(DOMAIN, build_device_identifier(config_entry.entry_id, "bridge", "controller")),
+            **api.bridge_link,
         )
         self._update_state()
 
@@ -282,7 +282,9 @@ class CasaITDS2413Switch(CasaITOneWireEntity, SwitchEntity):
         self._attr_unique_id = f"{config_entry.entry_id}_{device_id}_channel_{channel}_output"
         self.entity_id = build_onewire_entity_id("switch", bridge_slug, device_id, meta, "output", channel_name)
         self._attr_translation_placeholders = {"channel": channel_name}
-        self._attr_device_info = build_onewire_device_info(config_entry.entry_id, device_id, meta)
+        self._attr_device_info = build_onewire_device_info(
+            config_entry.entry_id, device_id, meta, api.bus_device_id(meta)
+        )
 
     def _update_from_value(self, value: Any) -> None:
         # A switched-on output pulls its pin low.
