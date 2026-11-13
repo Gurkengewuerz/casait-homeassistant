@@ -30,6 +30,9 @@ from .multisensor import MultisensorCommandError
 
 PARALLEL_UPDATES = 0
 
+PULSE_RELEASE_ATTEMPTS = 3
+PULSE_RELEASE_RETRY_DELAY = 0.2
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -195,14 +198,31 @@ class CasaITPulseButton(ButtonEntity):
         return self._address in self._api.pcf_states
 
     async def async_press(self) -> None:
-        """Activate the output for its configured pulse duration."""
+        """Activate the output for its configured pulse duration.
+
+        The bridge is told to release the output itself, so a door opener does
+        not stay energised when Home Assistant or the network goes away mid-pulse.
+        Firmware without timers leaves the release to Home Assistant alone.
+        """
 
         async with self._pulse_lock:
-            if not await self._api.async_write_pcf_port(self._address, self._hardware_port, 0):
+            duration = self._api.om117_pair_configuration[self._address][self._pair_index].pulse_duration
+            bit = 1 << self._hardware_port
+            if not await self._api.async_arm_output_timer(
+                self._address, bit, 0, bit, duration
+            ) and not await self._api.async_write_pcf_port(self._address, self._hardware_port, 0):
                 raise HomeAssistantError(translation_domain=DOMAIN, translation_key="pulse_activate_failed")
             try:
-                duration = self._api.om117_pair_configuration[self._address][self._pair_index].pulse_duration
                 await asyncio.sleep(duration)
             finally:
-                if not await self._api.async_write_pcf_port(self._address, self._hardware_port, 1):
-                    raise HomeAssistantError(translation_domain=DOMAIN, translation_key="pulse_release_failed")
+                await self._async_release()
+
+    async def _async_release(self) -> None:
+        """Release the output, trying again before giving up."""
+
+        for attempt in range(PULSE_RELEASE_ATTEMPTS):
+            if await self._api.async_write_pcf_port(self._address, self._hardware_port, 1):
+                return
+            if attempt + 1 < PULSE_RELEASE_ATTEMPTS:
+                await asyncio.sleep(PULSE_RELEASE_RETRY_DELAY)
+        raise HomeAssistantError(translation_domain=DOMAIN, translation_key="pulse_release_failed")
