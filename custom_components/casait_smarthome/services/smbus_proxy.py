@@ -692,9 +692,13 @@ class SMBus:
 
         async with self._io_lock:
             for attempt in range(3):
+                # In place before the connection exists: a reader started on it may
+                # see the connection fail before anything is sent.
+                future: asyncio.Future[bytes] = asyncio.get_running_loop().create_future()
+                self._pending = future
+                sent = False
                 try:
                     await self._connect()
-                    assert self._writer is not None
 
                     delta = time.monotonic() - self._last_send
                     if delta < self._min_send_interval:
@@ -703,19 +707,26 @@ class SMBus:
                     self._last_send = send_start
 
                     self._ensure_reader()
-                    future: asyncio.Future[bytes] = asyncio.get_running_loop().create_future()
-                    self._pending = future
-                    try:
+                    if self._writer is None and not future.done():
+                        future.set_exception(SMBusProxyError("Communication error: connection closed"))
+                    if not future.done():
+                        assert self._writer is not None
+                        sent = True
                         self._writer.write(self._frame(payload))
                         await self._writer.drain()
+                    try:
                         async with asyncio.timeout(self.timeout):
                             response = await future
                     except TimeoutError as err:
                         self._timeouts += 1
                         raise SMBusProxyError("Communication timeout") from err
-                    finally:
-                        self._pending = None
                     rtt = time.monotonic() - send_start
+                except asyncio.CancelledError:
+                    # Frames carry no sequence number: the answer to a request that
+                    # was sent would be taken as the answer to the next one.
+                    if sent:
+                        self._reset_socket()
+                    raise
                 except SMBusProxyError as err:
                     self._note_failure()
                     _LOGGER.warning("SMBus proxy error (attempt %d/3): %s", attempt + 1, err)
@@ -739,6 +750,8 @@ class SMBus:
                 else:
                     self._note_success(rtt)
                     return response
+                finally:
+                    self._pending = None
             return b""
 
     def _frame(self, payload: bytes) -> bytes:
