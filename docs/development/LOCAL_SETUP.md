@@ -19,6 +19,10 @@ script/develop           # Home Assistant at http://localhost:8123
 `mise env` — gets its Python ahead of mise's own. Activating mise in your shell (`mise activate`) is optional: the
 scripts apply it themselves.
 
+`.local/ha-venv` always is the active Home Assistant environment: by default the minimum version from `hacs.json`.
+`script/ha-env` adds and switches to the newest stable or beta release next to it —
+[Testing against a newer Home Assistant](CUSTOMIZATION.md#testing-against-a-newer-home-assistant).
+
 **Tools of your own** go in `mise.local.toml`, which git ignores. Tools the integration itself needs go in
 `.config/mise/conf.d/project.toml`, which the template sync leaves alone; `mise.toml` belongs to the blueprint.
 

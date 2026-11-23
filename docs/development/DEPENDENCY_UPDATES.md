@@ -6,14 +6,15 @@ hours.
 
 ## Who raises what
 
-| What                                                                                | Raised by                             | Waits                     | Pull request                                                  |
-| ----------------------------------------------------------------------------------- | ------------------------------------- | ------------------------- | ------------------------------------------------------------- |
-| GitHub Actions, except `jdx/mise-action` and `trufflesecurity/trufflehog`           | Dependabot (`.github/dependabot.yml`) | 7 days                    | weekly, minor and patch grouped                               |
-| npm, dev container features, `requirements_dev.txt`                                 | Dependabot                            | 3 days (patch), 7 (minor) | weekly, minor and patch grouped per ecosystem                 |
-| `mise.toml`, the mise version in workflows and the dev container, `jdx/mise-action` | Renovate (`.github/renovate.json`)    | 3 days (7 for the action) | weekly, one `tooling` group                                   |
-| The secret scanners, betterleaks and TruffleHog with its action pin                 | Renovate                              | 3 days (7 for the action) | as soon as the release is old enough, merged once checks pass |
-| The integration's requirements, `manifest.json` with `requirements.txt`             | Renovate                              | 3 days                    | one per package; a major waits on the dependency dashboard    |
-| `pytest-homeassistant-custom-component`                                             | Renovate                              | 3 days                    | its own                                                       |
+| What                                                                                                   | Raised by                             | Waits                     | Pull request                                                  |
+| ------------------------------------------------------------------------------------------------------ | ------------------------------------- | ------------------------- | ------------------------------------------------------------- |
+| GitHub Actions, except `jdx/mise-action` and `trufflesecurity/trufflehog`                              | Dependabot (`.github/dependabot.yml`) | 7 days                    | weekly, minor and patch grouped                               |
+| npm, dev container features, `requirements_dev.txt`                                                    | Dependabot                            | 3 days (patch), 7 (minor) | weekly, minor and patch grouped per ecosystem                 |
+| `mise.toml`, the mise version in workflows and the dev container, `jdx/mise-action`                    | Renovate (`.github/renovate.json`)    | 3 days (7 for the action) | weekly, one `tooling` group                                   |
+| The secret scanners, betterleaks and TruffleHog with its action pin                                    | Renovate                              | 3 days (7 for the action) | as soon as the release is old enough, merged once checks pass |
+| The integration's requirements, `manifest.json` with `requirements.txt`                                | Renovate                              | 3 days                    | one per package; a major waits on the dependency dashboard    |
+| `pytest-homeassistant`                                                                                 | Renovate                              | 3 days                    | its own                                                       |
+| the agent plugin tag in `.claude/settings.json`, `.github/copilot/settings.json`, `.codex/config.toml` | Renovate                              | 3 days                    | one `agent plugins` pull request for all three                |
 
 An action that takes its tool's version as an input — `jdx/mise-action` and TruffleHog — belongs to Renovate together
 with that input, so the pin and the version move in one pull request. `dependabot.yml` ignores both.
@@ -43,7 +44,7 @@ notes against the code that uses the library before merging.
 
 Python follows Home Assistant, never the newest release: Renovate raises it by patch releases only, and
 `script/ha-version-sync` fails when the pin no longer satisfies Home Assistant's own `requires-python`. A new Home
-Assistant release train — `pytest-homeassistant-custom-component` for a newer version — means raising the minimum in
+Assistant release train — `pytest-homeassistant` for a newer version — means raising the minimum in
 `hacs.json` as well; `script/ha-version-sync` fails until you do, and the HA stability check closes a pull request that
 would pin a Home Assistant beta.
 

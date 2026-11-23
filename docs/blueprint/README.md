@@ -49,7 +49,7 @@ Maintaining the shipped agent skills has its own procedure:
 
 ## Contents
 
-- [`DECISIONS.md`](DECISIONS.md) — architectural decisions about the blueprint itself
+- [`decisions/`](decisions/README.md) — architectural decisions about the blueprint itself, one record each
 - [`MIGRATION.md`](MIGRATION.md) — adopting the blueprint in an existing custom integration
 - [`TRANSFORMATION_PROMPT.md`](TRANSFORMATION_PROMPT.md) — prompting a coding agent to run the transformation
 
