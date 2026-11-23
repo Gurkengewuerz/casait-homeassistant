@@ -11,6 +11,10 @@ publish. Before merging, review the diff and accurately record which checks, aut
 performed. If review is partial or some behavior could not be tested, document that limitation instead of implying full
 verification.
 
+Before that, agents run a review pass of their own — simplify, run the gates again, then a review in a context that
+did not write the change (`haci-change-review`, from the `haci-review` plugin). It is
+recorded as _Agent review_ in the pull request, and it does not replace yours.
+
 Extensive AI assistance is acceptable for a community custom integration. See [`AI_POLICY.md`](../../AI_POLICY.md) for
 the project's approach to AI use, transparency, and informed user choice. Do not use this workflow for autonomous
 contributions to an Open Home Foundation repository, where the official OHF AI Policy applies.
@@ -89,9 +93,9 @@ If you edit the instructions and skills under `.agents/` with VS Code's chat,
 - Keep markdown instruction files for workflow guidance only.
 
 Claude Code, Codex, OpenCode, VS Code, and Copilot CLI all support lifecycle hooks. The configuration paths differ, but the
-commands here converge on `.agents/hooks/` so security behavior is implemented and tested once. Claude slash commands
-under `.claude/commands/` remain Claude-specific; the corresponding reusable workflow is the vendor-neutral
-[`ha-issue-triage`](../../.agents/skills/ha-issue-triage/SKILL.md), with `.github/prompts/` providing Copilot dispatch.
+commands here converge on `.agents/hooks/` so security behavior is implemented and tested once. Agent workflows such as backlog triage ship as plugins instead
+(the `haci-triage` plugin), which every agent with a plugin marketplace installs
+the same way.
 These agent lifecycle hooks are unrelated to `script/hooks/`, which customizes the repository's validation scripts.
 
 ### Session start
@@ -129,7 +133,7 @@ it) so the hook exists in your clone.
 The `main` ruleset takes every change through a pull request, squash-merged by default — what it requires and how to
 relax it is in [REPOSITORY_SETUP.md](REPOSITORY_SETUP.md). That suits agent work: a branch's working commits never reach `main`,
 each change can be reverted as a whole, and release-please reads exactly one commit per change. Open a pull request as
-a draft while an agent still pushes to it; [`ha-issue-triage`](../../.agents/skills/ha-issue-triage/SKILL.md) walks a
+a draft while an agent still pushes to it; `haci-issue-triage` walks a
 backlog the same way, one branch and pull request per issue.
 
 ## Resources

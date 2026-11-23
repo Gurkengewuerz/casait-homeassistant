@@ -4,7 +4,7 @@ This document describes the release process for this integration, including auto
 
 ## Overview
 
-Releases are managed with [release-please](https://github.com/googleapis/release-please), which automates version bumping and changelog generation based on [Conventional Commits](https://www.conventionalcommits.org/). An optional local script enhances release notes using GitHub Copilot CLI.
+Releases are managed with [release-please](https://github.com/googleapis/release-please), which automates version bumping and changelog generation based on [Conventional Commits](https://www.conventionalcommits.org/). An optional local script rewrites the release notes for users with a coding agent CLI.
 
 **Version source of truth:** `custom_components/ha_integration_domain/manifest.json`
 
@@ -27,14 +27,23 @@ Releases are managed with [release-please](https://github.com/googleapis/release
         ↓
 4. Developer merges the PR (intentionally, when ready)
         ↓
-5. release-please creates the GitHub Release + Git tag
+5. release-please creates the Git tag and the GitHub Release as a draft
    manifest.json version is already updated in the merged PR
+        ↓
+6. The release-asset job builds the ZIP with script/build (plus any
+   script/hooks/build.*.sh), attaches it as the file named by `filename` in
+   hacs.json (zip_release: true), and publishes the release — users install
+   from that asset
 ```
 
 The Home Assistant Marketplace offers users the tag of the latest **published** GitHub Release —
 a bare tag is not enough — and refuses an integration whose `manifest.json` has no `version`. Its update entity shows
-the release body as the release notes. Release-please covers all three; a pre-release only reaches users who switched
-on pre-releases for the repository. Details: [Releases and updates](https://contributors.home-assistant.io/marketplace/guides/releases/).
+the release body as the release notes. Release-please writes the version and the body; the release-asset job publishes
+the release once its ZIP is attached, and adds a link to the changelog for users who skipped more than the five
+releases the update dialog shows. Text for every release — a support link, a standing notice — goes into
+`.github/release-notes/header.md` or `footer.md`; the job puts it around the body. A failed job leaves a draft no user
+sees — run the workflow by hand with that tag (**Actions** → **Release Please** → **Run workflow**). A pre-release only reaches users who switched on
+pre-releases for the repository. Details: [Releases and updates](https://contributors.home-assistant.io/marketplace/guides/releases/).
 
 ### The Release PR
 
@@ -60,7 +69,7 @@ This project is pre-1.0.0. Version bumps follow these rules:
 | Commit type                   | Version change                      |
 | ----------------------------- | ----------------------------------- |
 | `feat`                        | patch bump (e.g. `0.1.0` → `0.1.1`) |
-| `fix`, `perf`                 | patch bump                          |
+| `fix`, `perf`, `build`        | patch bump                          |
 | `feat!` or `BREAKING CHANGE:` | minor bump (e.g. `0.1.0` → `0.2.0`) |
 
 Once the project reaches `1.0.0`, standard SemVer applies (`feat` → minor, `fix` → patch, breaking → major).
@@ -69,12 +78,13 @@ Once the project reaches `1.0.0`, standard SemVer applies (`feat` → minor, `fi
 
 Only user-facing changes appear in the public CHANGELOG:
 
-| Type                                      | Visible        |
-| ----------------------------------------- | -------------- |
-| `feat`                                    | ✅ Features    |
-| `fix`                                     | ✅ Bug Fixes   |
-| `perf`                                    | ✅ Performance |
-| `refactor`, `chore`, `docs`, `test`, `ci` | hidden         |
+| Type                                      | Visible                    |
+| ----------------------------------------- | -------------------------- |
+| `feat`                                    | ✅ 🎉 What's new           |
+| `fix`                                     | ✅ 🐛 Fixed                |
+| `perf`                                    | ✅ ⚡ More reliable        |
+| `build`                                   | ✅ 📦 Updated dependencies |
+| `refactor`, `chore`, `docs`, `test`, `ci` | hidden                     |
 
 ## Developer Scripts
 
@@ -90,7 +100,7 @@ Reads the canonical version from `manifest.json`.
 
 ### `script/release-notes`
 
-Generates AI-enhanced release notes using [GitHub Copilot CLI](https://docs.github.com/en/copilot/concepts/agents/about-copilot-cli). Requires an active Copilot subscription and `gh auth login`.
+Generates AI-enhanced release notes with a coding agent CLI — Claude Code, Codex, GitHub Copilot or OpenCode. The dev container installs all four; the script takes Claude Code when it runs inside it, otherwise the first one you are signed in to, unless `AGENT_CLI` names one. When none is signed in, it prints each one's sign-in command. It also needs `gh auth login`.
 
 ```bash
 # Preview enhanced notes on stdout
@@ -99,8 +109,12 @@ Generates AI-enhanced release notes using [GitHub Copilot CLI](https://docs.gith
 # Update the open release-please PR body with enhanced notes
 ./script/release-notes --apply
 
-# Launch Copilot CLI interactively with context pre-loaded
+# Open an agent session with the context pre-loaded
 ./script/release-notes --interactive
+
+# From an agent session: write the prompt for a fresh subagent, then apply its answer
+./script/release-notes --prompt
+./script/release-notes --apply-file notes.md
 ```
 
 **How it works:**
@@ -112,10 +126,18 @@ Generates AI-enhanced release notes using [GitHub Copilot CLI](https://docs.gith
    - Net file change list as source of truth
    - Revert commit list as chronology hints
 3. Builds a detailed prompt with audience definition, jargon rules, and file impact guidance
-4. Sends everything to Copilot CLI via stdin (avoids shell-escaping issues with large prompts)
-5. Outputs the result to stdout, or updates the PR body with `--apply`
+4. Sends everything to the agent with no tools — the prompt holds all it needs
+5. Outputs the result to stdout, or with `--apply` replaces the notes under the version heading in the PR body,
+   keeping everything release-please reads back when the PR is merged. Run it last: release-please rewrites the
+   body whenever another commit reaches `main`
 
-**`--interactive` mode** writes the full prompt and context to `.agents/scratch/release-notes-context.md` and launches a Copilot CLI session so you can iterate manually.
+**What the prompt knows about your integration** comes from `.github/release-notes/prompt.md`, if you add one: what
+the integration does for users, your own jargon to keep out of the notes, a title, a commit trailer to prefer. It is
+added after the generic rules and wins over them on wording and content; the output format stays fixed apart from
+an optional `#` title line, since `--apply` has to read it back. The file is yours; template sync never replaces it, while
+`script/release-notes` itself is template-managed.
+
+**`--interactive` mode** writes the full prompt and context to `.agents/scratch/release-notes-context.md` and opens a session of the same agent so you can iterate manually.
 
 **Skip a commit from release notes** by adding a trailer to the commit body:
 
@@ -131,10 +153,11 @@ User-Impact: none
 
 **Environment variables:**
 
-| Variable                 | Default             | Description                     |
-| ------------------------ | ------------------- | ------------------------------- |
-| `COPILOT_MODEL`          | `claude-sonnet-4.6` | AI model to use                 |
-| `RELEASE_NOTES_DIFF_MAX` | `8000`              | Max bytes for code diff context |
+| Variable                 | Default             | Description                                                    |
+| ------------------------ | ------------------- | -------------------------------------------------------------- |
+| `AGENT_CLI`              | first one signed in | `claude`, `codex`, `copilot` or `opencode`                     |
+| `AGENT_MODEL`            | the CLI's own       | Model for that CLI; for `copilot`, `COPILOT_MODEL` still works |
+| `RELEASE_NOTES_DIFF_MAX` | `8000`              | Max bytes for code diff context                                |
 
 ## Typical Release Workflow
 
@@ -174,4 +197,4 @@ If you want an additional manual gate, you can add a required label (`release: a
 | `.release-please-manifest.json`        | Current version tracked by release-please                        |
 | `CHANGELOG.md`                         | Auto-generated, committed in the same commit as the version bump |
 | `script/version`                       | Local version utility                                            |
-| `script/release-notes`                 | Local Copilot CLI release notes enhancement                      |
+| `script/release-notes`                 | Local release notes rewrite with a coding agent CLI              |
